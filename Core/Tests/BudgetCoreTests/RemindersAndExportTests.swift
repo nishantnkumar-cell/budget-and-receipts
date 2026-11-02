@@ -86,6 +86,23 @@ final class CSVExportTests: XCTestCase {
         """)
     }
 
+    func testCoupleExportSaysWhoseMoneyAndWhoPaid() {
+        let ledger = CoupleLedger(settings: CoupleSettings(partnerName: "Sam", rules: [OwnerRule(match: .category("Groceries"), owner: .shared)]))
+        let shop = BankTransaction(date: date(3), merchant: "TESCO", amount: money("-40.00"), category: "Groceries", fingerprint: "b", splits: [
+            TransactionSplit(label: "Food", category: "Groceries", amount: money("34.00")),
+            TransactionSplit(label: "Shampoo", category: "Health", amount: money("6.00"), owner: .partner)
+        ])
+        let dinner = BankTransaction(date: date(4), merchant: "PIZZA", amount: money("-20.00"), category: "Eating out", fingerprint: "c", owner: .mine, paidBy: .partner)
+        let csv = CSVExporter.transactions([dinner, shop], calendar: calendar, ledger: ledger)
+        XCTAssertEqual(csv, """
+        Date,Merchant,Description,Category,Amount,Split of,Whose,Paid by\r
+        2026-10-03,Food,,Groceries,-34,TESCO,Shared,Me\r
+        2026-10-03,Shampoo,,Health,-6,TESCO,Sam,Me\r
+        2026-10-04,PIZZA,,Eating out,-20,,Me,Sam\r
+
+        """)
+    }
+
     func testFormulaInjectionIsNeutralised() {
         XCTAssertEqual(CSVExporter.escape("=HYPERLINK(\"x\")"), "\"'=HYPERLINK(\"\"x\"\")\"")
         XCTAssertEqual(CSVExporter.escape("-12.5"), "-12.5", "Negative amounts stay numbers")
