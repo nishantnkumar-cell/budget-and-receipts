@@ -52,9 +52,11 @@ struct OverviewView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                Text("Personal Budget")
-                    .font(.largeTitle.bold())
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack {
+                    Text("Personal Budget").font(.largeTitle.bold())
+                    Spacer()
+                    MonthSwitcher()
+                }
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())]) {
                     MoneyCard(title: "Income", amount: store.income, colour: .green)
                     MoneyCard(title: "Spending", amount: store.spending, colour: .brandPink)
@@ -119,6 +121,11 @@ struct TransactionsView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button(action: store.addTransaction) { Image(systemName: "plus") }
+                    .accessibilityLabel("Add transaction")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                NavigationLink { ImportStatementView() } label: { Image(systemName: "square.and.arrow.down") }
+                    .accessibilityLabel("Import statement")
             }
         }
     }
@@ -145,27 +152,6 @@ struct TransactionEditor: View {
         .toolbar {
             Button("Save") { store.update(transaction) }
         }
-    }
-}
-
-struct BudgetsView: View {
-    @EnvironmentObject var store: BudgetStore
-    @State private var draft: [String: String] = [:]
-
-    var body: some View {
-        List(FinanceCategories.budgetable, id: \.self) { category in
-            VStack(alignment: .leading) {
-                Text(category).bold()
-                HStack {
-                    TextField("Monthly limit", text: Binding(get: { draft[category] ?? "" }, set: { draft[category] = $0 }))
-                        .decimalKeyboard()
-                    Button("Set") {
-                        store.setBudget(category: category, limit: Decimal(string: draft[category] ?? "") ?? 0)
-                    }
-                }
-            }
-        }
-        .navigationTitle("Budgets")
     }
 }
 

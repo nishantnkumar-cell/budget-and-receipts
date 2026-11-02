@@ -1,3 +1,5 @@
 * text=auto eol=lf
 *.png binary
 *.jpg binary
+# Kept byte-for-byte so importers are tested on Windows (CRLF) line endings
+Fixtures/statements/simple-uk.csv -text
