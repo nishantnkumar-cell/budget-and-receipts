@@ -76,7 +76,7 @@ struct ImportStatementView: View {
                                 .foregroundStyle(.secondary)
                             Text(transaction.merchant).lineLimit(1)
                             Spacer()
-                            Text(transaction.amount, format: .currency(code: "GBP")).monospacedDigit()
+                            Text(transaction.amount, format: .currency(code: AppSettings.currency)).monospacedDigit()
                         }
                         .font(.callout)
                     }
