@@ -46,9 +46,7 @@ struct ReceiptView: View {
                                 ForEach(FinanceCategories.all, id: \.self) { Text($0).tag($0) }
                             }
                         }
-                        if store.hasPartner {
-                            OwnerPicker(owner: $line.owner)
-                        }
+
                     }
                 }
                 .onDelete { editor.items.remove(atOffsets: $0) }

@@ -18,62 +18,13 @@ struct ApprovalView: View {
     private var balanced: Bool { abs(difference) <= SplitApprovalPolicy().tolerance }
 
     var body: some View {
-        Form {
-            Section("Receipt image") {
-                ReceiptImagePreview(imagePath: editor.imagePath)
-                HStack {
-                    Button("Choose Image…") { choosingImage = true }
-                    Spacer()
-                    Text("or drop a photo here, or use File › Import from iPhone")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if let scanMessage {
-                    Text(scanMessage).font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            Section("Editable receipt") {
-                TextField("Merchant", text: $editor.merchant)
-                DatePicker("Date", selection: Binding(get: { editor.purchaseDate ?? transaction.date }, set: { editor.purchaseDate = $0 }), displayedComponents: .date)
-                TextField("Receipt total", value: $editor.receiptTotal, format: .number)
-                TextField("Subtotal", value: $editor.subtotal, format: .number)
-                TextField("VAT", value: $editor.tax, format: .number)
-            }
-            Section("Editable items") {
-                ForEach($editor.items) { $item in
-                    HStack {
-                        TextField("Description", text: $item.description)
-                        TextField("Amount", value: $item.total, format: .number).frame(width: 100)
-                        Picker("Category", selection: $item.category) {
-                            ForEach(FinanceCategories.all, id: \.self) { Text($0).tag($0) }
-                        }
-                        .labelsHidden()
-                        if store.hasPartner {
-                            OwnerPicker(owner: $item.owner).labelsHidden().frame(width: 110)
-                        }
-                        Button(role: .destructive) {
-                            editor.deleteItem(item.id)
-                        } label: {
-                            Image(systemName: "trash")
-                        }
-                    }
-                }
-                Button("Add item") { editor.addItem() }
-            }
-            ReconciliationSection(bankAmount: transaction.amount, splitTotal: editor.splitTotal, balanced: balanced)
-            Section("Approval") {
-                Toggle("I have checked every item and category", isOn: $reviewed)
-                Text(store.status).font(.caption).foregroundStyle(.secondary)
-                HStack {
-                    Button("Save Draft Only") { store.saveDraft(editor.makeDraft(reviewed: false), for: transaction) }
-                    Spacer()
-                    Button("Review and Approve…") { confirm = true }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!reviewed || !balanced || editor.items.isEmpty)
-                }
-            }
+        // Items first on the left, the scanned receipt on the right (the approved Mac mock-up).
+        HStack(spacing: 0) {
+            details
+            Divider()
+            receiptPanel
+                .frame(minWidth: 260, idealWidth: 340, maxWidth: 420)
         }
-        .formStyle(.grouped)
         .onAppear(perform: loadPendingDraft)
         .fileImporter(isPresented: $choosingImage, allowedContentTypes: [.image]) { result in
             guard let url = try? result.get() else { return }
@@ -97,7 +48,89 @@ struct ApprovalView: View {
             return true
         }
         #endif
-        .confirmationDialog("Create these splits?", isPresented: $confirm) {
+    }
+
+    /// The scanned receipt, as large as the space allows, with ways to add or replace it.
+    private var receiptPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Receipt").font(.headline)
+            if editor.imagePath.isEmpty {
+                ContentUnavailableView("No receipt yet", systemImage: "doc.viewfinder", description: Text("Choose an image, drop a photo here, or use File › Import from iPhone."))
+                    .frame(maxHeight: .infinity)
+            } else {
+                ReceiptImagePreview(imagePath: editor.imagePath, maxHeight: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            Button(editor.imagePath.isEmpty ? "Choose Image…" : "Replace Image…") { choosingImage = true }
+            if let scanMessage {
+                Text(scanMessage).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding()
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(.background.secondary)
+    }
+
+    private var details: some View {
+        Form {
+            Section("Editable receipt") {
+                TextField("Merchant", text: $editor.merchant)
+                DatePicker("Date", selection: Binding(get: { editor.purchaseDate ?? transaction.date }, set: { editor.purchaseDate = $0 }), displayedComponents: .date)
+                TextField("Receipt total", value: $editor.receiptTotal, format: .number)
+                TextField("Subtotal", value: $editor.subtotal, format: .number)
+                TextField("VAT", value: $editor.tax, format: .number)
+            }
+            Section {
+                ForEach($editor.items) { $item in
+                    // Fixed column widths keep every row lined up under the headings.
+                    HStack(spacing: 12) {
+                        TextField("Description", text: $item.description)
+                            .labelsHidden()
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        TextField("Amount", value: $item.total, format: .number.precision(.fractionLength(2)))
+                            .labelsHidden()
+                            .multilineTextAlignment(.trailing)
+                            .monospacedDigit()
+                            .frame(width: 90)
+                        Picker("Category", selection: $item.category) {
+                            ForEach(FinanceCategories.all, id: \.self) { Text($0).tag($0) }
+                        }
+                        .labelsHidden()
+                        .frame(width: 170)
+                        Button(role: .destructive) {
+                            editor.deleteItem(item.id)
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.borderless)
+                        .frame(width: 20)
+                    }
+                }
+                Button("Add item") { editor.addItem() }
+            } header: {
+                HStack(spacing: 12) {
+                    Text("Item").frame(maxWidth: .infinity, alignment: .leading)
+                    Text("Amount").frame(width: 90, alignment: .trailing)
+                    Text("Category").frame(width: 170, alignment: .trailing)
+                    Color.clear.frame(width: 20)
+                }
+            }
+            ReconciliationSection(bankAmount: transaction.amount, splitTotal: editor.splitTotal, balanced: balanced)
+            Section("Approval") {
+                Toggle("I have checked every item and category", isOn: $reviewed)
+                Text(store.status).font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Button("Save Draft Only") { store.saveDraft(editor.makeDraft(reviewed: false), for: transaction) }
+                    Spacer()
+                    Button("Review and Approve…") { confirm = true }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!reviewed || !balanced || editor.items.isEmpty)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .alert("Create these splits?", isPresented: $confirm) {
             Button("Approve and Create \(editor.items.count) Splits") {
                 var draft = editor.makeDraft(reviewed: reviewed)
                 draft.approvedAt = Date()
@@ -162,6 +195,7 @@ struct ReconciliationSection: View {
 /// Shows the saved receipt image, if there is one.
 struct ReceiptImagePreview: View {
     let imagePath: String
+    var maxHeight: CGFloat = 240
 
     var body: some View {
         if let url = ReceiptImageStore().url(for: imagePath) {
@@ -170,7 +204,7 @@ struct ReceiptImagePreview: View {
             } placeholder: {
                 ProgressView()
             }
-            .frame(maxHeight: 240)
+            .frame(maxHeight: maxHeight)
             .accessibilityLabel("Receipt photo")
         }
     }

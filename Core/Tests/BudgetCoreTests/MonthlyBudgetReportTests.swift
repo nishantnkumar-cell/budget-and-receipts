@@ -89,3 +89,45 @@ final class MonthlyBudgetReportTests: XCTestCase {
         XCTAssertEqual(report.lines.map(\.category), ["Groceries", "Transport"], "Lines follow the category order")
     }
 }
+
+final class TentativeBudgetTests: XCTestCase {
+    private var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Europe/London")!
+        return calendar
+    }
+
+    private func day(_ month: Int, _ d: Int = 10) -> Date { calendar.date(from: DateComponents(year: 2026, month: month, day: d, hour: 12))! }
+    private func tx(_ month: Int, _ amount: String, _ category: String) -> BankTransaction {
+        BankTransaction(date: day(month), merchant: "M", amount: money(amount), category: category, fingerprint: UUID().uuidString)
+    }
+
+    func testThreeMonthAverageStandsInForAMissingBudget() {
+        let calculator = BudgetCalculator(calendar: calendar)
+        let history = [tx(7, "-90.00", "Groceries"), tx(8, "-120.00", "Groceries"), tx(9, "-150.00", "Groceries"), tx(10, "-130.00", "Groceries"), tx(6, "-999.00", "Groceries")]
+        let line = calculator.report(history, budgets: [], month: day(10)).lines.first { $0.category == "Groceries" }
+        XCTAssertEqual(line?.limit, money("120"), "July to September, not June")
+        XCTAssertEqual(line?.isTentative, true)
+        XCTAssertEqual(line?.isOverBudget, true)
+    }
+
+    func testYourOwnBudgetIsNeverTentative() {
+        let calculator = BudgetCalculator(calendar: calendar)
+        let budgets = [MonthlyBudget(category: "Groceries", limit: 200, month: day(10))]
+        let line = calculator.report([tx(9, "-150.00", "Groceries")], budgets: budgets, month: day(10)).lines.first { $0.category == "Groceries" }
+        XCTAssertEqual(line?.limit, 200)
+        XCTAssertEqual(line?.isTentative, false)
+    }
+
+    func testOnlyMonthsWithDataCount() {
+        let calculator = BudgetCalculator(calendar: calendar)
+        // Only September has data: its spending is the average, not a third of it.
+        XCTAssertEqual(calculator.averageSpending([tx(9, "-90.40", "Eating out")], before: day(10)), ["Eating out": money("90")])
+        XCTAssertEqual(calculator.averageSpending([], before: day(10)), [:])
+    }
+
+    func testRefundsAndIncomeDontMakeABudget() {
+        let calculator = BudgetCalculator(calendar: calendar)
+        XCTAssertEqual(calculator.averageSpending([tx(9, "2000.00", "Income"), tx(9, "5.00", "Shopping")], before: day(10)), [:])
+    }
+}
