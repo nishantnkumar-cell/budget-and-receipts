@@ -1,0 +1,262 @@
+import BudgetCore
+import CloudKit
+import CoreTransferable
+import LocalAuthentication
+import SwiftUI
+#if os(iOS)
+import UIKit
+#else
+import AppKit
+#endif
+
+/// Hands a household invitation, accepted from Messages, Mail or a link, to iCloud sync.
+/// It can arrive before sync has started, so it waits until then.
+@MainActor
+final class ShareAcceptor {
+    static let shared = ShareAcceptor()
+    private var pending: CKShare.Metadata?
+    private var handler: ((CKShare.Metadata) async -> Void)?
+
+    func receive(_ metadata: CKShare.Metadata) {
+        if let handler {
+            Task { await handler(metadata) }
+        } else {
+            pending = metadata
+        }
+    }
+
+    func setHandler(_ handler: @escaping (CKShare.Metadata) async -> Void) {
+        self.handler = handler
+        if let pending {
+            self.pending = nil
+            Task { await handler(pending) }
+        }
+    }
+}
+
+#if os(iOS)
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication, configurationForConnecting session: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        let configuration = UISceneConfiguration(name: nil, sessionRole: session.role)
+        configuration.delegateClass = SceneDelegate.self
+        return configuration
+    }
+}
+
+final class SceneDelegate: NSObject, UIWindowSceneDelegate {
+    func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
+        if let metadata = connectionOptions.cloudKitShareMetadata {
+            Task { @MainActor in ShareAcceptor.shared.receive(metadata) }
+        }
+    }
+
+    func windowScene(_ windowScene: UIWindowScene, userDidAcceptCloudKitShareWith metadata: CKShare.Metadata) {
+        Task { @MainActor in ShareAcceptor.shared.receive(metadata) }
+    }
+}
+#else
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func application(_ application: NSApplication, userDidAcceptCloudKitShareWith metadata: CKShare.Metadata) {
+        Task { @MainActor in ShareAcceptor.shared.receive(metadata) }
+    }
+}
+#endif
+
+/// What the share sheet sends: an iCloud invitation to the household.
+struct HouseholdInvite: Transferable {
+    let sync: CloudSync
+
+    static var transferRepresentation: some TransferRepresentation {
+        CKShareTransferRepresentation { invite in
+            .prepareShare(container: CKContainer(identifier: CloudSync.containerID ?? "")) {
+                try await invite.sync.prepareShare()
+            }
+        }
+    }
+}
+
+/// Settings › Partner: invite, see who's joined, leave or stop sharing, and put back what
+/// was changed or deleted on another device.
+struct HouseholdSharingSection: View {
+    @EnvironmentObject var store: BudgetStore
+    @EnvironmentObject var syncStatus: SyncStatus
+    @State private var confirmingLeave = false
+    @State private var error: String?
+
+    var body: some View {
+        Section {
+            switch syncStatus.household.role {
+            case .solo:
+                if let sync = syncStatus.sync {
+                    ShareLink(item: HouseholdInvite(sync: sync), preview: SharePreview("Join my Duo Budget household")) {
+                        Label("Invite your partner", systemImage: "person.badge.plus")
+                    }
+                } else {
+                    Text("Turn on iCloud sync to share your household.").foregroundStyle(.secondary)
+                }
+            case .owner:
+                ForEach(syncStatus.participants, id: \.self) { Label($0, systemImage: "person") }
+                if let sync = syncStatus.sync {
+                    ShareLink(item: HouseholdInvite(sync: sync), preview: SharePreview("Join my Duo Budget household")) {
+                        Label("Invite again", systemImage: "person.badge.plus")
+                    }
+                }
+                Button("Stop Sharing", role: .destructive) { confirmingLeave = true }
+            case .member:
+                LabeledContent("Household", value: "Shared by \(syncStatus.household.sharedBy)")
+                Button("Leave Household", role: .destructive) { confirmingLeave = true }
+            }
+            NavigationLink {
+                RecentChangesView()
+            } label: {
+                LabeledContent("Recently changed or deleted", value: "\(store.recentChanges.count)")
+            }
+            if let error { Text(error).font(.caption).foregroundStyle(Color.brandPink) }
+        } header: {
+            Text("Partner")
+        } footer: {
+            Text(footer)
+        }
+        .task { await syncStatus.sync?.refreshParticipants() }
+        .alert(syncStatus.household.role == .member ? "Leave the household?" : "Stop sharing?", isPresented: $confirmingLeave) {
+            Button("Cancel", role: .cancel) {}
+            Button(syncStatus.household.role == .member ? "Leave" : "Stop Sharing", role: .destructive) {
+                Task {
+                    do { try await syncStatus.sync?.leaveHousehold() } catch { self.error = error.localizedDescription }
+                }
+            }
+        } message: {
+            Text("Your own data stays on your devices. What was already shared stays on the other person's devices: iCloud can't take it back.")
+        }
+    }
+
+    private var footer: String {
+        switch syncStatus.household.role {
+        case .solo: "Your partner gets a link to join. Everything is shared unless you mark it Private, and it stays end-to-end encrypted: only the two of you can read it."
+        case .owner: "Only you can change the couple settings and your own accounts. Anything your partner changes or deletes can be put back from Recently changed for 30 days. Marking an item Private hides it from now on; copies already shared stay with them."
+        case .member: "Only the household owner can change the couple settings and their accounts. Your private items stay on your own devices."
+        }
+    }
+}
+
+/// Items another device or the partner changed or deleted in the last 30 days, with Restore.
+struct RecentChangesView: View {
+    @EnvironmentObject var store: BudgetStore
+
+    var body: some View {
+        List {
+            ForEach(store.recentChanges) { change in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(change.summary).lineLimit(1)
+                        Text("\(change.kind == .deleted ? "Deleted" : "Changed")\(change.byPartner ? " by your partner" : " on another device") · \(change.date.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Restore") { store.restore(change) }
+                        .buttonStyle(.bordered)
+                }
+            }
+        }
+        .overlay {
+            if store.recentChanges.isEmpty {
+                ContentUnavailableView("Nothing changed elsewhere", systemImage: "clock.arrow.circlepath",
+                                       description: Text("Items changed or deleted on another device or by your partner appear here for 30 days."))
+            }
+        }
+        .navigationTitle("Recently changed")
+    }
+}
+
+/// Settings › iCloud: deletions held back because there were suspiciously many.
+struct HeldDeletionsRow: View {
+    @EnvironmentObject var syncStatus: SyncStatus
+
+    var body: some View {
+        if syncStatus.heldDeletions > 0 {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("\(syncStatus.heldDeletions) deletions are waiting", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(Color.brandPink)
+                Text("So many items disappeared at once that sync paused, in case something went wrong. Restore brings them back from iCloud.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack {
+                    Button("Restore from iCloud") { Task { await syncStatus.sync?.restoreFromCloud() } }
+                        .buttonStyle(.borderedProminent)
+                    Button("Delete Them", role: .destructive) { Task { await syncStatus.sync?.confirmLargeDeletion() } }
+                }
+            }
+        }
+    }
+}
+
+/// Erase All Data, guarded: Face ID or the passcode, then typing ERASE.
+struct EraseAllDataView: View {
+    @EnvironmentObject var store: BudgetStore
+    @EnvironmentObject var subscriptions: SubscriptionStore
+    @EnvironmentObject var syncStatus: SyncStatus
+    @Environment(\.dismiss) private var dismiss
+    @State private var phrase = ""
+    @State private var verified = false
+    @State private var message: String?
+
+    var body: some View {
+        Form {
+            Section {
+                Text("This deletes every transaction, budget, receipt, account, contract and shared file:")
+                Label("on this device", systemImage: "iphone")
+                Label("on your other devices that sync with iCloud", systemImage: "icloud")
+                if syncStatus.household.role != .solo {
+                    Label("the shared household items on your partner's devices (they can restore them for 30 days)", systemImage: "person.2")
+                }
+                Text("Your settings are kept. It can't be undone; export a CSV first if you want a copy.")
+                    .foregroundStyle(.secondary)
+            }
+            if !verified {
+                Section {
+                    Button("Confirm with \(AppLock().methodName)") { Task { await verify() } }
+                }
+            } else {
+                Section {
+                    TextField("Type ERASE", text: $phrase)
+                        .autocorrectionDisabled()
+                    Button("Erase Everything", role: .destructive) { erase() }
+                        .disabled(phrase.trimmingCharacters(in: .whitespaces) != "ERASE")
+                } footer: {
+                    Text("Type ERASE in capitals to confirm.")
+                }
+            }
+            if let message { Text(message).foregroundStyle(Color.brandPink) }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Erase All Data")
+    }
+
+    private func verify() async {
+        let context = LAContext()
+        var error: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
+            message = "Set a passcode on this device to erase data."
+            return
+        }
+        do {
+            verified = try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Erase all Duo Budget data")
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+
+    private func erase() {
+        store.resetAllData()
+        subscriptions.resetAllData()
+        if let drop = SharedReceiptDrop.folder {
+            for file in (try? FileManager.default.contentsOfDirectory(at: drop, includingPropertiesForKeys: nil)) ?? [] {
+                try? FileManager.default.removeItem(at: file)
+            }
+        }
+        // An erase on purpose is the one time many deletions go out without being held back.
+        Task { await syncStatus.sync?.confirmLargeDeletion() }
+        dismiss()
+    }
+}

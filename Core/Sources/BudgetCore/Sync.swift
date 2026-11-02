@@ -10,6 +10,8 @@ public struct SyncRecord: Hashable, Sendable {
     public var isPrivate: Bool
     /// A file that goes with the record, such as a receipt photo.
     public var fileName: String?
+    /// Arrived from iCloud last changed by someone else (the partner), not by this person.
+    public var byPartner = false
 
     public init(collection: String, id: String, payload: Data, isPrivate: Bool = false, fileName: String? = nil) {
         self.collection = collection

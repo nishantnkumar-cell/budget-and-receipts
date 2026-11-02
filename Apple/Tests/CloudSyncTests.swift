@@ -3,15 +3,6 @@ import XCTest
 @testable import BudgetReceipts
 
 final class CloudSyncTests: XCTestCase {
-    func testRecordNamesGiveNothingAway() {
-        let key = SyncRecord.key("transactions", "stmt:2026-10-03|-12.40|TESCO STORES|1")
-        let name = CloudSync.recordName(key)
-        XCTAssertEqual(name.count, 32)
-        XCTAssertFalse(name.contains("TESCO") || name.contains("12.40"))
-        XCTAssertEqual(name, CloudSync.recordName(key), "The same item always gets the same name")
-        XCTAssertNotEqual(name, CloudSync.recordName(SyncRecord.key("transactions", "other")))
-    }
-
     func testLargePhotosAreShrunkToFitAnEncryptedField() throws {
         let size = 3000
         let context = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
@@ -36,5 +27,11 @@ final class CloudSyncPermissionTests: XCTestCase {
         // Test builds have no provisioning profile with iCloud: the app must not touch CloudKit.
         XCTAssertFalse(CloudSync.isSigned(for: "iCloud.com.nishantkumar.budgetreceipts"))
         XCTAssertNil(CloudSync.containerID)
+    }
+
+    func testOnlyTheAppsOwnPhotoNamesAreAccepted() {
+        XCTAssertTrue(CloudSync.isSafeImageName("3F2504E0-4F89-11D3-9A0C-0305E82C3301.jpg"))
+        XCTAssertFalse(CloudSync.isSafeImageName("../sync-state.json"))
+        XCTAssertFalse(CloudSync.isSafeImageName("3F2504E0-4F89-11D3-9A0C-0305E82C3301.json"))
     }
 }

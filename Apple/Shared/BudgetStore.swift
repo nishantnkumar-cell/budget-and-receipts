@@ -19,6 +19,12 @@ final class BudgetStore: ObservableObject {
     @Published var categorisingResult: String?
     /// Categories found for merchants the app didn't know, by merchant key.
     @Published var merchantCategories: [String: MerchantCategory] = [:]
+    /// This device's place in a shared household (set from iCloud sync).
+    @Published var householdRole: HouseholdLink.Role = .solo
+    /// Items changed or deleted by another device or the partner, kept 30 days to restore.
+    @Published var recentChanges: [RecentChange] = []
+    /// Arrivals refused last time (not the partner's to change).
+    private var lastRejected: Set<String> = []
     /// Every file shared or opened with the app, and what became of it.
     @Published var sharedDocuments: [SharedDocument] = []
     /// What the app just did with shared files, shown once as a confirmation.
@@ -31,6 +37,11 @@ final class BudgetStore: ObservableObject {
     @Published var householdView: HouseholdView = .together
 
     private let storage: JSONFileStorage
+    /// Files that existed but couldn't be read at launch. They're kept aside, and sync restores
+    /// from iCloud instead of treating the data as deleted.
+    private(set) var unreadableFiles: [String] = []
+    /// False when the last save couldn't be written.
+    private(set) var lastSaveSucceeded = true
     /// Called after every local change is saved, so iCloud sync can send it.
     var didPersist: (() -> Void)?
 
@@ -38,16 +49,17 @@ final class BudgetStore: ObservableObject {
     ///   the app uses Application Support.
     init(folder: URL = JSONFileStorage.defaultFolder) {
         storage = JSONFileStorage(folder: folder)
-        transactions = storage.load("transactions.json") ?? []
-        changes = storage.load("changes.json") ?? []
-        budgets = storage.load("budgets.json") ?? []
-        imports = storage.load("imports.json") ?? []
-        couple = storage.load("couple.json") ?? CoupleSettings()
-        settlements = storage.load("settlements.json") ?? []
-        pendingReceipts = storage.load("pending-receipts.json") ?? []
-        accounts = storage.load("accounts.json") ?? []
-        sharedDocuments = storage.load("shared-documents.json") ?? []
-        merchantCategories = storage.load("merchant-categories.json") ?? [:]
+        transactions = loadOrSetAside("transactions.json") ?? []
+        changes = loadOrSetAside("changes.json") ?? []
+        budgets = loadOrSetAside("budgets.json") ?? []
+        imports = loadOrSetAside("imports.json") ?? []
+        couple = loadOrSetAside("couple.json") ?? CoupleSettings()
+        settlements = loadOrSetAside("settlements.json") ?? []
+        pendingReceipts = loadOrSetAside("pending-receipts.json") ?? []
+        accounts = loadOrSetAside("accounts.json") ?? []
+        sharedDocuments = loadOrSetAside("shared-documents.json") ?? []
+        merchantCategories = loadOrSetAside("merchant-categories.json") ?? [:]
+        recentChanges = (loadOrSetAside("recent-changes.json") ?? []).filter { $0.date > Date().addingTimeInterval(-30 * 86_400) }
     }
 
     func saveDraft(_ draft: SplitDraft, for transaction: BankTransaction) {
@@ -132,6 +144,8 @@ final class BudgetStore: ObservableObject {
     var coupleBalance: CoupleBalance { ledger.balance(transactions, settlements: settlements) }
 
     func updateCouple(_ settings: CoupleSettings) {
+        // Only the household owner changes the couple settings.
+        guard householdRole != .member else { return }
         couple = settings
         if !hasPartner { householdView = .together }
         persist()
@@ -303,6 +317,8 @@ final class BudgetStore: ObservableObject {
         pendingReceipts = []
         accounts = []
         sharedDocuments = []
+        merchantCategories = [:]
+        recentChanges = []
         accountFilter = nil
         householdView = .together
         for folder in [imagesFolder, sharedFilesFolder] {
@@ -392,17 +408,34 @@ final class BudgetStore: ObservableObject {
         didPersist?()
     }
 
-    private func writeFiles() {
-        storage.save(transactions, "transactions.json")
-        storage.save(changes, "changes.json")
-        storage.save(budgets, "budgets.json")
-        storage.save(imports, "imports.json")
-        storage.save(couple, "couple.json")
-        storage.save(settlements, "settlements.json")
-        storage.save(pendingReceipts, "pending-receipts.json")
-        storage.save(accounts, "accounts.json")
-        storage.save(sharedDocuments, "shared-documents.json")
-        storage.save(merchantCategories, "merchant-categories.json")
+    /// Loads a file; an unreadable one is set aside and remembered (see `unreadableFiles`).
+    private func loadOrSetAside<T: Decodable>(_ name: String) -> T? {
+        do {
+            return try storage.loadChecked(name)
+        } catch {
+            storage.setAside(name)
+            unreadableFiles.append(name)
+            return nil
+        }
+    }
+
+    @discardableResult
+    private func writeFiles() -> Bool {
+        let results = [
+            storage.save(transactions, "transactions.json"),
+            storage.save(changes, "changes.json"),
+            storage.save(budgets, "budgets.json"),
+            storage.save(imports, "imports.json"),
+            storage.save(couple, "couple.json"),
+            storage.save(settlements, "settlements.json"),
+            storage.save(pendingReceipts, "pending-receipts.json"),
+            storage.save(accounts, "accounts.json"),
+            storage.save(sharedDocuments, "shared-documents.json"),
+            storage.save(merchantCategories, "merchant-categories.json"),
+            storage.save(recentChanges, "recent-changes.json"),
+        ]
+        lastSaveSucceeded = !results.contains(false)
+        return lastSaveSucceeded
     }
 }
 
@@ -430,31 +463,95 @@ struct JSONFileStorage {
     init(folder: URL) {
         self.folder = folder
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        // Left out of iCloud device Backup, which isn't end-to-end encrypted unless Advanced
+        // Data Protection is on. The encrypted iCloud sync is the backup instead.
+        Self.excludeFromBackup(folder)
     }
 
-    func save<T: Encodable>(_ value: T, _ name: String) {
+    static func excludeFromBackup(_ url: URL) {
+        var url = url
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? url.setResourceValues(values)
+    }
+
+    /// iPhone files stay readable after the first unlock, so changes arriving from iCloud while
+    /// the phone is locked can still be saved (they would otherwise fail silently).
+    static var writeOptions: Data.WritingOptions {
+        #if os(iOS)
+        [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
+        #else
+        [.atomic]
+        #endif
+    }
+
+    /// Saves a value. Returns false when it couldn't be written, so callers never assume it was.
+    @discardableResult
+    func save<T: Encodable>(_ value: T, _ name: String) -> Bool {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let data = try? encoder.encode(value) else { return }
-        #if os(iOS)
-        let options: Data.WritingOptions = [.atomic, .completeFileProtection]
-        #else
-        let options: Data.WritingOptions = [.atomic]
-        #endif
-        try? data.write(to: folder.appendingPathComponent(name), options: options)
+        guard let data = try? encoder.encode(value) else { return false }
+        do {
+            try data.write(to: folder.appendingPathComponent(name), options: Self.writeOptions)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    enum LoadError: Error { case unreadable(String) }
+
+    /// Nil when the file doesn't exist yet. Throws when it exists but can't be read or decoded:
+    /// that must never be mistaken for "no data", or sync would delete everything.
+    func loadChecked<T: Decodable>(_ name: String) throws -> T? {
+        let url = folder.appendingPathComponent(name)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        guard let data = try? Data(contentsOf: url), let value = try? JSONDecoder().decode(T.self, from: data) else {
+            throw LoadError.unreadable(name)
+        }
+        return value
     }
 
     func load<T: Decodable>(_ name: String) -> T? {
-        guard let data = try? Data(contentsOf: folder.appendingPathComponent(name)) else { return nil }
-        return try? JSONDecoder().decode(T.self, from: data)
+        try? loadChecked(name)
+    }
+
+    /// Moves an unreadable file aside so it is kept, never overwritten.
+    func setAside(_ name: String) {
+        let url = folder.appendingPathComponent(name)
+        let stamp = Int(Date().timeIntervalSince1970)
+        try? FileManager.default.moveItem(at: url, to: folder.appendingPathComponent("\(name).unreadable-\(stamp)"))
     }
 }
 
 // MARK: - iCloud sync
 
+/// An item another device or the partner changed or deleted, kept so it can be put back.
+struct RecentChange: Identifiable, Codable, Hashable {
+    enum Kind: String, Codable { case changed, deleted }
+
+    var id = UUID()
+    var date = Date()
+    var kind: Kind
+    var byPartner: Bool
+    var collection: String
+    var itemID: String
+    /// The item as it was before, as JSON.
+    var previous: Data
+    var summary: String
+}
+
 extension BudgetStore: SyncSource {
     /// Every item as an iCloud record. An item is private when marked, or when its account is.
+    /// On a partner's device shared items are turned to the owner's point of view as they go.
     func syncRecords() -> [SyncRecord] {
+        let records = localRecords()
+        guard householdRole == .member else { return records }
+        return records.map { $0.isPrivate ? $0 : HouseholdPerspective.flipped($0) }
+    }
+
+    /// The items from this device's own point of view.
+    private func localRecords() -> [SyncRecord] {
         let privateAccounts = Set(accounts.filter { $0.isPrivate == true }.map(\.id))
         func isPrivate(_ transaction: BankTransaction) -> Bool {
             transaction.isPrivate == true || transaction.accountID.map(privateAccounts.contains) == true
@@ -492,8 +589,65 @@ extension BudgetStore: SyncSource {
 
     var imagesFolder: URL { ReceiptImageStore(dataFolder: storage.folder).folder }
 
-    /// Applies changes from your other devices. Saved to disk, not sent back.
-    func applySync(saves: [SyncRecord], deletes: Set<String>) {
+    /// Applies changes from your other devices or the partner. Saved to disk, not sent back.
+    /// What they change or delete is kept in Recently changed for 30 days. The owner's couple
+    /// settings and own accounts can't be changed by the partner: those arrivals are refused.
+    @discardableResult
+    func applySync(saves: [SyncRecord], deletes: Set<String>) -> Bool {
+        var saves = saves
+        if householdRole == .member {
+            saves = saves.map { $0.isPrivate ? $0 : HouseholdPerspective.flipped($0) }
+        }
+        lastRejected = []
+        if householdRole == .owner {
+            for save in saves where save.byPartner {
+                let ownersAccount = save.collection == "accounts"
+                    && accounts.first(where: { $0.id.uuidString == save.id }).map { ($0.owner ?? .mine) == .mine } == true
+                if save.collection == "couple" || ownersAccount { lastRejected.insert(save.key) }
+            }
+            saves.removeAll { lastRejected.contains($0.key) }
+        }
+        keepRecentChanges(saves: saves, deletes: deletes)
+        return merge(saves: saves, deletes: deletes)
+    }
+
+    func rejectedKeys(_ saves: [SyncRecord]) -> Set<String> { lastRejected }
+
+    private func keepRecentChanges(saves: [SyncRecord], deletes: Set<String>) {
+        guard !saves.isEmpty || !deletes.isEmpty else { return }
+        let before = Dictionary(localRecords().map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
+        var kept: [RecentChange] = []
+        for key in deletes {
+            guard let old = before[key], old.collection != "images" else { continue }
+            kept.append(RecentChange(kind: .deleted, byPartner: householdRole != .solo, collection: old.collection, itemID: old.id, previous: old.payload, summary: summary(of: old)))
+        }
+        for save in saves {
+            guard let old = before[save.key], old.collection != "images", old.payload != save.payload else { continue }
+            kept.append(RecentChange(kind: .changed, byPartner: save.byPartner, collection: old.collection, itemID: old.id, previous: old.payload, summary: summary(of: old)))
+        }
+        recentChanges = (kept + recentChanges).filter { $0.date > Date().addingTimeInterval(-30 * 86_400) }
+    }
+
+    private func summary(of record: SyncRecord) -> String {
+        if record.collection == "transactions", let transaction = try? SyncRecord.decoder().decode(BankTransaction.self, from: record.payload) {
+            return "\(transaction.merchant) \(transaction.amount.formatted(.currency(code: AppSettings.currency)))"
+        }
+        if record.collection == "accounts", let account = try? SyncRecord.decoder().decode(BankAccount.self, from: record.payload) {
+            return "Account \(account.label)"
+        }
+        let names = ["budgets": "A budget", "settlements": "A settle-up", "pendingReceipts": "A waiting receipt", "couple": "Couple settings", "imports": "An import record", "changes": "A history entry"]
+        return names[record.collection] ?? record.collection
+    }
+
+    /// Puts an item back as it was before the change or deletion, everywhere.
+    func restore(_ change: RecentChange) {
+        merge(saves: [SyncRecord(collection: change.collection, id: change.itemID, payload: change.previous)], deletes: [])
+        recentChanges.removeAll { $0.id == change.id }
+        persist()
+    }
+
+    @discardableResult
+    private func merge(saves: [SyncRecord], deletes: Set<String>) -> Bool {
         transactions = SyncMerge.apply(saves: saves, deletes: deletes, to: transactions, collection: "transactions", id: \.fingerprint)
             .sorted { $0.date > $1.date }
         changes = SyncMerge.apply(saves: saves, deletes: deletes, to: changes, collection: "changes", id: \.id.uuidString)
@@ -503,7 +657,7 @@ extension BudgetStore: SyncSource {
         settlements = SyncMerge.apply(saves: saves, deletes: deletes, to: settlements, collection: "settlements", id: \.id.uuidString)
         pendingReceipts = SyncMerge.apply(saves: saves, deletes: deletes, to: pendingReceipts, collection: "pendingReceipts", id: \.id.uuidString)
         accounts = SyncMerge.apply(saves: saves, deletes: deletes, to: accounts, collection: "accounts", id: \.id.uuidString)
-        writeFiles()
+        return writeFiles()
     }
 }
 

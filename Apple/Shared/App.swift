@@ -2,6 +2,11 @@ import SwiftUI
 
 @main
 struct BudgetReceiptsApp: App {
+    #if os(iOS)
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    #else
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    #endif
     @StateObject private var store = BudgetStore()
     @StateObject private var subscriptions = SubscriptionStore()
     @StateObject private var settings = AppSettings()
@@ -35,6 +40,7 @@ struct BudgetReceiptsApp: App {
                 if scenePhase == .active { await cloud?.refresh() }
             }
             .task(id: settings.iCloudSyncEnabled) { await startOrStopSync() }
+            .onChange(of: syncStatus.household) { _, link in store.householdRole = link.role }
             // Says what happened to files just shared, so nothing vanishes silently.
             .alert("Shared files", isPresented: Binding(get: { store.shareSummary != nil }, set: { if !$0 { store.shareSummary = nil } })) {
                 Button("OK") { store.shareSummary = nil }
@@ -58,6 +64,7 @@ struct BudgetReceiptsApp: App {
         let testing = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
         guard settings.iCloudSyncEnabled, CloudSync.containerID != nil, !testing else {
             syncStatus.set(.off, pending: 0)
+            syncStatus.sync = nil
             cloud = nil
             store.didPersist = nil
             subscriptions.didPersist = nil
@@ -65,6 +72,15 @@ struct BudgetReceiptsApp: App {
         }
         let sync = CloudSync(sources: [store, subscriptions], imagesFolder: store.imagesFolder, stateFolder: JSONFileStorage.defaultFolder, status: syncStatus)
         cloud = sync
+        syncStatus.sync = sync
+        ShareAcceptor.shared.setHandler { metadata in
+            do {
+                try await sync.accept(metadata)
+                store.status = "You've joined the household."
+            } catch {
+                store.status = "Couldn't join the household: \(error.localizedDescription)"
+            }
+        }
         store.didPersist = { Task { await sync.localDataChanged() } }
         subscriptions.didPersist = { Task { await sync.localDataChanged() } }
         await sync.start()

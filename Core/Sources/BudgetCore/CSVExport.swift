@@ -41,9 +41,10 @@ public enum CSVExporter {
     }
 
     static func escape(_ field: String) -> String {
-        // A leading = + - @ makes spreadsheets run the cell as a formula; neutralise it.
+        // A leading = + - @ (or a tab or carriage return before one) makes spreadsheets run the
+        // cell as a formula; neutralise it.
         var value = field
-        if let first = value.first, "=+@".contains(first) || (first == "-" && AmountParser.parse(value, decimalComma: false) == nil) {
+        if let first = value.first, "=+@\t\r".contains(first) || (first == "-" && AmountParser.parse(value, decimalComma: false) == nil) {
             value = "'" + value
         }
         guard value.contains(where: { $0 == "," || $0 == "\"" || $0 == "\n" || $0 == "\r" }) else { return value }
