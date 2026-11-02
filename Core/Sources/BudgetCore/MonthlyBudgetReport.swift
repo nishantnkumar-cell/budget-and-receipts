@@ -51,12 +51,28 @@ public struct BudgetCalculator: Sendable {
     /// Categories that move money between your own accounts. They are neither income nor spending.
     public static let transferCategories: Set<String> = ["Card payment", "Internal transfer"]
 
-    public init(calendar: Calendar = .current) {
+    /// The day a budget month starts, for people who budget from payday (1 = calendar months).
+    /// The month "November" with a start day of 25 runs from 25 October to 24 November.
+    public var monthStartDay: Int
+
+    public init(calendar: Calendar = .current, monthStartDay: Int = 1) {
         self.calendar = calendar
+        self.monthStartDay = min(max(monthStartDay, 1), 28)
     }
 
     public func isInMonth(_ date: Date, _ month: Date) -> Bool {
-        calendar.isDate(date, equalTo: month, toGranularity: .month)
+        guard monthStartDay > 1 else { return calendar.isDate(date, equalTo: month, toGranularity: .month) }
+        return monthInterval(for: month).contains(date)
+    }
+
+    /// The dates a budget month covers.
+    public func monthInterval(for month: Date) -> DateInterval {
+        guard let calendarMonth = calendar.dateInterval(of: .month, for: month) else { return DateInterval(start: month, duration: 0) }
+        guard monthStartDay > 1,
+              let previous = calendar.date(byAdding: .month, value: -1, to: calendarMonth.start),
+              let start = calendar.date(bySetting: .day, value: monthStartDay, of: previous),
+              let end = calendar.date(bySetting: .day, value: monthStartDay, of: calendarMonth.start) else { return calendarMonth }
+        return DateInterval(start: calendar.startOfDay(for: start), end: calendar.startOfDay(for: end))
     }
 
     /// Spending per category for the month. Approved receipt splits count in their own
