@@ -6,6 +6,7 @@ struct SettingsView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var store: BudgetStore
     @EnvironmentObject var subscriptions: SubscriptionStore
+    @EnvironmentObject var syncStatus: SyncStatus
     @State private var exportingCSV = false
     @State private var exportingPDF = false
     @State private var exportError: String?
@@ -22,6 +23,9 @@ struct SettingsView: View {
             Section {
                 Toggle("Sync with iCloud", isOn: $settings.iCloudSyncEnabled)
                     .disabled(CloudSync.containerID == nil)
+                if settings.iCloudSyncEnabled, CloudSync.containerID != nil {
+                    LabeledContent("Status", value: syncStatus.text)
+                }
             } header: {
                 Text("iCloud")
             } footer: {

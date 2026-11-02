@@ -2,6 +2,16 @@ import BudgetCore
 import CloudKit
 import Foundation
 
+/// What iCloud sync last did, for Settings.
+@MainActor
+final class SyncStatus: ObservableObject {
+    @Published var text = "Not synced yet."
+
+    func update(_ text: String) {
+        self.text = text + " · " + Date().formatted(date: .omitted, time: .shortened)
+    }
+}
+
 /// A store whose items sync with iCloud.
 @MainActor
 protocol SyncSource: AnyObject, Sendable {
@@ -23,6 +33,7 @@ actor CloudSync: CKSyncEngineDelegate {
     }
 
     private let sources: [SyncSource]
+    private let status: SyncStatus?
     private let imagesFolder: URL
     private let stateFolder: URL
     private var engine: CKSyncEngine?
@@ -32,8 +43,9 @@ actor CloudSync: CKSyncEngineDelegate {
     /// Records waiting to be sent, by iCloud record name.
     private var outgoing: [String: SyncRecord] = [:]
 
-    init(sources: [SyncSource], imagesFolder: URL, stateFolder: URL) {
+    init(sources: [SyncSource], imagesFolder: URL, stateFolder: URL, status: SyncStatus? = nil) {
         self.sources = sources
+        self.status = status
         self.imagesFolder = imagesFolder
         self.stateFolder = stateFolder
         state = Self.load(SyncState.self, stateFolder.appendingPathComponent("sync-state.json")) ?? SyncState()
@@ -50,8 +62,24 @@ actor CloudSync: CKSyncEngineDelegate {
         if saved == nil {
             engine.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: Self.householdZone)), .saveZone(CKRecordZone(zoneID: Self.privateZone))])
         }
-        try? await engine.fetchChanges()
+        await fetch()
         await localDataChanged()
+    }
+
+    private func report(_ text: String) async {
+        guard let status else { return }
+        await MainActor.run { status.update(text) }
+    }
+
+    private func fetch() async {
+        do {
+            try await engine?.fetchChanges()
+            await report("Up to date")
+        } catch let error as CKError where error.code == .notAuthenticated {
+            await report("Sign in to iCloud on this device to sync")
+        } catch {
+            await report("Couldn't reach iCloud: \(error.localizedDescription)")
+        }
     }
 
     /// Call after local data is saved. Queues whatever changed since the last sync.
@@ -71,12 +99,17 @@ actor CloudSync: CKSyncEngineDelegate {
         }
         engine.state.add(pendingRecordZoneChanges: pending)
         saveState()
-        try? await engine.sendChanges()
+        do {
+            try await engine.sendChanges()
+            await report("Sent \(changes.saves.count + changes.deletes.count) change\(changes.saves.count + changes.deletes.count == 1 ? "" : "s")")
+        } catch {
+            await report("Couldn't send changes: \(error.localizedDescription)")
+        }
     }
 
     /// Fetches changes now, e.g. when the app comes to the front.
     func refresh() async {
-        try? await engine?.fetchChanges()
+        await fetch()
     }
 
     // MARK: CKSyncEngineDelegate
@@ -87,6 +120,7 @@ actor CloudSync: CKSyncEngineDelegate {
             Self.save(update.stateSerialization, stateFolder.appendingPathComponent("sync-engine.json"))
 
         case .accountChange(let change):
+            if case .signOut = change.changeType { await report("Signed out of iCloud") }
             if case .switchAccounts = change.changeType { resetLocalSyncState() }
             if case .signOut = change.changeType { resetLocalSyncState() }
 
@@ -109,6 +143,7 @@ actor CloudSync: CKSyncEngineDelegate {
                 systemFields[key] = nil
             }
             saveState()
+            if !saves.isEmpty || !deletes.isEmpty { await report("Received \(saves.count + deletes.count) change\(saves.count + deletes.count == 1 ? "" : "s")") }
             let finalSaves = saves, finalDeletes = deletes
             await MainActor.run {
                 for source in sources { source.applySync(saves: finalSaves, deletes: finalDeletes) }

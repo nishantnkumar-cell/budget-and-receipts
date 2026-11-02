@@ -8,6 +8,7 @@ struct BudgetReceiptsApp: App {
     @StateObject private var lock = AppLock()
     @Environment(\.scenePhase) private var scenePhase
     @State private var cloud: CloudSync?
+    @StateObject private var syncStatus = SyncStatus()
 
     var body: some Scene {
         WindowGroup {
@@ -23,6 +24,7 @@ struct BudgetReceiptsApp: App {
             .environmentObject(store)
             .environmentObject(subscriptions)
             .environmentObject(settings)
+            .environmentObject(syncStatus)
             // A receipt or statement opened with the app ("Open in", or Open With on the Mac).
             .onOpenURL { url in
                 Task { await SharedReceiptReader.open(url, into: store) }
@@ -54,7 +56,7 @@ struct BudgetReceiptsApp: App {
             subscriptions.didPersist = nil
             return
         }
-        let sync = CloudSync(sources: [store, subscriptions], imagesFolder: store.imagesFolder, stateFolder: JSONFileStorage.defaultFolder)
+        let sync = CloudSync(sources: [store, subscriptions], imagesFolder: store.imagesFolder, stateFolder: JSONFileStorage.defaultFolder, status: syncStatus)
         cloud = sync
         store.didPersist = { Task { await sync.localDataChanged() } }
         subscriptions.didPersist = { Task { await sync.localDataChanged() } }
