@@ -107,6 +107,8 @@ final class CSVExportTests: XCTestCase {
         XCTAssertEqual(CSVExporter.escape("=HYPERLINK(\"x\")"), "\"'=HYPERLINK(\"\"x\"\")\"")
         XCTAssertEqual(CSVExporter.escape("-12.5"), "-12.5", "Negative amounts stay numbers")
         XCTAssertEqual(CSVExporter.escape("-cmd"), "'-cmd")
+        XCTAssertEqual(CSVExporter.escape("\t=1+1"), "'\t=1+1")
+        XCTAssertEqual(CSVExporter.escape("\r=1"), "\"'\r=1\"")
     }
 
     func testExportCanBeImportedAgain() throws {
