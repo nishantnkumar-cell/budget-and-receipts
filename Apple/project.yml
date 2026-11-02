@@ -1,0 +1,95 @@
+name: BudgetReceipts
+options:
+  bundleIdPrefix: com.nishantkumar.budgetreceipts
+  deploymentTarget:
+    iOS: "26.0"
+    macOS: "26.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+packages:
+  BudgetCore:
+    path: ../Core
+targets:
+  BudgetReceipts-iOS:
+    type: application
+    platform: iOS
+    sources:
+      - Shared
+      - iOS
+    dependencies:
+      - package: BudgetCore
+    info:
+      path: iOS/Info.plist
+      properties:
+        CFBundleDisplayName: Budget & Receipts
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSCameraUsageDescription: Budget & Receipts uses the camera to scan receipts. Images stay on this device.
+        NSPhotoLibraryUsageDescription: Budget & Receipts reads the receipt photos you choose so it can read their text on this device.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nishantkumar.budgetreceipts
+        PRODUCT_MODULE_NAME: BudgetReceipts
+        TARGETED_DEVICE_FAMILY: "1"
+  BudgetReceipts-macOS:
+    type: application
+    platform: macOS
+    sources:
+      - Shared
+      - macOS
+    dependencies:
+      - package: BudgetCore
+    info:
+      path: macOS/Info.plist
+      properties:
+        CFBundleDisplayName: Budget & Receipts
+        LSApplicationCategoryType: public.app-category.finance
+    entitlements:
+      path: macOS/BudgetReceipts.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.files.user-selected.read-only: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nishantkumar.budgetreceipts
+        PRODUCT_MODULE_NAME: BudgetReceipts
+        ENABLE_HARDENED_RUNTIME: YES
+  AppTests-iOS:
+    type: bundle.unit-test
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+    platform: iOS
+    sources: [Tests]
+    dependencies:
+      - target: BudgetReceipts-iOS
+      - package: BudgetCore
+  AppTests-macOS:
+    type: bundle.unit-test
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+    platform: macOS
+    sources: [Tests]
+    dependencies:
+      - target: BudgetReceipts-macOS
+      - package: BudgetCore
+schemes:
+  BudgetReceipts-iOS:
+    build:
+      targets:
+        BudgetReceipts-iOS: all
+    test:
+      targets: [AppTests-iOS]
+  BudgetReceipts-macOS:
+    build:
+      targets:
+        BudgetReceipts-macOS: all
+    test:
+      targets: [AppTests-macOS]
