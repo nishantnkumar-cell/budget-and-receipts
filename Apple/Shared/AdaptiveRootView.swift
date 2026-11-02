@@ -10,51 +10,60 @@ struct AdaptiveRootView: View {
     }
 }
 
+/// The app's places, in workflow order: capture, check, see where money went, plan ahead.
 enum AppSection: String, CaseIterable, Identifiable {
-    case overview = "Overview"
-    case transactions = "Transactions"
+    case home = "Home"
+    case inbox = "Inbox"
+    case activity = "Activity"
     case budgets = "Budgets"
-    case recurring = "Recurring"
-    case review = "Review"
+    case plan = "Plan"
+    case scan = "Scan"
     case settings = "Settings"
 
     var id: String { rawValue }
 
     var systemImage: String {
         switch self {
-        case .overview: "chart.pie.fill"
-        case .transactions: "list.bullet.rectangle"
-        case .budgets: "gauge.with.dots.needle.67percent"
-        case .recurring: "repeat.circle"
-        case .review: "checklist"
+        case .home: "house"
+        case .inbox: "tray"
+        case .activity: "list.bullet"
+        case .budgets: "chart.bar"
+        case .plan: "calendar"
+        case .scan: "doc.viewfinder"
         case .settings: "gearshape"
         }
     }
 
     @MainActor @ViewBuilder var screen: some View {
         switch self {
-        case .overview: OverviewView()
-        case .transactions: TransactionsView()
+        case .home: HomeView()
+        case .inbox: InboxView()
+        case .activity: TransactionsView()
         case .budgets: BudgetsView()
-        case .recurring: RecurringView()
-        case .review: ReviewView()
+        case .plan: PlanView()
+        case .scan: CaptureView()
         case .settings: SettingsView()
         }
     }
 }
 
 #if os(iOS)
+/// Four tabs plus Scan, which iOS draws as its own round button beside the tab bar.
+/// The Inbox opens from Home, and Settings from Home's toolbar.
 struct PhoneRootView: View {
     @EnvironmentObject var store: BudgetStore
-    @State private var selection = AppSection.overview
+    @State private var selection = AppSection.home
 
     var body: some View {
         TabView(selection: $selection) {
-            ForEach(AppSection.allCases) { section in
-                NavigationStack { section.screen }
-                    .tabItem { Label(section.rawValue, systemImage: section.systemImage) }
-                    .badge(section == .review ? store.needsReview.count : 0)
-                    .tag(section)
+            ForEach([AppSection.home, .activity, .budgets, .plan]) { section in
+                Tab(section.rawValue, systemImage: section.systemImage, value: section) {
+                    NavigationStack { section.screen }
+                }
+                .badge(section == .home ? store.needsReview.count : 0)
+            }
+            Tab(AppSection.scan.rawValue, systemImage: AppSection.scan.systemImage, value: AppSection.scan, role: .search) {
+                NavigationStack { CaptureView() }
             }
         }
     }
@@ -64,19 +73,32 @@ struct PhoneRootView: View {
 #if os(macOS)
 struct MacRootView: View {
     @EnvironmentObject var store: BudgetStore
-    @State private var selection: AppSection? = .overview
+    @State private var selection: AppSection? = .home
 
     var body: some View {
         NavigationSplitView {
-            List(AppSection.allCases, selection: $selection) { section in
-                Label(section.rawValue, systemImage: section.systemImage)
-                    .badge(section == .review ? store.needsReview.count : 0)
-                    .tag(section)
+            List(selection: $selection) {
+                ForEach([AppSection.home, .inbox, .activity, .budgets, .plan]) { section in
+                    Label(section.rawValue, systemImage: section.systemImage)
+                        .badge(section == .inbox ? store.needsReview.count : 0)
+                        .tag(section)
+                }
+                Section {
+                    Label(AppSection.settings.rawValue, systemImage: AppSection.settings.systemImage)
+                        .tag(AppSection.settings)
+                }
             }
             .navigationTitle("Budget & Receipts")
+            .navigationSplitViewColumnWidth(min: 200, ideal: 220)
         } detail: {
-            NavigationStack { (selection ?? .overview).screen }
+            NavigationStack { (selection ?? .home).screen }
+                .toolbar {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button { selection = .scan } label: { Label("Add Receipt", systemImage: "doc.viewfinder") }
+                    }
+                }
         }
+        .tint(.brandPink)
     }
 }
 #endif
