@@ -17,13 +17,13 @@ MAC_SIZES = [16, 32, 128, 256, 512]
 
 # Colour tokens: name -> (light, dark). Dark values are lifted for contrast on dark backgrounds.
 COLOURS = {
-    "AccentColor": ("#E23E44", "#FF6B6E"),
-    "BrandCoral": (PALETTE["coral"], "#FF6B6E"),
-    "BrandPlum": (PALETTE["plum"], "#B45CC0"),
-    "BrandAmber": ("#E8A321", PALETTE["amber"]),
-    "BrandBlush": (PALETTE["blush"], "#5A2A3A"),
-    "BrandCream": (PALETTE["cream"], "#2E1838"),
-    "BrandInk": (PALETTE["ink"], "#FFF4E0"),
+    "AccentColor": ("#D9286C", "#EC6096"),
+    "BrandPink": (PALETTE["pink"], "#EC6096"),
+    "BrandPlum": (PALETTE["plum"], "#C05AA8"),
+    "BrandIndigo": (PALETTE["indigo"], "#8C7BD6"),
+    "BrandAmber": ("#D9961C", PALETTE["amber"]),
+    "BrandCream": (PALETTE["cream"], "#2A1840"),
+    "BrandInk": (PALETTE["ink"], PALETTE["cream"]),
 }
 
 
