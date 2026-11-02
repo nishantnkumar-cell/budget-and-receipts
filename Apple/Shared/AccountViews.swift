@@ -104,6 +104,7 @@ struct AccountEditor: View {
         Form {
             TextField("Name", text: $account.name, prompt: Text("e.g. Joint current account"))
             TextField("Account number (last 4 digits are enough)", text: $account.number)
+            PrivateToggle(isPrivate: $account.isPrivate, footer: "Its transactions are private too.")
             Section {
                 TextField("Card endings, e.g. 1234, 5678", text: $cards)
             } footer: {
@@ -132,5 +133,20 @@ struct AccountEditor: View {
         account.cardEndings = cards.split(whereSeparator: { !$0.isNumber }).map { String($0.suffix(4)) }.filter { $0.count == 4 }
         account.name = account.name.trimmingCharacters(in: .whitespaces).isEmpty ? "Account" : account.name
         store.updateAccount(account)
+    }
+}
+
+/// Marks an item private: hidden from a partner you share the household with. Shared by default.
+struct PrivateToggle: View {
+    @Binding var isPrivate: Bool?
+    var footer = "Hidden from your partner when you share your household."
+
+    var body: some View {
+        Toggle(isOn: Binding(get: { isPrivate == true }, set: { isPrivate = $0 ? true : nil })) {
+            VStack(alignment: .leading, spacing: 2) {
+                Label("Private", systemImage: "lock")
+                Text(footer).font(.caption).foregroundStyle(.secondary)
+            }
+        }
     }
 }

@@ -19,6 +19,16 @@ struct SettingsView: View {
                     }
                 }
             }
+            Section {
+                Toggle("Sync with iCloud", isOn: $settings.iCloudSyncEnabled)
+                    .disabled(CloudSync.containerID == nil)
+            } header: {
+                Text("iCloud")
+            } footer: {
+                Text(CloudSync.containerID == nil
+                     ? "iCloud sync isn't available in this version of the app yet."
+                     : "Keeps your budget, receipts and contracts the same on your iPhone and Mac, through your own iCloud. Items marked Private stay private when you later share your household with a partner.")
+            }
             CoupleSettingsSection()
             AccountsSettingsSection()
             Section {

@@ -9,6 +9,8 @@ public struct BankAccount: Identifiable, Codable, Hashable, Sendable {
     public var number: String
     /// Last four digits of cards that pay from this account, as printed on receipts.
     public var cardEndings: [String]
+    /// Hidden, with its transactions, from a partner the household is shared with.
+    public var isPrivate: Bool?
 
     public init(id: UUID = UUID(), name: String, number: String = "", cardEndings: [String] = []) {
         self.id = id
