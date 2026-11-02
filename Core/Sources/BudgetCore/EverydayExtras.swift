@@ -95,3 +95,76 @@ public extension Categoriser {
         return transactions.filter { $0.id != transaction.id && $0.category == "Uncategorised" && $0.splits.isEmpty && merchantKey($0.merchant) == key }
     }
 }
+
+/// Spending for a date range, optionally for one tag: for an expense claim, a trip or a project.
+public struct ExpenseReport: Hashable, Sendable {
+    public let from: Date
+    public let to: Date
+    public let tag: String?
+    public let transactions: [BankTransaction]
+    public let byCategory: [(category: String, amount: Decimal)]
+    public let total: Decimal
+
+    public static func == (lhs: ExpenseReport, rhs: ExpenseReport) -> Bool {
+        lhs.from == rhs.from && lhs.to == rhs.to && lhs.tag == rhs.tag && lhs.transactions == rhs.transactions
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(from)
+        hasher.combine(to)
+        hasher.combine(tag)
+        hasher.combine(transactions)
+    }
+
+    public static func make(_ transactions: [BankTransaction], from: Date, to: Date, tag: String? = nil, calculator: BudgetCalculator = BudgetCalculator()) -> ExpenseReport {
+        let chosen = transactions.filter { transaction in
+            transaction.date >= from && transaction.date <= to
+                && (tag == nil || transaction.tags?.contains(where: { $0.caseInsensitiveCompare(tag!) == .orderedSame }) == true)
+        }.sorted { $0.date < $1.date }
+        var totals: [String: Decimal] = [:]
+        for transaction in chosen {
+            for (category, amount) in calculator.allocations(of: transaction) { totals[category, default: 0] += amount }
+        }
+        let byCategory = totals.filter { $0.value != 0 }.sorted { $0.value > $1.value }.map { (category: $0.key, amount: $0.value) }
+        return ExpenseReport(from: from, to: to, tag: tag, transactions: chosen, byCategory: byCategory, total: byCategory.reduce(0) { $0 + $1.amount })
+    }
+
+    /// The report as CSV for a spreadsheet: the transactions, then a total per category.
+    public func csv(calendar: Calendar = .current) -> String {
+        var text = CSVExporter.transactions(transactions, calendar: calendar)
+        text += "\r\nCategory,Total\r\n"
+        for line in byCategory { text += "\(CSVExporter.escape(line.category)),\(line.amount)\r\n" }
+        text += "Total,\(total)\r\n"
+        return text
+    }
+}
+
+/// Where the current account is heading by month end: today's balance, less bills still to
+/// come and everyday spending at the recent daily rate, plus income expected before then.
+public struct BalanceForecast: Hashable, Sendable {
+    public let today: Decimal
+    public let endOfMonth: Decimal
+    public let billsToCome: Decimal
+    public let everydaySpending: Decimal
+    public let incomeToCome: Decimal
+
+    /// Below zero at month end: worth a warning.
+    public var goesOverdrawn: Bool { endOfMonth < 0 }
+
+    public static func make(balance: Decimal, transactions: [BankTransaction], upcomingBills: [UpcomingItem], expectedIncome: [(date: Date, amount: Decimal)] = [],
+                            now: Date = Date(), calendar: Calendar = .current) -> BalanceForecast? {
+        guard let monthEnd = calendar.dateInterval(of: .month, for: now)?.end,
+              let since = calendar.date(byAdding: .day, value: -90, to: now) else { return nil }
+        let start = calendar.startOfDay(for: now)
+        let bills = upcomingBills.filter { $0.kind == .payment && $0.date >= start && $0.date < monthEnd }.reduce(Decimal(0)) { $0 + ($1.amount ?? 0) }
+        // Everyday spending: the last 90 days' purchases, not counting transfers.
+        let spent = transactions.filter { $0.date >= since && $0.date < start && $0.amount < 0 && !BudgetCalculator.transferCategories.contains($0.category) }
+            .reduce(Decimal(0)) { $0 - $1.amount }
+        let daysLeft = max(0, calendar.dateComponents([.day], from: start, to: monthEnd).day ?? 0)
+        var everyday = spent / 90 * Decimal(daysLeft)
+        var rounded = Decimal()
+        NSDecimalRound(&rounded, &everyday, 2, .plain)
+        let income = expectedIncome.filter { $0.date >= start && $0.date < monthEnd }.reduce(Decimal(0)) { $0 + $1.amount }
+        return BalanceForecast(today: balance, endOfMonth: balance - bills - rounded + income, billsToCome: bills, everydaySpending: rounded, incomeToCome: income)
+    }
+}

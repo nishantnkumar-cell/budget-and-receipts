@@ -48,3 +48,43 @@ final class EverydayExtrasTests: XCTestCase {
         XCTAssertEqual(try SyncRecord.decoder().decode(TransactionNote.self, from: HouseholdPerspective.flipped(record).payload).author, .partner)
     }
 }
+
+final class PaydayTagsForecastTests: XCTestCase {
+    private var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Europe/London")!
+        return calendar
+    }
+
+    private func day(_ month: Int, _ d: Int) -> Date { calendar.date(from: DateComponents(year: 2026, month: month, day: d, hour: 12))! }
+
+    func testPaydayMonthRunsFromTheStartDay() {
+        let calculator = BudgetCalculator(calendar: calendar, monthStartDay: 25)
+        XCTAssertTrue(calculator.isInMonth(day(10, 25), day(11, 1)), "25 October is in November's budget")
+        XCTAssertTrue(calculator.isInMonth(day(11, 24), day(11, 1)))
+        XCTAssertFalse(calculator.isInMonth(day(11, 25), day(11, 1)), "25 November starts December")
+        XCTAssertTrue(BudgetCalculator(calendar: calendar).isInMonth(day(11, 25), day(11, 1)), "Calendar months unchanged")
+    }
+
+    func testExpenseReportForATag() {
+        var hotel = BankTransaction(date: day(10, 5), merchant: "HOTEL", amount: -200, category: "Travel", fingerprint: "h")
+        hotel.tags = ["Work trip"]
+        var taxi = BankTransaction(date: day(10, 6), merchant: "UBER", amount: -25, category: "Transport", fingerprint: "t")
+        taxi.tags = ["work trip"]
+        let coffee = BankTransaction(date: day(10, 6), merchant: "COSTA", amount: -3, category: "Eating out", fingerprint: "c")
+        let report = ExpenseReport.make([hotel, taxi, coffee], from: day(10, 1), to: day(10, 31), tag: "Work trip", calculator: BudgetCalculator(calendar: calendar))
+        XCTAssertEqual(report.transactions.count, 2)
+        XCTAssertEqual(report.total, 225)
+        XCTAssertEqual(report.byCategory.first?.category, "Travel")
+        XCTAssertTrue(report.csv(calendar: calendar).hasSuffix("Total,225\r\n"))
+    }
+
+    func testBalanceForecast() {
+        let history = (1...90).map { BankTransaction(date: calendar.date(byAdding: .day, value: -$0, to: day(11, 11))!, merchant: "SHOP", amount: -10, category: "Groceries", fingerprint: "\($0)") }
+        let rent = UpcomingItem(contractID: UUID(), vendor: "Rent", kind: .payment, date: day(11, 25), amount: 1_000, currency: "GBP", billingPeriod: .monthly)
+        let forecast = BalanceForecast.make(balance: 1_500, transactions: history, upcomingBills: [rent], expectedIncome: [(day(11, 28), 2_000)], now: day(11, 11), calendar: calendar)
+        XCTAssertEqual(forecast?.everydaySpending, 200, "£10 a day for the 20 days left")
+        XCTAssertEqual(forecast?.endOfMonth, 1_500 - 1_000 - 200 + 2_000)
+        XCTAssertEqual(forecast?.goesOverdrawn, false)
+    }
+}
