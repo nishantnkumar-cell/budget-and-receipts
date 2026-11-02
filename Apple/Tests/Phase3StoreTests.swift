@@ -29,3 +29,20 @@ final class Phase3StoreTests: XCTestCase {
         XCTAssertEqual(result.newTransactions.first?.category, "Family")
     }
 }
+
+@MainActor
+final class SmartReceiptSettingTests: XCTestCase {
+    func testSmartReadingIsOnByDefaultAndCanBeTurnedOff() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        XCTAssertTrue(AppSettings(defaults: defaults).smartReceiptsEnabled)
+        AppSettings(defaults: defaults).smartReceiptsEnabled = false
+        XCTAssertFalse(AppSettings(defaults: defaults).smartReceiptsEnabled)
+    }
+
+    func testAGoodReceiptNeverReachesTheModel() async {
+        let parsed = ReceiptParser.parse(["CAFE", "Latte 3.20", "TOTAL 3.20"])
+        XCTAssertFalse(ReceiptAIMerge.needsHelp(parsed))
+        let improved = await ReceiptAIService.improve(parsed)
+        XCTAssertEqual(improved.items, parsed.items, "Whatever the device supports, a balanced reading comes back unchanged")
+    }
+}

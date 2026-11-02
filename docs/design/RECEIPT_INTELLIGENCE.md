@@ -29,6 +29,15 @@ Card payments are ranked by:
 
 Income and payments that are already split are never offered.
 
-## Next
+## Smart reading with Apple Intelligence (part 2)
 
-Part 2: use Apple's on-device model (Foundation Models, Apple Intelligence) to structure difficult receipts, falling back to these rules when it isn't available.
+When the rules can't make a receipt's items add up to its total, the app asks Apple's on-device model (Foundation Models) to read the OCR text. `ReceiptAIService` lives in the app and `ReceiptAIMerge` is the checking logic in Core. The model never sees the image, only the text, and nothing leaves the device.
+
+The model's answer is checked before it is used:
+
+- Every item price must be printed somewhere on the receipt. If even one isn't, none of the model's items are used.
+- Its items replace the rules' items only when they add up to a printed total, or fit the total better.
+- Unknown categories become Uncategorised.
+- A good rules-based reading is never sent to the model.
+
+Settings › Receipts › Smart receipt reading turns it off. It is on by default, and the footer says when the device can't run Apple Intelligence. The rules reader also now pairs a price printed on its own line with the name above it.

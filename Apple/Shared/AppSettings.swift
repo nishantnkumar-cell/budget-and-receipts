@@ -16,6 +16,12 @@ final class AppSettings: ObservableObject {
     @Published var currencyCode: String { didSet { defaults.set(currencyCode, forKey: Keys.currency) } }
     @Published var appLockEnabled: Bool { didSet { defaults.set(appLockEnabled, forKey: Keys.appLock) } }
     @Published var remindersEnabled: Bool { didSet { defaults.set(remindersEnabled, forKey: Keys.reminders) } }
+    /// Use Apple Intelligence on the device for receipts the normal reading gets wrong. On by default.
+    @Published var smartReceiptsEnabled: Bool { didSet { defaults.set(smartReceiptsEnabled, forKey: Keys.smartReceipts) } }
+
+    nonisolated static var smartReceipts: Bool {
+        UserDefaults.standard.object(forKey: Keys.smartReceipts) as? Bool ?? true
+    }
 
     private let defaults: UserDefaults
 
@@ -23,6 +29,7 @@ final class AppSettings: ObservableObject {
         static let currency = "currencyCode"
         static let appLock = "appLockEnabled"
         static let reminders = "remindersEnabled"
+        static let smartReceipts = "smartReceiptsEnabled"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -30,6 +37,7 @@ final class AppSettings: ObservableObject {
         currencyCode = defaults.string(forKey: Keys.currency) ?? Locale.current.currency?.identifier ?? "GBP"
         appLockEnabled = defaults.bool(forKey: Keys.appLock)
         remindersEnabled = defaults.bool(forKey: Keys.reminders)
+        smartReceiptsEnabled = defaults.object(forKey: Keys.smartReceipts) as? Bool ?? true
     }
 }
 
