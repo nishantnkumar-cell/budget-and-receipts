@@ -76,6 +76,7 @@ struct TransactionsView: View {
                 ContentUnavailableView.search(text: query)
             }
         }
+        .safeAreaInset(edge: .bottom) { CategorisingBanner().padding(.bottom, 8) }
         .searchable(text: $query)
         .sheet(isPresented: $addingTransaction) {
             NavigationStack { NewTransactionView() }

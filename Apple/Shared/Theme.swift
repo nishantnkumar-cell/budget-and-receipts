@@ -77,6 +77,7 @@ struct BudgetProgressRow: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 Text(line.category).font(.body.weight(.semibold))
+                    .foregroundStyle(line.isOverBudget ? Color.red : Color.primary)
                 Spacer()
                 if let remaining = line.remaining, let limit = line.limit {
                     if remaining < 0 {
@@ -92,6 +93,11 @@ struct BudgetProgressRow: View {
             .monospacedDigit()
             if let progress = line.progress {
                 ProgressView(value: min(progress, 1)).tint(tint)
+                if line.isTentative {
+                    Label("Tentative: your 3-month average. Set a budget to replace it.", systemImage: "wand.and.stars")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             } else {
                 Text("No limit set").font(.caption).foregroundStyle(.secondary)
             }

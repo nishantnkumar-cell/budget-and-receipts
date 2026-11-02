@@ -13,6 +13,10 @@ final class BudgetStore: ObservableObject {
     /// Scanned receipts whose card payment is not on a statement yet.
     @Published var pendingReceipts: [PendingReceipt] = []
     @Published var accounts: [BankAccount] = []
+    /// True while Apple Intelligence or Apple Maps is finding categories.
+    @Published var isCategorising = false
+    /// What the last category lookup did, shown briefly.
+    @Published var categorisingResult: String?
     /// Categories found for merchants the app didn't know, by merchant key.
     @Published var merchantCategories: [String: MerchantCategory] = [:]
     /// Every file shared or opened with the app, and what became of it.
@@ -214,6 +218,8 @@ final class BudgetStore: ObservableObject {
         guard useAI || useMaps else { return 0 }
         let merchants = MerchantCategories.unknownMerchants(transactions, known: merchantCategories, categoriser: categoriser).prefix(60)
         guard !merchants.isEmpty else { return 0 }
+        isCategorising = true
+        defer { isCategorising = false }
         for merchant in merchants {
             let found: MerchantCategory?
             if let result = await lookup(merchant) {
@@ -226,6 +232,9 @@ final class BudgetStore: ObservableObject {
         let before = transactions.filter { $0.category == "Uncategorised" }.count
         transactions = categoriser.categorise(transactions)
         let filled = before - transactions.filter { $0.category == "Uncategorised" }.count
+        categorisingResult = filled == 0
+            ? "No new categories found. You can set them yourself."
+            : "Categorised \(filled) payment\(filled == 1 ? "" : "s"). Check them in Activity."
         persist()
         return filled
     }

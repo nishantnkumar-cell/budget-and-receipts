@@ -4,14 +4,17 @@ import Foundation
 public struct CategoryBudgetLine: Identifiable, Hashable, Sendable {
     public var id: String { category }
     public let category: String
-    /// Nil when no budget has been set for this category.
+    /// Nil when no budget has been set for this category and there's no history to suggest one.
     public let limit: Decimal?
     public let spent: Decimal
+    /// True when the limit isn't one you set but your average spending over recent months.
+    public let isTentative: Bool
 
-    public init(category: String, limit: Decimal?, spent: Decimal) {
+    public init(category: String, limit: Decimal?, spent: Decimal, isTentative: Bool = false) {
         self.category = category
         self.limit = limit
         self.spent = spent
+        self.isTentative = isTentative
     }
 
     public var remaining: Decimal? { limit.map { $0 - spent } }
@@ -77,9 +80,14 @@ public struct BudgetCalculator: Sendable {
 
     public func report(_ transactions: [BankTransaction], budgets: [MonthlyBudget], month: Date) -> MonthlyBudgetReport {
         let spent = spendingByCategory(transactions, month: month)
-        let categories = FinanceCategories.budgetable.filter { budget(for: $0, in: budgets, month: month) != nil || spent[$0] != nil }
+        let averages = averageSpending(transactions, before: month)
+        let categories = FinanceCategories.budgetable.filter { budget(for: $0, in: budgets, month: month) != nil || spent[$0] != nil || averages[$0] != nil }
         let lines = categories.map { category in
-            CategoryBudgetLine(category: category, limit: effectiveLimit(for: category, transactions: transactions, budgets: budgets, month: month), spent: spent[category] ?? 0)
+            if let limit = effectiveLimit(for: category, transactions: transactions, budgets: budgets, month: month) {
+                return CategoryBudgetLine(category: category, limit: limit, spent: spent[category] ?? 0)
+            }
+            // No budget set: your average over recent months stands in, marked as tentative.
+            return CategoryBudgetLine(category: category, limit: averages[category], spent: spent[category] ?? 0, isTentative: averages[category] != nil)
         }
         return MonthlyBudgetReport(
             month: month,
@@ -87,6 +95,29 @@ public struct BudgetCalculator: Sendable {
             spending: spent.values.reduce(0, +),
             lines: lines
         )
+    }
+
+    /// Average monthly spending per category over up to three months before `month`, counting
+    /// only months with any transactions (so a new user's first month isn't divided by three).
+    /// Rounded to whole pounds; categories averaging nothing are left out.
+    public func averageSpending(_ transactions: [BankTransaction], before month: Date, months: Int = 3) -> [String: Decimal] {
+        var totals: [String: Decimal] = [:]
+        var monthsWithData = 0
+        for back in 1...months {
+            guard let earlier = calendar.date(byAdding: .month, value: -back, to: month) else { continue }
+            guard transactions.contains(where: { isInMonth($0.date, earlier) }) else { continue }
+            monthsWithData += 1
+            for (category, amount) in spendingByCategory(transactions, month: earlier) where FinanceCategories.budgetable.contains(category) {
+                totals[category, default: 0] += amount
+            }
+        }
+        guard monthsWithData > 0 else { return [:] }
+        return totals.compactMapValues { total in
+            var average = total / Decimal(monthsWithData)
+            var rounded = Decimal()
+            NSDecimalRound(&rounded, &average, 0, .plain)
+            return rounded > 0 ? rounded : nil
+        }
     }
 
     /// The budget for a category in a month. A budget carries forward to later months

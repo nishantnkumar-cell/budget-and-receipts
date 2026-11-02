@@ -91,3 +91,31 @@ extension BankTransaction {
     /// Added by hand rather than imported from a statement.
     var isManual: Bool { fingerprint.hasPrefix("manual:") || description == "Manual entry" }
 }
+
+/// A strip that shows while categories are being found, then what was done, for a few seconds.
+struct CategorisingBanner: View {
+    @EnvironmentObject var store: BudgetStore
+
+    var body: some View {
+        Group {
+            if store.isCategorising {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Finding categories for new shops…")
+                }
+            } else if let result = store.categorisingResult {
+                Label(result, systemImage: "wand.and.stars")
+                    .task {
+                        try? await Task.sleep(for: .seconds(5))
+                        store.categorisingResult = nil
+                    }
+            }
+        }
+        .font(.footnote)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.thinMaterial, in: Capsule())
+        .opacity(store.isCategorising || store.categorisingResult != nil ? 1 : 0)
+        .animation(.default, value: store.isCategorising)
+    }
+}
