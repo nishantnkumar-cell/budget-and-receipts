@@ -21,103 +21,57 @@ extension View {
     }
 }
 
-struct MoneyCard: View {
-    let title: String
-    let amount: Decimal
-    let colour: Color
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.caption).foregroundStyle(.secondary)
-            Text(amount, format: .currency(code: AppSettings.currency))
-                .font(.title2.bold())
-                .minimumScaleFactor(0.7)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(colour.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
-    }
-}
-
-struct OverviewView: View {
-    @EnvironmentObject var store: BudgetStore
-    @EnvironmentObject var subscriptions: SubscriptionStore
-
-    private var annualContracts: Decimal {
-        subscriptions.contracts
-            .filter { $0.status == .active }
-            .reduce(0) { $0 + SubscriptionSchedule().annualisedCost($1) }
-    }
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                HStack {
-                    Text("Personal Budget").font(.largeTitle.bold())
-                    Spacer()
-                    MonthSwitcher()
-                }
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())]) {
-                    MoneyCard(title: "Income", amount: store.income, colour: .green)
-                    MoneyCard(title: "Spending", amount: store.spending, colour: .brandPink)
-                    MoneyCard(title: "Net", amount: store.income - store.spending, colour: .brandIndigo)
-                    MoneyCard(title: "Annual contracts", amount: annualContracts, colour: .brandAmber)
-                }
-                NavigationLink {
-                    ReviewView()
-                } label: {
-                    Label("\(store.needsReview.count) items need review", systemImage: "checklist")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding()
-                        .background(Color.brandAmber.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
-                }
-                UpcomingContractsView()
-            }
-            .padding()
-        }
-        .navigationTitle("Overview")
-        .inlineNavigationTitle()
-    }
-}
-
+/// Activity: every transaction, newest first, grouped by day and searchable.
 struct TransactionsView: View {
     @EnvironmentObject var store: BudgetStore
     @State private var query = ""
 
     private var shown: [BankTransaction] {
-        guard !query.isEmpty else { return store.transactions }
-        return store.transactions.filter {
+        let all = store.transactions.sorted { $0.date > $1.date }
+        guard !query.isEmpty else { return all }
+        return all.filter {
             $0.merchant.localizedCaseInsensitiveContains(query) || $0.category.localizedCaseInsensitiveContains(query)
         }
     }
 
+    private var days: [(day: Date, transactions: [BankTransaction])] {
+        Dictionary(grouping: shown) { Calendar.current.startOfDay(for: $0.date) }
+            .map { (day: $0.key, transactions: $0.value) }
+            .sorted { $0.day > $1.day }
+    }
+
     var body: some View {
         List {
-            ForEach(shown) { transaction in
-                NavigationLink {
-                    TransactionEditor(transaction: transaction)
-                } label: {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(transaction.merchant).font(.headline)
-                            Text(transaction.category).font(.caption).foregroundStyle(.secondary)
+            ForEach(days, id: \.day) { group in
+                Section(group.day.formatted(.dateTime.weekday(.wide).day().month(.wide))) {
+                    ForEach(group.transactions) { transaction in
+                        NavigationLink {
+                            TransactionEditor(transaction: transaction)
+                        } label: {
+                            TransactionRow(transaction: transaction)
                         }
-                        Spacer()
-                        Text(transaction.amount, format: .currency(code: AppSettings.currency))
-                            .foregroundStyle(transaction.amount < 0 ? .primary : Color.green)
-                    }
-                }
-                .swipeActions {
-                    Button(role: .destructive) {
-                        store.delete(transaction)
-                    } label: {
-                        Label("Delete", systemImage: "trash")
+                        .swipeActions {
+                            Button(role: .destructive) {
+                                store.delete(transaction)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
                     }
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .appBackground()
+        .overlay {
+            if store.transactions.isEmpty {
+                ContentUnavailableView("No transactions yet", systemImage: "list.bullet.rectangle", description: Text("Import a bank statement or add a transaction."))
+            } else if shown.isEmpty {
+                ContentUnavailableView.search(text: query)
+            }
+        }
         .searchable(text: $query)
-        .navigationTitle("Transactions")
+        .navigationTitle("Activity")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button(action: store.addTransaction) { Image(systemName: "plus") }
@@ -155,67 +109,62 @@ struct TransactionEditor: View {
     }
 }
 
-struct RecurringView: View {
+/// Plan: bills, subscriptions and contracts, with the next 30 days at the top.
+struct PlanView: View {
     @EnvironmentObject var subscriptions: SubscriptionStore
 
+    private var annualCost: Decimal {
+        subscriptions.contracts
+            .filter { $0.status == .active }
+            .reduce(0) { $0 + SubscriptionSchedule().annualisedCost($1) }
+    }
+
     var body: some View {
+        let due = SubscriptionTracker().dueSoon(subscriptions.contracts, from: Date(), days: 30)
         List {
-            NavigationLink("Add contract") { ContractEditor(contract: .blank()) }
-            ForEach(subscriptions.contracts) { contract in
-                NavigationLink {
-                    ContractEditor(contract: contract)
-                } label: {
-                    VStack(alignment: .leading) {
-                        Text(contract.vendor).font(.headline)
-                        Text("Next: \(contract.nextPaymentDueDate.formatted(date: .abbreviated, time: .omitted)) · \(contract.expectedAmount.formatted(.currency(code: contract.currency)))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+            Section {
+                LabeledContent("Committed per year") { Text(annualCost.money).fontWeight(.semibold).monospacedDigit() }
+                LabeledContent("Due in the next 30 days") { Text("\(due.count)").fontWeight(.semibold) }
+            }
+            if !due.isEmpty {
+                Section("Coming up") {
+                    ForEach(due) { contract in
+                        NavigationLink { ContractEditor(contract: contract) } label: { ContractRow(contract: contract) }
                     }
                 }
             }
-        }
-        .navigationTitle("Recurring")
-    }
-}
-
-struct ReviewView: View {
-    @EnvironmentObject var store: BudgetStore
-
-    var body: some View {
-        List(store.needsReview) { transaction in
-            NavigationLink {
-                TransactionEditor(transaction: transaction)
-            } label: {
-                VStack(alignment: .leading) {
-                    Text(transaction.merchant).bold()
-                    Text(transaction.pendingSplitDraft == nil ? "Uncategorised" : "Receipt split awaiting approval")
-                        .font(.caption)
-                        .foregroundStyle(.brandAmber)
+            Section("All bills and subscriptions") {
+                ForEach(subscriptions.contracts) { contract in
+                    NavigationLink { ContractEditor(contract: contract) } label: { ContractRow(contract: contract) }
+                }
+                NavigationLink { ContractEditor(contract: .blank()) } label: {
+                    Label("Add a bill or subscription", systemImage: "plus")
                 }
             }
         }
-        .navigationTitle("Review")
+        .scrollContentBackground(.hidden)
+        .appBackground()
+        .navigationTitle("Plan")
     }
 }
 
-struct UpcomingContractsView: View {
-    @EnvironmentObject var subscriptions: SubscriptionStore
+struct ContractRow: View {
+    let contract: SubscriptionContract
 
     var body: some View {
-        VStack(alignment: .leading) {
-            Text("Upcoming payments").font(.headline)
-            ForEach(SubscriptionTracker().dueSoon(subscriptions.contracts, from: Date(), days: 30).prefix(5)) { contract in
-                HStack {
-                    Text(contract.vendor)
-                    Spacer()
-                    Text(contract.expectedAmount, format: .currency(code: contract.currency))
-                }
-                .padding(.vertical, 4)
+        HStack {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(contract.vendor).font(.body.weight(.semibold))
+                Text("Next \(contract.nextPaymentDueDate.formatted(.dateTime.day().month(.abbreviated))) · \(contract.billingPeriod.title)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
+            Spacer()
+            Text(contract.expectedAmount, format: .currency(code: contract.currency))
+                .fontWeight(.semibold)
+                .monospacedDigit()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .accessibilityElement(children: .combine)
     }
 }
 

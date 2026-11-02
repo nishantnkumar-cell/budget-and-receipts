@@ -1,28 +1,10 @@
 import BudgetCore
 import SwiftUI
 
-/// "‹ October 2026 ›" control that changes the month shown on Overview and Budgets.
-struct MonthSwitcher: View {
-    @EnvironmentObject var store: BudgetStore
-
-    var body: some View {
-        HStack {
-            Button { store.moveMonth(by: -1) } label: { Image(systemName: "chevron.left") }
-                .accessibilityLabel("Previous month")
-            Text(store.selectedMonth, format: .dateTime.month(.wide).year())
-                .font(.headline)
-                .frame(minWidth: 140)
-            Button { store.moveMonth(by: 1) } label: { Image(systemName: "chevron.right") }
-                .accessibilityLabel("Next month")
-        }
-        .buttonStyle(.borderless)
-    }
-}
-
+/// Budgets: the month's totals, then every category with what's left. Tap one to set its limit.
 struct BudgetsView: View {
     @EnvironmentObject var store: BudgetStore
-    @State private var editing: String?
-    @State private var limitText = ""
+    @State private var editing: CategoryBudgetLine?
 
     /// Every budgetable category, including ones with no budget and no spending yet.
     private func lines(_ report: MonthlyBudgetReport) -> [CategoryBudgetLine] {
@@ -31,85 +13,120 @@ struct BudgetsView: View {
         }
     }
 
-    private func startEditing(_ line: CategoryBudgetLine) {
-        editing = line.category
-        limitText = line.limit.map { "\($0)" } ?? ""
-    }
-
     var body: some View {
         let report = store.monthReport
-        List {
-            Section {
+        let budgeted = report.lines.compactMap(\.limit).reduce(0, +)
+        ScrollView {
+            VStack(spacing: Theme.spacing) {
                 HStack {
                     Spacer()
                     MonthSwitcher()
-                    Spacer()
                 }
-                LabeledContent("Spent this month") { Text(report.spending, format: .currency(code: AppSettings.currency)) }
-                LabeledContent("Income this month") { Text(report.income, format: .currency(code: AppSettings.currency)) }
-            }
-            Section("Categories") {
-                ForEach(lines(report)) { line in
-                    BudgetRow(line: line) { startEditing(line) }
+                HStack(spacing: 10) {
+                    SummaryTile(title: "Budgeted", amount: budgeted)
+                    SummaryTile(title: "Spent", amount: report.spending)
+                    SummaryTile(title: "Income", amount: report.income, tint: .green)
                 }
+                VStack(spacing: 0) {
+                    ForEach(lines(report)) { line in
+                        Button { editing = line } label: {
+                            BudgetProgressRow(line: line)
+                                .padding(.vertical, 14)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Set the monthly limit")
+                        if line.id != lines(report).last?.id { Divider() }
+                    }
+                }
+                .card(padding: 16)
             }
+            .padding()
+            .frame(maxWidth: 720)
+            .frame(maxWidth: .infinity)
         }
+        .appBackground()
         .navigationTitle("Budgets")
-        .alert("Monthly limit for \(editing ?? "")", isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) {
-            TextField("Amount", text: $limitText).decimalKeyboard()
-            Button("Save") {
-                if let category = editing, let limit = AmountParser.parse(limitText, decimalComma: false), limit >= 0 {
-                    store.setBudget(category: category, limit: limit, month: store.selectedMonth)
-                }
-                editing = nil
-            }
-            Button("Cancel", role: .cancel) { editing = nil }
-        } message: {
-            Text("Applies from \(store.selectedMonth.formatted(.dateTime.month(.wide).year())) until you change it.")
+        .sheet(item: $editing) { line in
+            BudgetLimitSheet(line: line)
         }
     }
 }
 
-struct BudgetRow: View {
-    let line: CategoryBudgetLine
-    let onEdit: () -> Void
+struct SummaryTile: View {
+    let title: String
+    let amount: Decimal
+    var tint: Color = .primary
 
-    private var barColour: Color {
-        guard let progress = line.progress else { return .secondary }
-        if progress > 1 { return .brandPink }
-        if progress > 0.85 { return .brandAmber }
-        return .brandIndigo
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(amount.money)
+                .font(.headline)
+                .foregroundStyle(tint)
+                .monospacedDigit()
+                .minimumScaleFactor(0.6)
+                .lineLimit(1)
+        }
+        .card(padding: 12)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Sets a category's monthly limit and whether leftover money rolls into next month.
+struct BudgetLimitSheet: View {
+    @EnvironmentObject var store: BudgetStore
+    @Environment(\.dismiss) private var dismiss
+    let line: CategoryBudgetLine
+    @State private var limitText = ""
+    @State private var rollover = false
+
+    /// The rollover setting of the budget in force for the month being viewed.
+    private var currentRollover: Bool {
+        store.budgets
+            .filter { $0.category == line.category && $0.month <= store.selectedMonth }
+            .max { $0.month < $1.month }?
+            .rollover ?? false
+    }
+
+    private var limit: Decimal? {
+        guard let value = AmountParser.parse(limitText, decimalComma: false), value >= 0 else { return nil }
+        return value
     }
 
     var body: some View {
-        Button(action: onEdit) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text(line.category).foregroundStyle(.primary)
-                    Spacer()
-                    Text(line.spent, format: .currency(code: AppSettings.currency)).monospacedDigit()
-                    if let limit = line.limit {
-                        Text("of \(limit.formatted(.currency(code: AppSettings.currency)))")
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                }
-                if let progress = line.progress {
-                    ProgressView(value: min(progress, 1))
-                        .tint(barColour)
-                    if let remaining = line.remaining {
-                        Text(remaining < 0 ? "\((-remaining).formatted(.currency(code: AppSettings.currency))) over" : "\(remaining.formatted(.currency(code: AppSettings.currency))) left")
-                            .font(.caption)
-                            .foregroundStyle(remaining < 0 ? Color.brandPink : .secondary)
-                    }
-                } else {
-                    Text("No limit set. Tap to add one.").font(.caption).foregroundStyle(.secondary)
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Monthly limit", text: $limitText).decimalKeyboard()
+                    Toggle("Roll over leftover money", isOn: $rollover)
+                } footer: {
+                    Text("Applies from \(store.selectedMonth.formatted(.dateTime.month(.wide).year())) until you change it. With roll over on, money you don't spend is added to next month's limit.")
                 }
             }
-            .contentShape(Rectangle())
+            .formStyle(.grouped)
+            .navigationTitle(line.category)
+            .inlineNavigationTitle()
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        if let limit {
+                            store.setBudget(category: line.category, limit: limit, month: store.selectedMonth, rollover: rollover)
+                        }
+                        dismiss()
+                    }
+                    .disabled(limit == nil)
+                }
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityHint("Set the monthly limit")
+        .onAppear {
+            limitText = line.limit.map { "\($0)" } ?? ""
+            rollover = currentRollover
+        }
+        .presentationDetents([.medium])
+        #if os(macOS)
+        .frame(minWidth: 380, minHeight: 240)
+        #endif
     }
 }
