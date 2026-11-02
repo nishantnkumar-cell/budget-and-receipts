@@ -1,0 +1,35 @@
+{
+  "project": "BudgetMacPersonal",
+  "review_type": "independent second-pair functional and security review",
+  "do_not_assume": [
+    "project compiles",
+    "existing tests pass",
+    "all features are wired into App.swift",
+    "data is persisted",
+    "OCR is invoked by the current UI"
+  ],
+  "required_outputs": [
+    "environment",
+    "build result",
+    "existing test result",
+    "independent tests",
+    "functional findings",
+    "security findings",
+    "privacy findings",
+    "architecture findings",
+    "residual risks",
+    "release verdict"
+  ],
+  "priority_risks": [
+    "approval bypass",
+    "policy drift",
+    "financial rounding",
+    "refund direction",
+    "OCR input abuse",
+    "PII leakage",
+    "JSON corruption",
+    "vendor false matching",
+    "duplicate transactions",
+    "unwired features"
+  ]
+}
