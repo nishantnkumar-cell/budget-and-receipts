@@ -40,6 +40,30 @@ final class PDFStatementTests: XCTestCase {
         XCTAssertEqual(rows.first?.accountNumber, "12345678")
     }
 
+    func testSummaryCheck() throws {
+        let lines = ["Statement", "Payments In £2,509.99", "Payments Out £97.40"] + current
+        XCTAssertNil(PDFStatementParser.summaryDifference(lines, rows: try parse(lines)))
+        let wrong = ["Statement", "Payments In £2,509.99", "Payments Out £100.00"] + current
+        XCTAssertEqual(PDFStatementParser.summaryDifference(wrong, rows: try parse(wrong)), money("2.60"))
+    }
+
+    func testCardRowsWithTwoDatesUseTheTransactionDate() throws {
+        let rows = try parse([
+            "Credit Card Statement", "Previous Balance 100.00", "Debits 30.00", "Credits 20.00",
+            "Received By Us Transaction Date Details Amount",
+            "22 Jul 26 21 Jul 26 ))) SAINSBURYS S/MKTS HAMPTON 25.00",
+            "25 Jul 26 24 Jul 26 ))) SAINSBURYS S/MKTS ST CLARES 20.00CR",
+            "26 Jul 26 26 Jul 26 IAP Vinted London 5.00",
+            "Summary Of Interest On This Statement",
+            "NO INTEREST CHARGED ON THIS STATEMENT",
+            "Your Credit Card Statement",
+            "Estimated interest - next month 33.86",
+        ])
+        XCTAssertEqual(rows.map(\.description), ["SAINSBURYS S/MKTS HAMPTON", "SAINSBURYS S/MKTS ST CLARES", "IAP Vinted London"])
+        XCTAssertEqual(rows.map(\.amount), [money("-25.00"), money("20.00"), money("-5.00")])
+        XCTAssertEqual(ymd(rows[0].date), "2026-7-21")
+    }
+
     func testRecognisedAsAStatementNotAReceipt() {
         XCTAssertTrue(PDFStatementParser.looksLikeStatement(current))
         XCTAssertFalse(PDFStatementParser.looksLikeStatement(["TESCO", "MILK 1.20", "BREAD 1.10", "TOTAL 2.30", "12/10/2026 14:32", "VISA ****1234"]))

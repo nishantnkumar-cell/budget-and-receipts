@@ -89,6 +89,11 @@ struct ImportStatementView: View {
                 Section("Preview") {
                     LabeledContent("New transactions", value: "\(preview.newTransactions.count)")
                     LabeledContent("Already imported, skipped", value: "\(preview.duplicates.count)")
+                    if let difference = preview.summaryDifference {
+                        Label("The payments read differ from the statement's own totals by \(difference.formatted(.currency(code: AppSettings.currency))). Check them after importing, or use your bank's CSV or OFX download.", systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(Color.brandPink)
+                            .font(.callout)
+                    }
                     if !preview.possibleDuplicates.isEmpty {
                         LabeledContent("Check: same day and amount as an existing entry", value: "\(preview.possibleDuplicates.count)")
                     }

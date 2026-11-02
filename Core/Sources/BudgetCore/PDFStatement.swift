@@ -12,7 +12,10 @@ public enum PDFStatementParser {
         let wording = ["statement", "balance", "account number", "sort code", "brought forward", "paid out", "money out"]
         guard wording.contains(where: text.contains) else { return false }
         let dated = lines.filter { leadingDate($0) != nil && !amounts(in: $0).isEmpty }
-        return dated.count >= 4
+        if dated.count >= 4 { return true }
+        // Credit card statements whose text runs the transactions together.
+        let pair = "\\d{1,2} [A-Za-z]{3} \\d{2,4} \\d{1,2} [A-Za-z]{3} \\d{2,4} "
+        return lines.contains { $0.components(separatedBy: " ").count > 8 && ($0.range(of: pair, options: .regularExpression) != nil) }
     }
 
     public static func parse(_ lines: [String], fallbackYear: Int, timeZone: TimeZone = .current) throws -> [StatementRow] {
@@ -20,44 +23,162 @@ public enum PDFStatementParser {
         calendar.timeZone = timeZone
         let years = statementYears(lines, fallback: fallbackYear)
         let accountNumber = self.accountNumber(in: lines)
+        let rows = cardColumns(lines, years: years, calendar: calendar, accountNumber: accountNumber)
+            ?? table(lines, years: years, calendar: calendar, accountNumber: accountNumber)
+        guard !rows.isEmpty else { throw StatementImportError.empty }
+        return rows
+    }
+
+    /// The usual layout: date, details (sometimes over two or three lines), amount and often a
+    /// running balance. Only lines between "brought forward" and "carried forward" count, when
+    /// the statement has them, so summaries and small print are never read as payments.
+    static func table(_ lines: [String], years: (start: Int, startMonth: Int, end: Int), calendar: Calendar, accountNumber: String?) -> [StatementRow] {
+        let hasMarkers = lines.contains { $0.lowercased().contains("brought forward") }
+        var inTable = !hasMarkers
+        var expectBalance = false
         var rows: [StatementRow] = []
         var balance: Decimal?
-        var lastDate: Date?
+        var date: Date?
+        var parts: [String] = []
+        /// Rows since the last balance, waiting for it to confirm their signs.
+        var unconfirmed: [Int] = []
 
         for raw in lines {
             let line = raw.trimmingCharacters(in: .whitespaces)
             let lower = line.lowercased()
             let values = amounts(in: line)
-            if lower.contains("brought forward") || lower.contains("opening balance") || lower.contains("previous balance") || lower.contains("balance from previous") {
-                if let last = values.last { balance = last.value }
+            let dated = leadingDate(line)
+            if lower.contains("brought forward") || lower.contains("opening balance") || lower.contains("previous balance") {
+                if lower.contains("brought forward") { inTable = true }
+                if let last = values.last { balance = last.value } else { expectBalance = true }
+                if let dated, let start = makeDate(dated, years: years, calendar: calendar) { date = start }
+                parts = []
                 continue
             }
-            if lower.contains("carried forward") || lower.contains("closing balance") || lower.hasPrefix("total") || lower.contains("new balance") { continue }
-
-            let dated = leadingDate(line)
-            guard !values.isEmpty, let date = dated.flatMap({ makeDate($0, years: years, calendar: calendar) }) ?? lastDate else { continue }
-            lastDate = date
-            let description = descriptionText(line, dateLength: dated?.length ?? 0)
+            guard inTable else { continue }
+            if expectBalance, let only = values.first, values.count == 1, dated == nil, descriptionText(line, dateLength: 0).isEmpty {
+                balance = only.value
+                expectBalance = false
+                continue
+            }
+            if lower.contains("carried forward") || lower.contains("closing balance") {
+                if hasMarkers { inTable = false }
+                parts = []
+                continue
+            }
+            if lower.hasPrefix("date ") || lower.hasPrefix("total") || line.count <= 2 { continue }
+            var dateLength = dated?.length ?? 0
+            if let dated, var day = makeDate(dated, years: years, calendar: calendar) {
+                // Card statements give two dates, "received" then "transaction": use the second.
+                let rest = String(line.dropFirst(dateLength)).trimmingCharacters(in: .whitespaces)
+                if let second = leadingDate(rest), let transactionDay = makeDate(second, years: years, calendar: calendar) {
+                    day = transactionDay
+                    dateLength = line.count - rest.count + second.length
+                }
+                date = day
+                parts = []
+            }
+            let text = descriptionText(line, dateLength: dateLength)
+            guard !values.isEmpty else {
+                if !text.isEmpty { parts.append(text) }
+                // More than a couple of lines of words: the table has ended (small print, headers).
+                if parts.count > 2 {
+                    parts = []
+                    date = nil
+                }
+                continue
+            }
+            guard let date else { continue }
+            let description = (parts + [text]).filter { !$0.isEmpty }.joined(separator: " ")
+            parts = []
             guard !description.isEmpty else { continue }
 
-            var amount = values[0].value
+            let first = values[0]
+            let credit = first.isCredit || isCreditWording(description.lowercased())
+            rows.append(StatementRow(date: date, description: StatementImporter.cleanDescription(description), amount: credit ? first.value : -first.value, accountNumber: accountNumber))
+            unconfirmed.append(rows.count - 1)
             if values.count >= 2 {
-                // Amount then running balance.
+                // The running balance settles the signs: for one payment exactly, and for
+                // several, it flips a lone guess that doesn't add up.
                 let newBalance = values[values.count - 1].value
-                if let previous = balance, abs(newBalance - previous) == amount {
-                    amount = newBalance - previous
-                } else {
-                    amount = values[0].isCredit || isCreditWording(lower) ? amount : -amount
+                if let previous = balance {
+                    let change = newBalance - previous
+                    if unconfirmed.count == 1, abs(change) == first.value {
+                        rows[unconfirmed[0]].amount = change
+                    } else {
+                        let total = unconfirmed.reduce(Decimal(0)) { $0 + rows[$1].amount }
+                        if total != change, let wrong = unconfirmed.first(where: { total - 2 * rows[$0].amount == change }) {
+                            rows[wrong].amount = -rows[wrong].amount
+                        }
+                    }
                 }
                 balance = newBalance
-            } else {
-                // No balance column, e.g. a credit card: spending unless marked as a credit.
-                amount = values[0].isCredit || isCreditWording(lower) ? amount : -amount
+                unconfirmed = []
             }
-            rows.append(StatementRow(date: date, description: StatementImporter.cleanDescription(description), amount: amount, accountNumber: accountNumber))
         }
-        guard !rows.isEmpty else { throw StatementImportError.empty }
         return rows
+    }
+
+    /// Credit card statements where the PDF text lists every transaction ("received" date,
+    /// transaction date, details) run together, with the amounts in a column afterwards.
+    /// The last transaction on a line sometimes carries its amount inline.
+    static func cardColumns(_ lines: [String], years: (start: Int, startMonth: Int, end: Int), calendar: Calendar, accountNumber: String?) -> [StatementRow]? {
+        let date = "(\\d{1,2} [A-Za-z]{3} \\d{2,4})"
+        guard let pair = try? NSRegularExpression(pattern: "\(date) \(date) ") else { return nil }
+        let detailLines = lines.filter { pair.numberOfMatches(in: $0, range: NSRange($0.startIndex..., in: $0)) >= 2 }
+        guard !detailLines.isEmpty else { return nil }
+        var queue = lines.filter { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            return trimmed.range(of: "^\\d{1,3}(?:,\\d{3})*\\.\\d{2}\\s?(?:CR|Cr)?$", options: .regularExpression) != nil
+        }.compactMap { amounts(in: $0).first }
+
+        var rows: [StatementRow] = []
+        for line in detailLines {
+            let matches = pair.matches(in: line, range: NSRange(line.startIndex..., in: line))
+            for (index, match) in matches.enumerated() {
+                guard let dateRange = Range(match.range(at: 2), in: line),
+                      let leading = leadingDate(String(line[dateRange])),
+                      let day = makeDate(leading, years: years, calendar: calendar),
+                      let start = Range(match.range, in: line)?.upperBound else { continue }
+                let end = index + 1 < matches.count ? (Range(matches[index + 1].range, in: line)?.lowerBound ?? line.endIndex) : line.endIndex
+                var details = String(line[start..<end]).trimmingCharacters(in: .whitespaces)
+                var amount: Amount?
+                if index == matches.count - 1, let inline = amounts(in: details).last, details.hasSuffix(inline.text) {
+                    amount = inline
+                    details = String(details.dropLast(inline.text.count)).trimmingCharacters(in: .whitespaces)
+                } else if !queue.isEmpty {
+                    amount = queue.removeFirst()
+                }
+                guard let amount else { return nil }
+                let credit = amount.isCredit || isCreditWording(details.lowercased())
+                rows.append(StatementRow(date: day, description: StatementImporter.cleanDescription(details), amount: credit ? amount.value : -amount.value, accountNumber: accountNumber))
+            }
+        }
+        // Every amount should have found its transaction; otherwise this isn't the layout.
+        return queue.isEmpty ? rows : nil
+    }
+
+    /// Compares what was read with the statement's own summary ("Payments In" and "Payments
+    /// Out", or a card's "Debits" and "Credits"). Returns the difference when they disagree,
+    /// nil when they agree or the statement has no summary.
+    public static func summaryDifference(_ lines: [String], rows: [StatementRow]) -> Decimal? {
+        func total(_ labels: [String]) -> Decimal? {
+            for line in lines.prefix(60) {
+                let lower = line.lowercased().replacingOccurrences(of: " ", with: "")
+                if labels.contains(where: { lower.hasPrefix($0) }), let value = amounts(in: line).last { return value.value }
+            }
+            return nil
+        }
+        let expected: Decimal
+        if let paidIn = total(["paymentsin", "moneyin", "totalpaidin"]), let paidOut = total(["paymentsout", "moneyout", "totalpaidout"]) {
+            expected = paidIn - paidOut
+        } else if let debits = total(["debits"]), let credits = total(["credits"]) {
+            expected = credits - debits
+        } else {
+            return nil
+        }
+        let read = rows.reduce(Decimal(0)) { $0 + $1.amount }
+        return read == expected ? nil : read - expected
     }
 
     // MARK: Pieces
@@ -65,6 +186,7 @@ public enum PDFStatementParser {
     struct Amount: Equatable {
         var value: Decimal
         var isCredit: Bool
+        var text = ""
     }
 
     /// Money amounts in a line, left to right. "12.40CR" or "12.40 CR" is a credit.
@@ -78,7 +200,7 @@ public enum PDFStatementParser {
             text = text.replacingOccurrences(of: "(?i)\\s?(CR|DR)$", with: "", options: .regularExpression)
                 .replacingOccurrences(of: "[£$€,]", with: "", options: .regularExpression)
             guard let value = Decimal(string: text) else { return nil }
-            return Amount(value: value < 0 ? -value : value, isCredit: credit)
+            return Amount(value: value < 0 ? -value : value, isCredit: credit, text: String(line[range]))
         }
     }
 
@@ -143,13 +265,22 @@ public enum PDFStatementParser {
     }
 
     static func isCreditWording(_ lower: String) -> Bool {
-        ["salary", "payroll", "refund", "interest paid", "transfer from", "payment received", "thank you", "credit", "deposit", "paid in"]
+        // Bank codes: "CR" (credit) and "BGC" (bank giro credit) at the start of the details.
+        if lower.hasPrefix("cr ") || lower.hasPrefix("bgc ") { return true }
+        return ["salary", "payroll", "refund", "interest paid", "transfer from", "payment received", "thank you", "credit", "deposit", "paid in"]
             .contains(where: lower.contains)
     }
 
     /// "Account number 12345678", "Account No: 1234 5678" or a masked card "**** **** **** 1234".
     static func accountNumber(in lines: [String]) -> String? {
-        let patterns = ["(?i)account\\s*(?:number|no\\.?)\\s*:?\\s*([0-9][0-9 ]{3,})", "(?:[*xX•]{4}[ -]?){2,}(\\d{4})\\b"]
+        let patterns = [
+            "(?i)account\\s*(?:number|no\\.?)\\s*:?\\s*([0-9][0-9 ]{3,})",
+            // UK sort code then account number, e.g. "00-00-00 12345678".
+            "^\\d{2}-\\d{2}-\\d{2}\\s+(\\d{8})\\b",
+            "(?:[*xX•]{4}[ -]?){2,}(\\d{4})\\b",
+            // A full card number: only its last four digits are kept.
+            "(?i)card number\\s*\\d{4} \\d{4} \\d{4} (\\d{4})\\b",
+        ]
         for pattern in patterns {
             guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
             for line in lines.prefix(60) {

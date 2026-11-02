@@ -56,11 +56,44 @@ enum SharedReceiptReader {
         }
     }
 
-    /// The text lines of a PDF, or nil when it has no real text (a scan).
+    /// The text lines of a PDF as they appear on the page, or nil when it has no real text (a scan).
     static func pdfLines(_ data: Data) -> [String]? {
-        guard let document = PDFDocument(data: data), let text = document.string else { return nil }
-        let lines = text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        guard let document = PDFDocument(data: data) else { return nil }
+        let lines = visualLines(document)
         return lines.count >= 2 ? lines : nil
+    }
+
+    /// Rebuilds each printed row of every page: pieces of text at the same height, left to
+    /// right. PDFKit's plain text can list a table column by column (all payees, then all
+    /// amounts), which loses which amount belongs to which payment; rows keep them together.
+    static func visualLines(_ document: PDFDocument) -> [String] {
+        var lines: [String] = []
+        for index in 0..<document.pageCount {
+            guard let page = document.page(at: index),
+                  let all = page.selection(for: page.bounds(for: .mediaBox)) else { continue }
+            let pieces: [(rect: CGRect, text: String)] = all.selectionsByLine().compactMap { selection in
+                guard let text = selection.string?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+                return (selection.bounds(for: page), text)
+            }
+            // Top of the page first (PDF y grows upwards); pieces within 40% of a line's height share a row.
+            var rows: [(midY: CGFloat, height: CGFloat, pieces: [(rect: CGRect, text: String)])] = []
+            for piece in pieces.sorted(by: { $0.rect.midY > $1.rect.midY }) {
+                if let last = rows.indices.last, abs(rows[last].midY - piece.rect.midY) < max(2, min(rows[last].height, piece.rect.height) * 0.4) {
+                    rows[last].pieces.append(piece)
+                } else {
+                    rows.append((piece.rect.midY, piece.rect.height, [piece]))
+                }
+            }
+            for row in rows {
+                let text = row.pieces.sorted { $0.rect.minX < $1.rect.minX }.map(\.text).joined(separator: " ")
+                lines.append(contentsOf: text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
+            }
+        }
+        // A PDF with no positioned text (or one PDFKit can't split) falls back to its plain text.
+        if lines.isEmpty, let text = document.string {
+            lines = text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        }
+        return lines
     }
 
     /// Imports a PDF bank or credit card statement.
@@ -69,6 +102,9 @@ enum SharedReceiptReader {
         do {
             let result = try store.previewImport(pdfLines: lines)
             store.commitImport(result, fileName: fileName)
+            if let difference = result.summaryDifference {
+                store.status += " Check it: the payments read differ from the statement's totals by \(difference.formatted(.currency(code: AppSettings.currency)))."
+            }
             return true
         } catch {
             store.status = "Couldn't read the statement in \(fileName). Try your bank's CSV or OFX download instead."
