@@ -48,6 +48,9 @@ struct ApprovalView: View {
                             ForEach(FinanceCategories.all, id: \.self) { Text($0).tag($0) }
                         }
                         .labelsHidden()
+                        if store.hasPartner {
+                            OwnerPicker(owner: $item.owner).labelsHidden().frame(width: 110)
+                        }
                         Button(role: .destructive) {
                             editor.deleteItem(item.id)
                         } label: {

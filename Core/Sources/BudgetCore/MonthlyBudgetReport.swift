@@ -117,7 +117,7 @@ public struct BudgetCalculator: Sendable {
     }
 
     /// Signed spending per category: positive for a purchase, negative for a refund.
-    private func allocations(of transaction: BankTransaction) -> [(String, Decimal)] {
+    func allocations(of transaction: BankTransaction) -> [(String, Decimal)] {
         guard transaction.amount != 0, !Self.transferCategories.contains(transaction.category) else { return [] }
         let isDebit = transaction.amount < 0
         if transaction.splits.isEmpty {

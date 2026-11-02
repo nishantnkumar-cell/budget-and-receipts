@@ -8,6 +8,10 @@ final class BudgetStore: ObservableObject {
     @Published var budgets: [MonthlyBudget] = []
     @Published var imports: [ImportRecord] = []
     @Published var status = "Import statements or add a transaction."
+    @Published var couple: CoupleSettings = CoupleSettings()
+    @Published var settlements: [Settlement] = []
+    /// The Me / Partner / Together switch. Together shows everything, as before couples.
+    @Published var householdView: HouseholdView = .together
 
     private let storage: JSONFileStorage
 
@@ -19,6 +23,8 @@ final class BudgetStore: ObservableObject {
         changes = storage.load("changes.json") ?? []
         budgets = storage.load("budgets.json") ?? []
         imports = storage.load("imports.json") ?? []
+        couple = storage.load("couple.json") ?? CoupleSettings()
+        settlements = storage.load("settlements.json") ?? []
     }
 
     func saveDraft(_ draft: SplitDraft, for transaction: BankTransaction) {
@@ -89,7 +95,46 @@ final class BudgetStore: ObservableObject {
     var calculator: BudgetCalculator { BudgetCalculator() }
 
     var monthReport: MonthlyBudgetReport {
-        calculator.report(transactions, budgets: budgets, month: selectedMonth)
+        calculator.report(viewTransactions, budgets: budgets, month: selectedMonth)
+    }
+
+    // MARK: Couples
+
+    /// False for a single person; the Me / Partner / Together switch is hidden then.
+    var hasPartner: Bool { !couple.partnerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    var ledger: CoupleLedger { CoupleLedger(settings: couple, calculator: calculator) }
+
+    /// Transactions scaled to the selected side of the household.
+    var viewTransactions: [BankTransaction] {
+        hasPartner ? ledger.transactions(transactions, for: householdView) : transactions
+    }
+
+    /// Who owes whom across everything recorded so far.
+    var coupleBalance: CoupleBalance { ledger.balance(transactions, settlements: settlements) }
+
+    func updateCouple(_ settings: CoupleSettings) {
+        couple = settings
+        if !hasPartner { householdView = .together }
+        persist()
+    }
+
+    /// Sets whose money a transaction is and who paid. Nil owner goes back to the rules.
+    func setOwner(_ owner: MoneyOwner?, paidBy: Person? = nil, for transaction: BankTransaction) {
+        guard let index = transactions.firstIndex(where: { $0.id == transaction.id }) else { return }
+        transactions[index].owner = owner
+        transactions[index].paidBy = paidBy
+        changes.append(ChangeRecord(date: Date(), transactionID: transaction.id, reason: "Set whose money to \(owner?.rawValue ?? "automatic")"))
+        persist()
+    }
+
+    /// Records that whoever owed money has paid it all back.
+    func settleUp(date: Date = Date()) {
+        let balance = coupleBalance
+        guard let debtor = balance.debtor else { return }
+        settlements.append(Settlement(date: date, from: debtor, amount: balance.amountOwed))
+        status = "Settled up."
+        persist()
     }
 
     var spending: Decimal { monthReport.spending }
@@ -135,6 +180,8 @@ final class BudgetStore: ObservableObject {
         storage.save(changes, "changes.json")
         storage.save(budgets, "budgets.json")
         storage.save(imports, "imports.json")
+        storage.save(couple, "couple.json")
+        storage.save(settlements, "settlements.json")
     }
 }
 

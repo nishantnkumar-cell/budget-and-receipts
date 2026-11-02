@@ -45,6 +45,12 @@ public struct ReceiptDraftEditor: Hashable, Sendable {
         if let category { items[index].category = category }
     }
 
+    /// Sets whose money one item is. Nil goes back to following the transaction.
+    public mutating func setOwner(_ id: UUID, _ owner: MoneyOwner?) {
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        items[index].owner = owner
+    }
+
     public mutating func deleteItem(_ id: UUID) {
         items.removeAll { $0.id == id }
     }
@@ -62,7 +68,7 @@ public struct ReceiptDraftEditor: Hashable, Sendable {
             confidence: 1,
             reviewed: reviewed
         )
-        let splits = items.map { TransactionSplit(label: $0.description, category: $0.category, amount: $0.total) }
+        let splits = items.map { TransactionSplit(label: $0.description, category: $0.category, amount: $0.total, owner: $0.owner) }
         return SplitDraft(receipt: receipt, proposedSplits: splits)
     }
 }
