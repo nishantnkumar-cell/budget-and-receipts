@@ -125,7 +125,8 @@ struct AccountEditor: View {
         .navigationTitle(account.name.isEmpty ? "Account" : account.name)
         .onAppear { cards = account.cardEndings.joined(separator: ", ") }
         .onDisappear(perform: save)
-        .confirmationDialog("Delete \(account.label)?", isPresented: $confirmingDelete) {
+        .alert("Delete \(account.label)?", isPresented: $confirmingDelete) {
+            Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
                 store.deleteAccount(account)
                 dismiss()
