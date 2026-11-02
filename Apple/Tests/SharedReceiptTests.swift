@@ -35,12 +35,23 @@ final class SharedReceiptTests: XCTestCase {
 
         await SharedReceiptReader.readDropped(into: store, folder: drop)
 
-        XCTAssertEqual(store.transactions.count, 1)
+        // Nothing is imported until the person reviews it.
+        XCTAssertTrue(store.transactions.isEmpty)
+        XCTAssertTrue(SharedReceiptDrop.waitingFiles(in: drop).isEmpty, "Shared copies are removed once read")
+        let document = try XCTUnwrap(store.sharedDocuments.first)
+        XCTAssertEqual(document.summary, "Statement with 1 payment, ready to review and import")
+        XCTAssertTrue(store.shareSummary?.contains("review and import") == true, "The person is told what to do")
+
+        // Reviewing and importing, as Import Statement does from the stored copy.
+        let copy = store.sharedFilesFolder.appendingPathComponent(try XCTUnwrap(document.storedFile))
+        let result = try store.previewImport(text: String(decoding: try Data(contentsOf: copy), as: UTF8.self), fileName: document.fileName, mapping: nil)
+        store.commitImport(result, fileName: document.fileName)
+        store.finishSharedImport(document, result: result)
+
         XCTAssertNotNil(store.transactions.first?.pendingSplitDraft, "The waiting receipt was matched")
         XCTAssertTrue(store.pendingReceipts.isEmpty)
-        XCTAssertTrue(SharedReceiptDrop.waitingFiles(in: drop).isEmpty, "Shared copies are removed once read")
         XCTAssertEqual(store.sharedDocuments.first?.summary, "Imported as a statement: 1 payment")
-        XCTAssertNotNil(store.shareSummary, "The person is told what happened")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: copy.path), "The copy is deleted after import")
     }
 
     func testTextPDFReceiptGoesToTheWaitingList() async throws {
@@ -73,9 +84,12 @@ final class SharedReceiptTests: XCTestCase {
         await SharedReceiptReader.open(url, into: store)
 
         XCTAssertTrue(store.pendingReceipts.isEmpty, "Not a receipt")
-        XCTAssertEqual(store.transactions.count, 4)
+        XCTAssertEqual(store.sharedDocuments.first?.summary, "Statement with 4 payments, ready to review and import")
+        let result = try store.previewImport(pdfLines: try XCTUnwrap(SharedReceiptReader.pdfLines(Data(contentsOf: url))))
+        store.commitImport(result, fileName: "statement.pdf")
         XCTAssertEqual(store.transactions.first { $0.merchant == "ACME SALARY" }?.amount, 1000)
         XCTAssertEqual(store.accounts.map(\.label), ["Account ••4321"])
+        XCTAssertEqual(store.accounts.first?.number, "4321", "Only the last four digits are kept")
     }
 
     func testPartnersAccountMakesItsSpendingTheirs() async throws {

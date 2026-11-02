@@ -56,10 +56,16 @@ final class BudgetStore: ObservableObject {
         couple = loadOrSetAside("couple.json") ?? CoupleSettings()
         settlements = loadOrSetAside("settlements.json") ?? []
         pendingReceipts = loadOrSetAside("pending-receipts.json") ?? []
-        accounts = loadOrSetAside("accounts.json") ?? []
+        let savedAccounts: [BankAccount] = loadOrSetAside("accounts.json") ?? []
+        accounts = savedAccounts.map { account in
+            var trimmed = account
+            trimmed.number = BankAccount.lastFour(account.number)
+            return trimmed
+        }
         sharedDocuments = loadOrSetAside("shared-documents.json") ?? []
         merchantCategories = loadOrSetAside("merchant-categories.json") ?? [:]
         recentChanges = (loadOrSetAside("recent-changes.json") ?? []).filter { $0.date > Date().addingTimeInterval(-30 * 86_400) }
+        removeOldSharedCopies()
     }
 
     func saveDraft(_ draft: SplitDraft, for transaction: BankTransaction) {
@@ -208,7 +214,8 @@ final class BudgetStore: ObservableObject {
         proposedAccounts = []
         for number in Set(rows.compactMap(\.accountNumber)).sorted() where BankAccounts.account(forNumber: number, in: accounts) == nil {
             if BankAccounts.account(forNumber: number, in: proposedAccounts) == nil, !BankAccount.lastFour(number).isEmpty {
-                proposedAccounts.append(BankAccount(name: "Account", number: number))
+                // Only the last four digits are kept: enough to recognise the account.
+                proposedAccounts.append(BankAccount(name: "Account", number: BankAccount.lastFour(number)))
             }
         }
         let known = accounts + proposedAccounts
@@ -337,6 +344,26 @@ final class BudgetStore: ObservableObject {
         let folder = storage.folder.appendingPathComponent("Shared", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder
+    }
+
+    /// Copies of shared files are bank statements and receipts: kept 30 days at most.
+    private func removeOldSharedCopies() {
+        let cutoff = Date().addingTimeInterval(-30 * 86_400)
+        for index in sharedDocuments.indices where sharedDocuments[index].receivedAt < cutoff {
+            if let name = sharedDocuments[index].storedFile {
+                try? FileManager.default.removeItem(at: sharedFilesFolder.appendingPathComponent(name))
+                sharedDocuments[index].storedFile = nil
+            }
+        }
+    }
+
+    /// After a shared statement is imported from its preview: record the result, drop the copy.
+    func finishSharedImport(_ document: SharedDocument, result: StatementImportResult) {
+        var done = document
+        done.outcome = .statement(imported: result.newTransactions.count, alreadyThere: result.duplicates.count, totalsDifference: result.summaryDifference)
+        if let name = done.storedFile { try? FileManager.default.removeItem(at: sharedFilesFolder.appendingPathComponent(name)) }
+        done.storedFile = nil
+        update(done)
     }
 
     func record(_ document: SharedDocument) {

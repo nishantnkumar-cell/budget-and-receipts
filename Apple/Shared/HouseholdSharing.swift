@@ -260,3 +260,37 @@ struct EraseAllDataView: View {
         dismiss()
     }
 }
+
+/// Shown instead of the app while it isn't in front and the app lock is on.
+struct PrivacyCover: View {
+    var body: some View {
+        ZStack {
+            Color.brandIndigo.ignoresSafeArea()
+            Label("Duo Budget", systemImage: "lock.fill")
+                .font(.title2.bold())
+                .foregroundStyle(.white)
+        }
+    }
+}
+
+#if os(macOS)
+/// Locks the Mac app when the screen sleeps or locks, or the Mac goes to sleep.
+@MainActor
+final class MacLockWatcher {
+    static let shared = MacLockWatcher()
+    private var observers: [NSObjectProtocol] = []
+
+    func watch(_ lock: AppLock) {
+        guard observers.isEmpty else { return }
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
+            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { _ in
+                Task { @MainActor in lock.lock() }
+            })
+        }
+        observers.append(DistributedNotificationCenter.default().addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { _ in
+            Task { @MainActor in lock.lock() }
+        })
+    }
+}
+#endif

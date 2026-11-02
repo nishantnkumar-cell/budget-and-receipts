@@ -62,7 +62,7 @@ final class ShareViewController: PlatformViewController {
     private func load(_ provider: NSItemProvider, type: UTType) async -> (Data, String)? {
         await withCheckedContinuation { continuation in
             provider.loadFileRepresentation(forTypeIdentifier: type.identifier) { url, _ in
-                guard let url, let data = try? Data(contentsOf: url) else { return continuation.resume(returning: nil) }
+                guard let url, !SharedReceiptDrop.isTooLarge(url), let data = try? Data(contentsOf: url) else { return continuation.resume(returning: nil) }
                 let ext = url.pathExtension.isEmpty ? (type == .pdf ? "pdf" : type == .image ? "jpg" : "") : url.pathExtension
                 continuation.resume(returning: (data, ext))
             }
