@@ -44,6 +44,8 @@ public struct SubscriptionContract: Identifiable, Codable, Hashable, Sendable {
     public var notes = ""
     public var status: SubscriptionStatus = .active
     public var transactionMatchers: [String] = []
+    /// Hidden from a partner the household is shared with.
+    public var isPrivate: Bool? = nil
 
     public init(
         id: UUID = UUID(),

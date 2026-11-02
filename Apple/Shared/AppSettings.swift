@@ -19,6 +19,9 @@ final class AppSettings: ObservableObject {
     /// Use Apple Intelligence on the device for receipts the normal reading gets wrong. On by default.
     @Published var smartReceiptsEnabled: Bool { didSet { defaults.set(smartReceiptsEnabled, forKey: Keys.smartReceipts) } }
 
+    /// Keep data in step across your devices with iCloud. On by default where iCloud is available.
+    @Published var iCloudSyncEnabled: Bool { didSet { defaults.set(iCloudSyncEnabled, forKey: Keys.iCloudSync) } }
+
     nonisolated static var smartReceipts: Bool {
         UserDefaults.standard.object(forKey: Keys.smartReceipts) as? Bool ?? true
     }
@@ -30,6 +33,7 @@ final class AppSettings: ObservableObject {
         static let appLock = "appLockEnabled"
         static let reminders = "remindersEnabled"
         static let smartReceipts = "smartReceiptsEnabled"
+        static let iCloudSync = "iCloudSyncEnabled"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -38,6 +42,7 @@ final class AppSettings: ObservableObject {
         appLockEnabled = defaults.bool(forKey: Keys.appLock)
         remindersEnabled = defaults.bool(forKey: Keys.reminders)
         smartReceiptsEnabled = defaults.object(forKey: Keys.smartReceipts) as? Bool ?? true
+        iCloudSyncEnabled = defaults.object(forKey: Keys.iCloudSync) as? Bool ?? true
     }
 }
 

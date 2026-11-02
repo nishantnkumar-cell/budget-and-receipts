@@ -16,6 +16,8 @@ public struct BankTransaction: Identifiable, Codable, Hashable, Sendable {
     public var paidBy: Person?
     /// The bank account or card this came from. Nil for manual entries and older imports.
     public var accountID: UUID?
+    /// Hidden from a partner the household is shared with. Everything is shared unless marked.
+    public var isPrivate: Bool?
 
     public init(
         date: Date,

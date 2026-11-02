@@ -7,6 +7,8 @@ struct BudgetReceiptsApp: App {
     @StateObject private var settings = AppSettings()
     @StateObject private var lock = AppLock()
     @Environment(\.scenePhase) private var scenePhase
+    @State private var cloud: CloudSync?
+    @StateObject private var syncStatus = SyncStatus()
 
     var body: some Scene {
         WindowGroup {
@@ -22,6 +24,7 @@ struct BudgetReceiptsApp: App {
             .environmentObject(store)
             .environmentObject(subscriptions)
             .environmentObject(settings)
+            .environmentObject(syncStatus)
             // A receipt or statement opened with the app ("Open in", or Open With on the Mac).
             .onOpenURL { url in
                 Task { await SharedReceiptReader.open(url, into: store) }
@@ -29,7 +32,9 @@ struct BudgetReceiptsApp: App {
             .task(id: scenePhase) {
                 // Receipts shared from other apps while this one was closed.
                 if scenePhase == .active { await SharedReceiptReader.readDropped(into: store) }
+                if scenePhase == .active { await cloud?.refresh() }
             }
+            .task(id: settings.iCloudSyncEnabled) { await startOrStopSync() }
             .task(id: subscriptions.contracts) {
                 await ReminderScheduler.reschedule(subscriptions.contracts, enabled: settings.remindersEnabled)
             }
@@ -40,5 +45,21 @@ struct BudgetReceiptsApp: App {
         #if os(macOS)
         .commands { ImportFromDevicesCommands() }
         #endif
+    }
+
+    /// iCloud sync runs only when it is switched on, the build has iCloud, and not under tests.
+    private func startOrStopSync() async {
+        let testing = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        guard settings.iCloudSyncEnabled, CloudSync.containerID != nil, !testing else {
+            cloud = nil
+            store.didPersist = nil
+            subscriptions.didPersist = nil
+            return
+        }
+        let sync = CloudSync(sources: [store, subscriptions], imagesFolder: store.imagesFolder, stateFolder: JSONFileStorage.defaultFolder, status: syncStatus)
+        cloud = sync
+        store.didPersist = { Task { await sync.localDataChanged() } }
+        subscriptions.didPersist = { Task { await sync.localDataChanged() } }
+        await sync.start()
     }
 }
