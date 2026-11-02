@@ -29,6 +29,7 @@ enum SharedReceiptReader {
     private static func finish(_ documents: [SharedDocument], store: BudgetStore) {
         guard !documents.isEmpty else { return }
         store.matchPendingReceipts()
+        Task { await store.categoriseUnknownMerchants() }
         let lines = documents.map { "\($0.fileName): \($0.summary)." }
         store.shareSummary = lines.joined(separator: "\n")
         store.status = documents.count == 1 ? lines[0] : "Read \(documents.count) shared files. See Inbox › Shared files."
