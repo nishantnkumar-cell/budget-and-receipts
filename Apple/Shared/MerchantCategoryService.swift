@@ -1,6 +1,7 @@
 import BudgetCore
 import Foundation
 import MapKit
+import os
 #if canImport(FoundationModels)
 import FoundationModels
 #endif
@@ -9,6 +10,8 @@ import FoundationModels
 /// device (nothing leaves it), then, only if switched on, an Apple Maps search that sends
 /// just the merchant's name and town.
 enum MerchantCategoryService {
+    private static let log = Logger(subsystem: "com.nishantkumar.budgetreceipts", category: "categories")
+
     static func category(for merchant: String, useAI: Bool, useMaps: Bool) async -> MerchantCategory? {
         // Tests never reach Apple Intelligence or Apple Maps: the answers would vary.
         guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return nil }
@@ -42,8 +45,13 @@ enum MerchantCategoryService {
             Uncategorised: when you don't recognise the business or its kind.
             Words like LTD, the town name and card codes are not clues.
             """)
-        let answer = try? await session.respond(to: "Statement line: \(merchant)", generating: CategoryGuess.self)
-        return MerchantCategories.validated(answer?.content.category)
+        do {
+            let answer = try await session.respond(to: "Statement line: \(merchant)", generating: CategoryGuess.self)
+            return MerchantCategories.validated(answer.content.category)
+        } catch {
+            log.error("Apple Intelligence couldn't categorise a payment: \(String(describing: error), privacy: .public)")
+            return nil
+        }
         #else
         return nil
         #endif
@@ -71,7 +79,7 @@ enum MerchantCategoryService {
 #if canImport(FoundationModels)
 @Generable
 struct CategoryGuess {
-    @Guide(description: "One category from the list in the instructions")
+    @Guide(description: "One category from the list in the instructions", .anyOf(FinanceCategories.all))
     var category: String
 }
 #endif
