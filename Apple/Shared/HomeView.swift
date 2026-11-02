@@ -16,7 +16,8 @@ struct HomeView: View {
                     Spacer()
                     MonthSwitcher()
                 }
-                LeftToSpendCard(report: report, month: store.selectedMonth)
+                LeftToSpendCard(report: report, month: store.selectedMonth,
+                                safeToSpend: store.safeToSpend(contracts: subscriptions.contracts))
                 CoupleBalanceCard()
                 AccountSpendingCard()
                 if !store.needsReview.isEmpty {
@@ -69,6 +70,7 @@ struct HomeView: View {
 struct LeftToSpendCard: View {
     let report: MonthlyBudgetReport
     let month: Date
+    var safeToSpend: SafeToSpend?
 
     private var budgeted: Decimal { report.lines.compactMap(\.limit).reduce(0, +) }
     private var spentInBudgets: Decimal { report.lines.filter { $0.limit != nil }.reduce(0) { $0 + $1.spent } }
@@ -92,6 +94,12 @@ struct LeftToSpendCard: View {
                     Text((budgeted - spentInBudgets).money)
                         .font(.system(size: 36, weight: .bold, design: .rounded))
                     Text(subtitle).font(.subheadline).opacity(0.8)
+                    if let safeToSpend {
+                        Text("\(safeToSpend.today.money) safe to spend today")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.brandAmber)
+                            .padding(.top, 4)
+                    }
                 } else {
                     Text("Spent this month").font(.subheadline).opacity(0.8)
                     Text(report.spending.money)

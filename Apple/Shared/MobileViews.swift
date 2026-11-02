@@ -137,6 +137,7 @@ struct TransactionEditor: View {
 /// Plan: bills, subscriptions and contracts, with the next 30 days at the top.
 struct PlanView: View {
     @EnvironmentObject var subscriptions: SubscriptionStore
+    @EnvironmentObject var store: BudgetStore
 
     private var annualCost: Decimal {
         subscriptions.contracts
@@ -146,6 +147,7 @@ struct PlanView: View {
 
     var body: some View {
         let due = SubscriptionTracker().dueSoon(subscriptions.contracts, from: Date(), days: 30)
+        let rises = subscriptions.priceRises(transactions: store.transactions)
         List {
             Section {
                 LabeledContent("Committed per year") { Text(annualCost.money).fontWeight(.semibold).monospacedDigit() }
@@ -154,13 +156,13 @@ struct PlanView: View {
             if !due.isEmpty {
                 Section("Coming up") {
                     ForEach(due) { contract in
-                        NavigationLink { ContractEditor(contract: contract) } label: { ContractRow(contract: contract) }
+                        NavigationLink { ContractEditor(contract: contract, priceRise: rises[contract.id]) } label: { ContractRow(contract: contract, priceRise: rises[contract.id]) }
                     }
                 }
             }
             Section("All bills and subscriptions") {
                 ForEach(subscriptions.contracts) { contract in
-                    NavigationLink { ContractEditor(contract: contract) } label: { ContractRow(contract: contract) }
+                    NavigationLink { ContractEditor(contract: contract, priceRise: rises[contract.id]) } label: { ContractRow(contract: contract, priceRise: rises[contract.id]) }
                 }
                 NavigationLink { ContractEditor(contract: .blank()) } label: {
                     Label("Add a bill or subscription", systemImage: "plus")
@@ -175,6 +177,7 @@ struct PlanView: View {
 
 struct ContractRow: View {
     let contract: SubscriptionContract
+    var priceRise: PriceRise?
 
     var body: some View {
         HStack {
@@ -185,9 +188,12 @@ struct ContractRow: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Text(contract.expectedAmount, format: .currency(code: contract.currency))
-                .fontWeight(.semibold)
-                .monospacedDigit()
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(contract.expectedAmount, format: .currency(code: contract.currency))
+                    .fontWeight(.semibold)
+                    .monospacedDigit()
+                if let priceRise { PriceRiseChip(rise: priceRise, currency: contract.currency) }
+            }
         }
         .accessibilityElement(children: .combine)
     }
@@ -197,9 +203,17 @@ struct ContractEditor: View {
     @EnvironmentObject var subscriptions: SubscriptionStore
     @Environment(\.dismiss) var dismiss
     @State var contract: SubscriptionContract
+    var priceRise: PriceRise?
 
     var body: some View {
         Form {
+            if let priceRise {
+                Section {
+                    Label("Went up from \(priceRise.previous.formatted(.currency(code: contract.currency))) to \(priceRise.latest.formatted(.currency(code: contract.currency))) on \(priceRise.date.formatted(.dateTime.day().month(.abbreviated))), \(priceRise.percent.formatted(.percent.precision(.fractionLength(0)))) more.",
+                          systemImage: "arrow.up.circle")
+                        .foregroundStyle(.red)
+                }
+            }
             TextField("Vendor", text: $contract.vendor)
             Picker("Type", selection: $contract.category) {
                 ForEach(SubscriptionCategory.allCases) { Text($0.title).tag($0) }
@@ -213,6 +227,7 @@ struct ContractEditor: View {
             Picker("Pricing", selection: $contract.pricing) {
                 ForEach(ContractPricing.allCases) { Text($0.title).tag($0) }
             }
+            ReminderPicker(daysBefore: $contract.remindDaysBefore)
         }
         .navigationTitle("Contract")
         .toolbar {
