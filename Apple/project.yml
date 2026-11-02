@@ -28,8 +28,10 @@ targets:
     sources:
       - Shared
       - iOS
+      - ShareExtension/SharedReceiptDrop.swift
     dependencies:
       - package: BudgetCore
+      - target: ShareExtension-iOS
     info:
       path: iOS/Info.plist
       properties:
@@ -38,6 +40,33 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSCameraUsageDescription: Budget & Receipts uses the camera to scan receipts. Images stay on this device.
         NSPhotoLibraryUsageDescription: Budget & Receipts reads the receipt photos you choose so it can read their text on this device.
+        LSSupportsOpeningDocumentsInPlace: false
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Receipt
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [com.adobe.pdf, public.image]
+          - CFBundleTypeName: Bank statement
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [public.comma-separated-values-text, com.intuit.ofx, com.intuit.qfx, com.intuit.qif]
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: com.intuit.ofx
+            UTTypeDescription: OFX bank statement
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification: {public.filename-extension: [ofx]}
+          - UTTypeIdentifier: com.intuit.qfx
+            UTTypeDescription: QFX bank statement
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification: {public.filename-extension: [qfx]}
+          - UTTypeIdentifier: com.intuit.qif
+            UTTypeDescription: QIF bank statement
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification: {public.filename-extension: [qif]}
+    entitlements:
+      path: iOS/BudgetReceipts.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.nishantkumar.budgetreceipts]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nishantkumar.budgetreceipts
@@ -49,22 +78,100 @@ targets:
     sources:
       - Shared
       - macOS
+      - ShareExtension/SharedReceiptDrop.swift
     dependencies:
       - package: BudgetCore
+      - target: ShareExtension-macOS
     info:
       path: macOS/Info.plist
       properties:
         CFBundleDisplayName: Budget & Receipts
         LSApplicationCategoryType: public.app-category.finance
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Receipt
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [com.adobe.pdf, public.image]
+          - CFBundleTypeName: Bank statement
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [public.comma-separated-values-text, com.intuit.ofx, com.intuit.qfx, com.intuit.qif]
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: com.intuit.ofx
+            UTTypeDescription: OFX bank statement
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification: {public.filename-extension: [ofx]}
+          - UTTypeIdentifier: com.intuit.qfx
+            UTTypeDescription: QFX bank statement
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification: {public.filename-extension: [qfx]}
+          - UTTypeIdentifier: com.intuit.qif
+            UTTypeDescription: QIF bank statement
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification: {public.filename-extension: [qif]}
     entitlements:
       path: macOS/BudgetReceipts.entitlements
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.files.user-selected.read-only: true
+        # On the Mac a team-prefixed group needs no provisioning profile.
+        com.apple.security.application-groups: [$(TeamIdentifierPrefix)com.nishantkumar.budgetreceipts]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nishantkumar.budgetreceipts
         PRODUCT_MODULE_NAME: BudgetReceipts
+        ENABLE_HARDENED_RUNTIME: YES
+  # "Budget & Receipts" in the share sheet: saves shared PDFs and images for the app to read.
+  ShareExtension-iOS:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ShareExtension
+        excludes: ["*.plist", "*.entitlements"]
+    info:
+      path: ShareExtension/Info-iOS.plist
+      properties:
+        CFBundleDisplayName: Budget & Receipts
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsFileWithMaxCount: 10
+              NSExtensionActivationSupportsImageWithMaxCount: 10
+    entitlements:
+      path: ShareExtension/ShareExtension-iOS.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.nishantkumar.budgetreceipts]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nishantkumar.budgetreceipts.share
+        TARGETED_DEVICE_FAMILY: "1"
+  ShareExtension-macOS:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: ShareExtension
+        excludes: ["*.plist", "*.entitlements"]
+    info:
+      path: ShareExtension/Info-macOS.plist
+      properties:
+        CFBundleDisplayName: Budget & Receipts
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsFileWithMaxCount: 10
+              NSExtensionActivationSupportsImageWithMaxCount: 10
+    entitlements:
+      path: ShareExtension/ShareExtension-macOS.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups: [$(TeamIdentifierPrefix)com.nishantkumar.budgetreceipts]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nishantkumar.budgetreceipts.share
         ENABLE_HARDENED_RUNTIME: YES
   AppTests-iOS:
     type: bundle.unit-test

@@ -11,10 +11,12 @@ struct HomeView: View {
         ScrollView {
             VStack(spacing: Theme.spacing) {
                 HStack {
+                    AccountFilterMenu()
                     Spacer()
                     MonthSwitcher()
                 }
                 LeftToSpendCard(report: report, month: store.selectedMonth)
+                AccountSpendingCard()
                 if !store.needsReview.isEmpty {
                     NavigationLink { InboxView() } label: { InboxSummaryCard(count: store.needsReview.count) }
                         .buttonStyle(.plain)

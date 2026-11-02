@@ -13,6 +13,8 @@ struct ImportStatementView: View {
     @State private var mapping: CSVColumnMapping?
     @State private var preview: StatementImportResult?
     @State private var error: String?
+    @State private var account: UUID?
+    @State private var newAccountName = ""
 
     private static let types: [UTType] = [
         .commaSeparatedText,
@@ -56,6 +58,23 @@ struct ImportStatementView: View {
                         Text("10 March (US)").tag(DateOrder.monthDayYear)
                     }
                     Toggle("Decimal comma (12,50)", isOn: Binding(get: { mapping?.decimalComma ?? false }, set: { mapping?.decimalComma = $0; refresh() }))
+                }
+            }
+
+            if !text.isEmpty {
+                Section {
+                    AccountPicker(title: "From account", selection: Binding(get: { account }, set: { account = $0; refresh() }))
+                    HStack {
+                        TextField("Or add a new account", text: $newAccountName)
+                        Button("Add") {
+                            account = store.addAccount(name: newAccountName.trimmingCharacters(in: .whitespaces)).id
+                            newAccountName = ""
+                            refresh()
+                        }
+                        .disabled(newAccountName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                } footer: {
+                    Text("If the file includes account numbers, those are used instead and new accounts are added for you.")
                 }
             }
 
@@ -146,7 +165,7 @@ struct ImportStatementView: View {
     private func refresh() {
         guard !text.isEmpty else { return }
         do {
-            preview = try store.previewImport(text: text, fileName: fileName, mapping: mapping)
+            preview = try store.previewImport(text: text, fileName: fileName, mapping: mapping, account: account)
             error = nil
         } catch let failure as StatementImportError {
             preview = nil
