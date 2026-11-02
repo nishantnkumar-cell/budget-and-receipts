@@ -28,6 +28,13 @@ struct SettingsView: View {
                 Text("Asks for \(AppLock().methodName) when the app opens or comes back from the background.")
             }
             Section {
+                Toggle("Smart receipt reading", isOn: $settings.smartReceiptsEnabled)
+            } header: {
+                Text("Receipts")
+            } footer: {
+                Text(ReceiptAIService.unavailableReason ?? "Uses Apple Intelligence on this device when a receipt's items don't add up. Nothing leaves the device, and you still check every item.")
+            }
+            Section {
                 Toggle("Payment and renewal reminders", isOn: Binding(get: { settings.remindersEnabled }, set: setReminders))
             } footer: {
                 Text("Notifies you 2 days before a payment, 2 weeks before a renewal or fixed price ends, and a week before a cancellation deadline.")

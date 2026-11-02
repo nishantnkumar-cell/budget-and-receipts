@@ -83,9 +83,13 @@ public enum ReceiptParser {
         var subtotal: Decimal?
         var tax: Decimal?
 
-        for line in lines {
+        for (index, line) in lines.enumerated() {
             guard let amount = amountAtEnd(line) else { continue }
-            let name = label(of: line)
+            var name = label(of: line)
+            // Some receipts print the price on its own line under the name.
+            if name.isEmpty, index > 0, amountAtEnd(lines[index - 1]) == nil {
+                name = lines[index - 1]
+            }
             if matches(name, subtotalPattern) {
                 subtotal = amount
             } else if matches(name, totalPattern) {
