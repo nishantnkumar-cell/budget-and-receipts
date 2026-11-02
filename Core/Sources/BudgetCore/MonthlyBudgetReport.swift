@@ -79,7 +79,7 @@ public struct BudgetCalculator: Sendable {
         let spent = spendingByCategory(transactions, month: month)
         let categories = FinanceCategories.budgetable.filter { budget(for: $0, in: budgets, month: month) != nil || spent[$0] != nil }
         let lines = categories.map { category in
-            CategoryBudgetLine(category: category, limit: budget(for: category, in: budgets, month: month)?.limit, spent: spent[category] ?? 0)
+            CategoryBudgetLine(category: category, limit: effectiveLimit(for: category, transactions: transactions, budgets: budgets, month: month), spent: spent[category] ?? 0)
         }
         return MonthlyBudgetReport(
             month: month,
@@ -96,6 +96,18 @@ public struct BudgetCalculator: Sendable {
         return budgets
             .filter { $0.category == category && (calendar.dateInterval(of: .month, for: $0.month)?.start ?? $0.month) <= monthStart }
             .max { $0.month < $1.month }
+    }
+
+    /// The limit for a month, including last month's leftover when the budget rolls over.
+    /// Rollover looks back at most 12 months and stops at the first month with no budget.
+    public func effectiveLimit(for category: String, transactions: [BankTransaction], budgets: [MonthlyBudget], month: Date, depth: Int = 0) -> Decimal? {
+        guard let current = budget(for: category, in: budgets, month: month) else { return nil }
+        guard current.rollover == true, depth < 12,
+              let previousMonth = calendar.date(byAdding: .month, value: -1, to: month),
+              let previousLimit = effectiveLimit(for: category, transactions: transactions, budgets: budgets, month: previousMonth, depth: depth + 1)
+        else { return current.limit }
+        let previousSpent = spendingByCategory(transactions, month: previousMonth)[category] ?? 0
+        return current.limit + (previousLimit - previousSpent)
     }
 
     private func isIncome(_ transaction: BankTransaction) -> Bool {

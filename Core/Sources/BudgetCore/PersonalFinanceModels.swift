@@ -5,12 +5,16 @@ public struct MonthlyBudget: Identifiable, Codable, Hashable, Sendable {
     public var category: String
     public var limit: Decimal
     public var month: Date
+    /// When true, money left unspent (or overspent) last month is added to this month's limit.
+    /// Optional so budgets saved before this setting existed still load.
+    public var rollover: Bool?
 
-    public init(id: UUID = UUID(), category: String, limit: Decimal, month: Date) {
+    public init(id: UUID = UUID(), category: String, limit: Decimal, month: Date, rollover: Bool? = nil) {
         self.id = id
         self.category = category
         self.limit = limit
         self.month = month
+        self.rollover = rollover
     }
 }
 

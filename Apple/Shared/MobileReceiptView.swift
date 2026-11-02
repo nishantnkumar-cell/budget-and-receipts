@@ -28,7 +28,7 @@ struct ReceiptView: View {
             }
             .onChange(of: pickerItem) { _, newItem in load(newItem) }
             NavigationLink {
-                CameraCaptureView(image: $image, onSaved: scan)
+                CameraCaptureView(image: $image, onSaved: { scan($0) })
             } label: {
                 Label("Use camera", systemImage: "camera")
             }
@@ -73,14 +73,19 @@ struct ReceiptView: View {
         Task {
             guard let data = try? await item?.loadTransferable(type: Data.self), let picked = UIImage(data: data) else { return }
             image = picked
-            scan(picked)
+            scan(picked, data: data)
         }
     }
 
-    private func scan(_ picked: UIImage) {
+    private func scan(_ picked: UIImage, data: Data? = nil) {
         Task {
             do {
-                editor = try await vision.recognise(image: picked)
+                var result = try await vision.recognise(image: picked)
+                // Keep the receipt so it can be looked at again after approval.
+                if let saved = data ?? picked.jpegData(compressionQuality: 0.8) {
+                    result.imagePath = (try? ReceiptImageStore().save(saved)) ?? ""
+                }
+                editor = result
                 message = "OCR complete. Correct the draft before approval."
             } catch {
                 message = error.localizedDescription

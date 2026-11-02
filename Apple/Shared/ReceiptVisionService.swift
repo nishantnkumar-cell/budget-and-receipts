@@ -1,5 +1,6 @@
 import BudgetCore
 import Foundation
+import ImageIO
 import Vision
 #if os(iOS)
 import UIKit
@@ -25,6 +26,15 @@ actor ReceiptVisionService {
         return try recognise(cgImage: cgImage)
     }
     #endif
+
+    /// Reads a receipt from image file data (JPEG, PNG, HEIC). Works on iPhone and Mac.
+    func recognise(data: Data) throws -> ReceiptDraftEditor {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let cgImage = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldAllowFloat: false] as CFDictionary) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        return try recognise(cgImage: cgImage)
+    }
 
     private func recognise(cgImage: CGImage) throws -> ReceiptDraftEditor {
         let request = VNRecognizeTextRequest()

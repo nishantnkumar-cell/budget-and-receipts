@@ -24,6 +24,9 @@ COLOURS = {
     "BrandAmber": ("#D9961C", PALETTE["amber"]),
     "BrandCream": (PALETTE["cream"], "#2A1840"),
     "BrandInk": (PALETTE["ink"], PALETTE["cream"]),
+    # Surfaces for the redesigned screens: a warm page with white cards.
+    "ScreenBackground": ("#F7F3EE", "#120A1E"),
+    "CardBackground": ("#FFFFFF", "#22152F"),
 }
 
 

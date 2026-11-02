@@ -69,12 +69,16 @@ final class BudgetStore: ObservableObject {
         persist()
     }
 
-    func setBudget(category: String, limit: Decimal, month: Date = Date()) {
+    /// Sets a category's limit from `month` onwards. `rollover` carries leftover money into
+    /// the next month; nil keeps the current setting.
+    func setBudget(category: String, limit: Decimal, month: Date = Date(), rollover: Bool? = nil) {
         let calendar = Calendar.current
+        let current = calculator.budget(for: category, in: budgets, month: month)
         if let index = budgets.firstIndex(where: { $0.category == category && calendar.isDate($0.month, equalTo: month, toGranularity: .month) }) {
             budgets[index].limit = limit
+            budgets[index].rollover = rollover ?? budgets[index].rollover
         } else {
-            budgets.append(MonthlyBudget(category: category, limit: limit, month: month))
+            budgets.append(MonthlyBudget(category: category, limit: limit, month: month, rollover: rollover ?? current?.rollover))
         }
         persist()
     }
