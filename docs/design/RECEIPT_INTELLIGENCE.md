@@ -57,7 +57,7 @@ Settings › Receipts › Smart receipt reading turns it off. It is on by defaul
 
 ## Sharing receipts and statements into the app
 
-"Budget & Receipts" appears in the share sheet on iPhone and Mac (a Share Extension). It also appears under "Open in…" on iPhone and Open With on the Mac.
+"Duo Budget" appears in the share sheet on iPhone and Mac (a Share Extension). It also appears under "Open in…" on iPhone and Open With on the Mac.
 
 - **Receipts**: PDF e-receipts (from Mail, Files or a shop's app) and images. A PDF's own text is read exactly. A scanned PDF or a photo is read with Vision. Smart reading helps when the items don't add up. The receipt goes to "Waiting for payment" and is matched when its payment arrives.
 - **Statements**: CSV, OFX, QFX and QIF files from a bank app are imported straight away. Lines already imported are skipped, and waiting receipts are matched. A CSV whose columns can't be guessed is left for Import Statement. PDF bank statements are not supported.
