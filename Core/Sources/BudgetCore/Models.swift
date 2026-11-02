@@ -10,6 +10,10 @@ public struct BankTransaction: Identifiable, Codable, Hashable, Sendable {
     public var fingerprint: String
     public var splits: [TransactionSplit]
     public var pendingSplitDraft: SplitDraft?
+    /// Whose money this is. Nil means "use the couple rules" (see `CoupleLedger.owner(of:)`).
+    public var owner: MoneyOwner?
+    /// Who paid. Nil means me, since statements are imported from my own accounts.
+    public var paidBy: Person?
 
     public init(
         date: Date,
@@ -19,7 +23,9 @@ public struct BankTransaction: Identifiable, Codable, Hashable, Sendable {
         category: String = "Uncategorised",
         fingerprint: String,
         splits: [TransactionSplit] = [],
-        pendingSplitDraft: SplitDraft? = nil
+        pendingSplitDraft: SplitDraft? = nil,
+        owner: MoneyOwner? = nil,
+        paidBy: Person? = nil
     ) {
         self.date = date
         self.merchant = merchant
@@ -29,6 +35,8 @@ public struct BankTransaction: Identifiable, Codable, Hashable, Sendable {
         self.fingerprint = fingerprint
         self.splits = splits
         self.pendingSplitDraft = pendingSplitDraft
+        self.owner = owner
+        self.paidBy = paidBy
     }
 }
 
@@ -37,12 +45,15 @@ public struct TransactionSplit: Identifiable, Codable, Hashable, Sendable {
     public var label: String
     public var category: String
     public var amount: Decimal
+    /// Whose money this part is. Nil means the same as the whole transaction.
+    public var owner: MoneyOwner?
 
-    public init(id: UUID = UUID(), label: String, category: String, amount: Decimal) {
+    public init(id: UUID = UUID(), label: String, category: String, amount: Decimal, owner: MoneyOwner? = nil) {
         self.id = id
         self.label = label
         self.category = category
         self.amount = amount
+        self.owner = owner
     }
 }
 
@@ -52,13 +63,16 @@ public struct ReceiptLineItem: Identifiable, Codable, Hashable, Sendable {
     public var total: Decimal
     public var category: String
     public var confidence: Double
+    /// Whose money this item is. Nil means the same as the transaction it is matched to.
+    public var owner: MoneyOwner?
 
-    public init(id: UUID = UUID(), description: String, total: Decimal, category: String = "Uncategorised", confidence: Double) {
+    public init(id: UUID = UUID(), description: String, total: Decimal, category: String = "Uncategorised", confidence: Double, owner: MoneyOwner? = nil) {
         self.id = id
         self.description = description
         self.total = total
         self.category = category
         self.confidence = confidence
+        self.owner = owner
     }
 }
 
