@@ -46,6 +46,8 @@ public struct SubscriptionContract: Identifiable, Codable, Hashable, Sendable {
     public var transactionMatchers: [String] = []
     /// Hidden from a partner the household is shared with.
     public var isPrivate: Bool? = nil
+    /// Days before each payment to be reminded. Nil uses the default (2 days); 0 turns it off.
+    public var remindDaysBefore: Int? = nil
 
     public init(
         id: UUID = UUID(),
