@@ -31,6 +31,7 @@ final class CoupleLedgerTests: XCTestCase {
         let ledger = ledger(rules: [OwnerRule(match: .category("Groceries"), owner: .shared)])
         XCTAssertEqual(ledger.owner(of: tx("-10.00", owner: .partner)), .partner)
         XCTAssertEqual(ledger.owner(of: tx("-10.00")), .shared)
+        XCTAssertEqual(ledger.ruleOwner(of: tx("-10.00", owner: .partner)), .shared, "What Automatic would pick")
     }
 
     func testMerchantRuleBeatsCategoryRuleWhateverTheOrder() {

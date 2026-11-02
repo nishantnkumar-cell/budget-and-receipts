@@ -27,6 +27,31 @@ struct OwnerPicker: View {
     }
 }
 
+/// Whose money a transaction is and who paid, for the transaction detail screen.
+/// Shows nothing for a single person.
+struct TransactionOwnerSection: View {
+    @EnvironmentObject var store: BudgetStore
+    let transaction: BankTransaction
+
+    private var current: BankTransaction { store.transactions.first { $0.id == transaction.id } ?? transaction }
+
+    var body: some View {
+        if store.hasPartner {
+            Section {
+                OwnerPicker(owner: Binding(get: { current.owner }, set: { store.setOwner($0, paidBy: current.paidBy, for: current) }))
+                Picker("Paid by", selection: Binding(get: { current.paidBy ?? .me }, set: { store.setOwner(current.owner, paidBy: $0, for: current) })) {
+                    Text("Me").tag(Person.me)
+                    Text(store.couple.partnerName).tag(Person.partner)
+                }
+            } header: {
+                Text("Couple")
+            } footer: {
+                Text("Automatic uses your rules, which make this \(store.ledger.ruleOwner(of: current).label(partnerName: store.couple.partnerName)).")
+            }
+        }
+    }
+}
+
 /// Settings for a couple: the partner, how shared costs split, and the Mine / Partner / Shared rules.
 struct CoupleSettingsSection: View {
     @EnvironmentObject var store: BudgetStore
