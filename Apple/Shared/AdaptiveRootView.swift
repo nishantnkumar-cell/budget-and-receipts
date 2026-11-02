@@ -16,6 +16,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     case budgets = "Budgets"
     case recurring = "Recurring"
     case review = "Review"
+    case settings = "Settings"
 
     var id: String { rawValue }
 
@@ -26,6 +27,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .budgets: "gauge.with.dots.needle.67percent"
         case .recurring: "repeat.circle"
         case .review: "checklist"
+        case .settings: "gearshape"
         }
     }
 
@@ -36,6 +38,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .budgets: BudgetsView()
         case .recurring: RecurringView()
         case .review: ReviewView()
+        case .settings: SettingsView()
         }
     }
 }

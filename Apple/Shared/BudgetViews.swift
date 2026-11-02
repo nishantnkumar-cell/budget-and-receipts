@@ -45,8 +45,8 @@ struct BudgetsView: View {
                     MonthSwitcher()
                     Spacer()
                 }
-                LabeledContent("Spent this month") { Text(report.spending, format: .currency(code: "GBP")) }
-                LabeledContent("Income this month") { Text(report.income, format: .currency(code: "GBP")) }
+                LabeledContent("Spent this month") { Text(report.spending, format: .currency(code: AppSettings.currency)) }
+                LabeledContent("Income this month") { Text(report.income, format: .currency(code: AppSettings.currency)) }
             }
             Section("Categories") {
                 ForEach(lines(report)) { line in
@@ -87,9 +87,9 @@ struct BudgetRow: View {
                 HStack {
                     Text(line.category).foregroundStyle(.primary)
                     Spacer()
-                    Text(line.spent, format: .currency(code: "GBP")).monospacedDigit()
+                    Text(line.spent, format: .currency(code: AppSettings.currency)).monospacedDigit()
                     if let limit = line.limit {
-                        Text("of \(limit.formatted(.currency(code: "GBP")))")
+                        Text("of \(limit.formatted(.currency(code: AppSettings.currency)))")
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
                     }
@@ -98,7 +98,7 @@ struct BudgetRow: View {
                     ProgressView(value: min(progress, 1))
                         .tint(barColour)
                     if let remaining = line.remaining {
-                        Text(remaining < 0 ? "\((-remaining).formatted(.currency(code: "GBP"))) over" : "\(remaining.formatted(.currency(code: "GBP"))) left")
+                        Text(remaining < 0 ? "\((-remaining).formatted(.currency(code: AppSettings.currency))) over" : "\(remaining.formatted(.currency(code: AppSettings.currency))) left")
                             .font(.caption)
                             .foregroundStyle(remaining < 0 ? Color.brandPink : .secondary)
                     }

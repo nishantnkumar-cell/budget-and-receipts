@@ -29,7 +29,7 @@ struct MoneyCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.caption).foregroundStyle(.secondary)
-            Text(amount, format: .currency(code: "GBP"))
+            Text(amount, format: .currency(code: AppSettings.currency))
                 .font(.title2.bold())
                 .minimumScaleFactor(0.7)
         }
@@ -103,7 +103,7 @@ struct TransactionsView: View {
                             Text(transaction.category).font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Text(transaction.amount, format: .currency(code: "GBP"))
+                        Text(transaction.amount, format: .currency(code: AppSettings.currency))
                             .foregroundStyle(transaction.amount < 0 ? .primary : Color.green)
                     }
                 }
@@ -253,6 +253,6 @@ struct ContractEditor: View {
 
 extension SubscriptionContract {
     static func blank() -> SubscriptionContract {
-        SubscriptionContract(vendor: "", category: .other, startDate: Date(), billingPeriod: .monthly, nextPaymentDueDate: Date(), expectedAmount: 0)
+        SubscriptionContract(vendor: "", category: .other, startDate: Date(), billingPeriod: .monthly, nextPaymentDueDate: Date(), expectedAmount: 0, currency: AppSettings.currency)
     }
 }
