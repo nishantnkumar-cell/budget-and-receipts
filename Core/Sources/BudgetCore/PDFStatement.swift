@@ -42,7 +42,9 @@ public enum PDFStatementParser {
             let lower = line.lowercased()
             return lower.hasPrefix("date") && lower.contains("balance")
         }
-        var inTable = !hasMarkers
+        // Without "brought forward" markers the table starts at the first dated line with an
+        // amount, so summary boxes above it ("Debits", "New Balance") are never payments.
+        var inTable = false
         var expectBalance = false
         var rows: [StatementRow] = []
         var balance: Decimal?
@@ -70,6 +72,7 @@ public enum PDFStatementParser {
                 parts = []
                 continue
             }
+            if !hasMarkers, !inTable, dated != nil, !values.isEmpty { inTable = true }
             guard inTable else { continue }
             if expectBalance, let only = values.first, values.count == 1, dated == nil, descriptionText(line, dateLength: 0).isEmpty {
                 balance = only.value
@@ -92,7 +95,7 @@ public enum PDFStatementParser {
                 rows[last].amount = -rows[last].amount
                 continue
             }
-            if lower.hasPrefix("date ") || lower.hasPrefix("total") || lower.contains("statement totals") || line.count <= 2 { continue }
+            if lower.hasPrefix("date ") || lower.hasPrefix("total") || lower.contains("statement totals") || lower.contains("estimated interest") || line.count <= 2 { continue }
             var dateLength = dated?.length ?? 0
             if let dated, var day = makeDate(dated, years: years, calendar: calendar) {
                 // Card statements give two dates, "received" then "transaction": use the second.
