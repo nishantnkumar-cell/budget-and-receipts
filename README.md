@@ -9,6 +9,7 @@ A private budgeting and receipt app for one person or a couple, for iPhone and M
 | `Core/` | `BudgetCore` Swift package: models and money rules (split approval, contracts, receipt parsing). Foundation only, so it also builds on Linux and Windows. |
 | `Apple/` | iPhone and Mac apps. `project.yml` is the XcodeGen spec; the `.xcodeproj` is generated and not committed. |
 | `Apple/Shared/` | SwiftUI screens, stores and the Vision OCR service shared by both apps. |
+| `Fixtures/` | Synthetic bank statements (CSV, OFX, QIF) that every platform's tests must read the same way. |
 | `docs/design/` | Feature notes from the original prototype. |
 
 ## Build and test (Mac)
