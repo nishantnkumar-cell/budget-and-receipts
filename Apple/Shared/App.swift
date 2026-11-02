@@ -55,6 +55,8 @@ struct BudgetReceiptsApp: App {
                         if storeReady && contractsReady { await startOrStopSync() }
                     }
                     await cloud?.refresh()
+                    // Payments synced from other devices get categories too, not only imports.
+                    Task { await store.categoriseUnknownMerchants() }
                 }
             }
             .task(id: settings.iCloudSyncEnabled) { await startOrStopSync() }
