@@ -33,6 +33,7 @@ struct ReceiptView: View {
                 Label("Use camera", systemImage: "camera")
             }
             Section("Receipt") {
+                DuplicateReceiptBanner(warning: store.possibleDuplicate(of: editor))
                 TextField("Merchant", text: $editor.merchant)
                 TextField("Total", value: $editor.receiptTotal, format: .number).decimalKeyboard()
             }

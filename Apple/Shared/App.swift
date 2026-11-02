@@ -7,8 +7,13 @@ struct BudgetReceiptsApp: App {
     #else
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     #endif
+    #if DEBUG
+    @StateObject private var store = SampleData.isOn ? SampleData.budgetStore() : BudgetStore()
+    @StateObject private var subscriptions = SampleData.isOn ? SampleData.subscriptionStore() : SubscriptionStore()
+    #else
     @StateObject private var store = BudgetStore()
     @StateObject private var subscriptions = SubscriptionStore()
+    #endif
     @StateObject private var settings = AppSettings()
     @StateObject private var lock = AppLock()
     @Environment(\.scenePhase) private var scenePhase
@@ -89,13 +94,17 @@ struct BudgetReceiptsApp: App {
             }
         }
         #if os(macOS)
+        .defaultSize(width: 1360, height: 880)
         .commands { ImportFromDevicesCommands() }
         #endif
     }
 
     /// iCloud sync runs only when it is switched on, the build has iCloud, and not under tests.
     private func startOrStopSync() async {
-        let testing = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        var testing = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        #if DEBUG
+        testing = testing || SampleData.isOn
+        #endif
         guard settings.iCloudSyncEnabled, CloudSync.containerID != nil, !testing else {
             syncStatus.set(.off, pending: 0)
             syncStatus.sync = nil

@@ -28,6 +28,17 @@ struct BudgetsView: View {
                     SummaryTile(title: "Spent", amount: report.spending)
                     SummaryTile(title: "Income", amount: report.income, tint: .green)
                 }
+                NavigationLink { MonthReviewView() } label: {
+                    HStack(spacing: 12) {
+                        IconBadge(systemImage: "calendar.badge.checkmark", size: 32)
+                        Text("\(store.selectedMonth.formatted(.dateTime.month(.wide))) in review").font(.body.weight(.semibold))
+                        Spacer()
+                        Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                    }
+                    .card(padding: 12)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
                 VStack(spacing: 0) {
                     ForEach(lines(report)) { line in
                         Button { editing = line } label: {

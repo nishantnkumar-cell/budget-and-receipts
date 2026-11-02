@@ -11,6 +11,9 @@ enum Theme {
 extension Decimal {
     /// Formats money in the currency chosen in Settings.
     var money: String { formatted(.currency(code: AppSettings.currency)) }
+
+    /// Whole pounds (or dollars), for big numbers like net worth where pence are noise.
+    var wholeMoney: String { formatted(.currency(code: AppSettings.currency).precision(.fractionLength(0))) }
 }
 
 extension View {

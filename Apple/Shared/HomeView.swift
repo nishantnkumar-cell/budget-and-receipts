@@ -16,7 +16,9 @@ struct HomeView: View {
                     Spacer()
                     MonthSwitcher()
                 }
-                LeftToSpendCard(report: report, month: store.selectedMonth)
+                LeftToSpendCard(report: report, month: store.selectedMonth,
+                                safeToSpend: store.safeToSpend(contracts: subscriptions.contracts))
+                BalanceForecastLine()
                 CoupleBalanceCard()
                 AccountSpendingCard()
                 if !store.needsReview.isEmpty {
@@ -25,6 +27,7 @@ struct HomeView: View {
                 }
                 topBudgets(report)
                 ComingUpCard()
+                NetWorthCard()
             }
             .padding()
             .frame(maxWidth: 720)
@@ -69,6 +72,7 @@ struct HomeView: View {
 struct LeftToSpendCard: View {
     let report: MonthlyBudgetReport
     let month: Date
+    var safeToSpend: SafeToSpend?
 
     private var budgeted: Decimal { report.lines.compactMap(\.limit).reduce(0, +) }
     private var spentInBudgets: Decimal { report.lines.filter { $0.limit != nil }.reduce(0) { $0 + $1.spent } }
@@ -92,6 +96,12 @@ struct LeftToSpendCard: View {
                     Text((budgeted - spentInBudgets).money)
                         .font(.system(size: 36, weight: .bold, design: .rounded))
                     Text(subtitle).font(.subheadline).opacity(0.8)
+                    if let safeToSpend {
+                        Text("\(safeToSpend.today.money) safe to spend today")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.heroAccent)
+                            .padding(.top, 4)
+                    }
                 } else {
                     Text("Spent this month").font(.subheadline).opacity(0.8)
                     Text(report.spending.money)
@@ -107,7 +117,7 @@ struct LeftToSpendCard: View {
                     Circle().stroke(.white.opacity(0.15), lineWidth: 10)
                     Circle()
                         .trim(from: 0, to: progress)
-                        .stroke(Color.brandAmber, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                        .stroke(Color.heroAccent, style: StrokeStyle(lineWidth: 10, lineCap: .round))
                         .rotationEffect(.degrees(-90))
                     Text(progress, format: .percent.precision(.fractionLength(0)))
                         .font(.subheadline.weight(.bold))
@@ -119,7 +129,7 @@ struct LeftToSpendCard: View {
         .foregroundStyle(.white)
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(red: 0x26 / 255, green: 0x18 / 255, blue: 0x52 / 255), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(Color.heroBackground, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 
@@ -136,9 +146,9 @@ struct InboxSummaryCard: View {
         HStack(spacing: 12) {
             Image(systemName: "sparkles")
                 .font(.title3)
-                .foregroundStyle(Color.brandAmber)
+                .foregroundStyle(Color.brandPink)
                 .frame(width: 40, height: 40)
-                .background(Color.brandAmber.opacity(0.15), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(Color.brandPink.opacity(0.15), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
                 Text(count == 1 ? "1 item to check" : "\(count) items to check").font(.body.weight(.semibold))
                 Text("Receipts and payments waiting for your OK").font(.caption).foregroundStyle(.secondary)
