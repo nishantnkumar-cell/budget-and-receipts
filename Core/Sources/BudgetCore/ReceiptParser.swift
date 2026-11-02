@@ -2,7 +2,7 @@ import Foundation
 
 /// An editable receipt draft. OCR fills it in, the person corrects it, and only then
 /// does it become a `SplitDraft` for approval.
-public struct ReceiptDraftEditor: Hashable, Sendable {
+public struct ReceiptDraftEditor: Codable, Hashable, Sendable {
     public var merchant: String
     public var purchaseDate: Date?
     public var subtotal: Decimal?
