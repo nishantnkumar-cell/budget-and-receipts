@@ -69,6 +69,19 @@ final class MerchantLookupStoreTests: XCTestCase {
         XCTAssertEqual(BudgetStore(folder: folder).merchantCategories.count, 1, "Remembered")
     }
 
+    func testAShopIsAskedAboutOncePerLaunchUnlessRetried() async {
+        let store = BudgetStore(folder: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        store.transactions = [BankTransaction(date: Date(), merchant: "MYSTERY LTD", amount: -5, fingerprint: "c")]
+        var asked = 0
+        let lookup: (String) async -> MerchantCategory? = { _ in asked += 1; return nil }
+        await store.categoriseUnknownMerchants(useAI: true, useMaps: false, lookup: lookup)
+        await store.categoriseUnknownMerchants(useAI: true, useMaps: false, lookup: lookup)
+        XCTAssertEqual(asked, 1, "Opening the app again doesn't ask again")
+        await store.categoriseUnknownMerchants(useAI: true, useMaps: false, retry: true, lookup: lookup)
+        XCTAssertEqual(asked, 2, "The Inbox button asks again")
+        XCTAssertEqual(store.uncategorisedCount, 1)
+    }
+
     func testNothingIsLookedUpWhenBothSwitchesAreOff() async {
         let store = BudgetStore(folder: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
         store.transactions = [BankTransaction(date: Date(), merchant: "MYSTERY LTD", amount: -5, fingerprint: "c")]

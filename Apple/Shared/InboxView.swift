@@ -15,6 +15,18 @@ struct InboxView: View {
         }
         .appBackground()
         .navigationTitle("Inbox")
+        .safeAreaInset(edge: .bottom) { CategorisingBanner().padding(.bottom, 8) }
+        .toolbar {
+            if store.uncategorisedCount > 0 {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Categorise with AI", systemImage: "wand.and.stars") {
+                        Task { await store.categoriseNow() }
+                    }
+                    .disabled(store.isCategorising)
+                    .help("Ask Apple Intelligence on this device to suggest categories")
+                }
+            }
+        }
     }
 
     @ViewBuilder private var inboxContent: some View {
