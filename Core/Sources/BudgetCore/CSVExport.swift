@@ -4,22 +4,40 @@ import Foundation
 public enum CSVExporter {
     public static let header = ["Date", "Merchant", "Description", "Category", "Amount", "Split of"]
 
+    /// Extra columns when exporting for a couple.
+    public static let coupleHeader = ["Whose", "Paid by"]
+
     /// One row per transaction, or one row per split for split transactions (with the
     /// original merchant in "Split of"), so category totals add up in a spreadsheet.
-    public static func transactions(_ transactions: [BankTransaction], calendar: Calendar = .current) -> String {
-        var rows = [header]
+    /// With a ledger (a couple), each row also says whose money it is and who paid.
+    public static func transactions(_ transactions: [BankTransaction], calendar: Calendar = .current, ledger: CoupleLedger? = nil) -> String {
+        var rows = [ledger == nil ? header : header + coupleHeader]
         for transaction in transactions.sorted(by: { $0.date < $1.date }) {
             let day = isoDay(transaction.date, calendar: calendar)
+            let whole = ledger?.owner(of: transaction)
+            func couple(_ owner: MoneyOwner?) -> [String] {
+                guard let ledger, let owner else { return [] }
+                let partner = ledger.settings.partnerName
+                return [label(owner, partner: partner), (transaction.paidBy ?? .me) == .me ? "Me" : label(.partner, partner: partner)]
+            }
             if transaction.splits.isEmpty {
-                rows.append([day, transaction.merchant, transaction.description, transaction.category, "\(transaction.amount)", ""])
+                rows.append([day, transaction.merchant, transaction.description, transaction.category, "\(transaction.amount)", ""] + couple(whole))
             } else {
                 let sign: Decimal = transaction.amount < 0 ? -1 : 1
                 for split in transaction.splits {
-                    rows.append([day, split.label, transaction.description, split.category, "\(split.amount * sign)", transaction.merchant])
+                    rows.append([day, split.label, transaction.description, split.category, "\(split.amount * sign)", transaction.merchant] + couple(split.owner ?? whole))
                 }
             }
         }
         return rows.map { $0.map(escape).joined(separator: ",") }.joined(separator: "\r\n") + "\r\n"
+    }
+
+    static func label(_ owner: MoneyOwner, partner: String) -> String {
+        switch owner {
+        case .mine: "Me"
+        case .partner: partner.isEmpty ? "Partner" : partner
+        case .shared: "Shared"
+        }
     }
 
     static func escape(_ field: String) -> String {
