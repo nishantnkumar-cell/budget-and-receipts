@@ -6,6 +6,7 @@ struct SettingsView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var store: BudgetStore
     @EnvironmentObject var subscriptions: SubscriptionStore
+    @EnvironmentObject var syncStatus: SyncStatus
     @State private var exportingCSV = false
     @State private var exportingPDF = false
     @State private var exportError: String?
@@ -18,6 +19,19 @@ struct SettingsView: View {
                         Text("\(code) – \(Locale.current.localizedString(forCurrencyCode: code) ?? code)").tag(code)
                     }
                 }
+            }
+            Section {
+                Toggle("Sync with iCloud", isOn: $settings.iCloudSyncEnabled)
+                    .disabled(CloudSync.containerID == nil)
+                if settings.iCloudSyncEnabled, CloudSync.containerID != nil {
+                    LabeledContent("Status", value: syncStatus.text)
+                }
+            } header: {
+                Text("iCloud")
+            } footer: {
+                Text(CloudSync.containerID == nil
+                     ? "iCloud sync isn't available in this version of the app yet."
+                     : "Keeps your budget, receipts and contracts the same on your iPhone and Mac, through your own iCloud. Items marked Private stay private when you later share your household with a partner.")
             }
             CoupleSettingsSection()
             AccountsSettingsSection()

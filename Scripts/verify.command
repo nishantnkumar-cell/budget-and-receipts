@@ -12,9 +12,9 @@ echo "== Generate Xcode project"
 
 DERIVED=.build/DerivedData
 echo "== macOS app tests"
+# Signed with the development team: the Mac app's iCloud entitlements need a real certificate.
 xcodebuild -project Apple/BudgetReceipts.xcodeproj -scheme BudgetReceipts-macOS \
-  -destination 'platform=macOS' -derivedDataPath "$DERIVED" \
-  CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO test
+  -destination 'platform=macOS' -derivedDataPath "$DERIVED" -allowProvisioningUpdates test
 
 echo "== iOS app tests"
 SIMULATOR=${SIMULATOR:-"iPhone 17"}
