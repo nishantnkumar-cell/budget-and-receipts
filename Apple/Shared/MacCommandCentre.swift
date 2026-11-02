@@ -121,7 +121,7 @@ struct MacSidebar: View {
                     Text(name)
                 } icon: {
                     Image(systemName: symbol)
-                        .foregroundStyle(view == .partner ? Color.brandPink : view == .me ? Color.brandIndigo : Color.secondary)
+                        .foregroundStyle(view == .partner ? Color.brandPartner : view == .me ? Color.brandPlum : Color.secondary)
                 }
                 Spacer()
                 if store.householdView == view {
@@ -240,7 +240,7 @@ extension MacPanel where Accessory == EmptyView {
 }
 
 enum MacPalette {
-    static let colors: [Color] = [.brandIndigo, .brandPink, .brandAmber, .green, .blue, .purple, .orange, .teal]
+    static let colors: [Color] = [.brandPink, .brandPartner, .brandTeal, .brandAmber, .green, .blue, .orange, .gray]
     static func series(_ index: Int) -> Color { colors[index % colors.count] }
 
     /// One steady colour per category, used for dots in the table.
@@ -385,7 +385,7 @@ struct MacSpendingPace: View {
                         .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
                 }
             }
-            .chartForegroundStyleScale(["This month": Color.brandIndigo, "Last month": Color.secondary.opacity(0.45), "Budget": Color.brandPink])
+            .chartForegroundStyleScale(["This month": Color.brandPink, "Last month": Color.secondary.opacity(0.45), "Budget": Color.brandAmber])
             .chartXScale(domain: 1...days)
             .chartYAxis { AxisMarks(position: .leading) { value in
                 AxisGridLine()
