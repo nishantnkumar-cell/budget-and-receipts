@@ -92,6 +92,7 @@ targets:
       properties:
         CFBundleDisplayName: Budget & Receipts
         LSApplicationCategoryType: public.app-category.finance
+        CloudKitContainer: iCloud.com.nishantkumar.budgetreceipts
         CFBundleDocumentTypes:
           - CFBundleTypeName: Receipt
             CFBundleTypeRole: Viewer
@@ -121,6 +122,10 @@ targets:
         com.apple.security.files.user-selected.read-only: true
         # On the Mac a team-prefixed group needs no provisioning profile.
         com.apple.security.application-groups: [$(TeamIdentifierPrefix)com.nishantkumar.budgetreceipts]
+        com.apple.security.network.client: true
+        com.apple.developer.icloud-container-identifiers: [iCloud.com.nishantkumar.budgetreceipts]
+        com.apple.developer.icloud-services: [CloudKit]
+        com.apple.developer.aps-environment: development
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nishantkumar.budgetreceipts
