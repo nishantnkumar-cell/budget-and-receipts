@@ -98,7 +98,8 @@ struct SharedDocumentDetail: View {
             }
         }
         .navigationTitle(current.fileName)
-        .confirmationDialog("Remove \(current.fileName) from Shared files?", isPresented: $confirmingDelete) {
+        .alert("Remove \(current.fileName) from Shared files?", isPresented: $confirmingDelete) {
+            Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
                 store.deleteSharedDocument(current)
                 dismiss()

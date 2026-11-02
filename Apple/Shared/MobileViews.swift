@@ -25,6 +25,7 @@ extension View {
 struct TransactionsView: View {
     @EnvironmentObject var store: BudgetStore
     @State private var query = ""
+    @State private var addingTransaction = false
 
     private var shown: [BankTransaction] {
         let all = store.transactions
@@ -59,6 +60,9 @@ struct TransactionsView: View {
                                 Label("Delete", systemImage: "trash")
                             }
                         }
+                        .contextMenu {
+                            Button("Delete", role: .destructive) { store.delete(transaction) }
+                        }
                     }
                 }
             }
@@ -73,11 +77,14 @@ struct TransactionsView: View {
             }
         }
         .searchable(text: $query)
+        .sheet(isPresented: $addingTransaction) {
+            NavigationStack { NewTransactionView() }
+        }
         .navigationTitle("Activity")
         .toolbar {
             ToolbarItem(placement: .primaryAction) { AccountFilterMenu() }
             ToolbarItem(placement: .primaryAction) {
-                Button(action: store.addTransaction) { Image(systemName: "plus") }
+                Button { addingTransaction = true } label: { Image(systemName: "plus") }
                     .accessibilityLabel("Add transaction")
             }
             ToolbarItem(placement: .primaryAction) {
@@ -97,7 +104,7 @@ struct TransactionEditor: View {
             DatePicker("Date", selection: $transaction.date, displayedComponents: .date)
             TextField("Merchant", text: $transaction.merchant)
             TextField("Description", text: $transaction.description)
-            TextField("Amount", value: $transaction.amount, format: .number).decimalKeyboard()
+            SignedAmountField(amount: $transaction.amount)
             Picker("Category", selection: $transaction.category) {
                 ForEach(FinanceCategories.all, id: \.self) { Text($0).tag($0) }
             }
@@ -107,6 +114,9 @@ struct TransactionEditor: View {
             PrivateToggle(isPrivate: $transaction.isPrivate)
             Section("Receipt") {
                 NavigationLink("Scan or review receipt") { ReceiptView(transaction: transaction) }
+            }
+            Section {
+                DeleteTransactionButton(transaction: transaction)
             }
         }
         .navigationTitle("Edit")

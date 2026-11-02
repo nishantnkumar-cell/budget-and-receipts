@@ -67,16 +67,10 @@ final class BudgetStore: ObservableObject {
         return result
     }
 
-    func addTransaction() {
-        let transaction = BankTransaction(
-            date: Date(),
-            merchant: "New transaction",
-            description: "Manual entry",
-            amount: 0,
-            category: "Uncategorised",
-            fingerprint: UUID().uuidString
-        )
-        transactions.insert(transaction, at: 0)
+    /// Adds a transaction entered by hand (see `NewTransactionView`).
+    func add(_ transaction: BankTransaction) {
+        transactions.append(transaction)
+        transactions.sort { $0.date > $1.date }
         persist()
     }
 
@@ -256,6 +250,31 @@ final class BudgetStore: ObservableObject {
         BankAccounts.spendingByAccount(transactions, month: selectedMonth, calculator: calculator)
             .map { (account: account($0.key), spent: $0.value) }
             .sorted { ($0.account == nil ? 1 : 0, -$0.spent) < ($1.account == nil ? 1 : 0, -$1.spent) }
+    }
+
+    // MARK: Starting again
+
+    /// Removes every transaction, budget, receipt, account and shared file, here and (through
+    /// iCloud sync, as deletions) on your other devices. Settings such as currency are kept.
+    func resetAllData() {
+        transactions = []
+        changes = []
+        budgets = []
+        imports = []
+        couple = CoupleSettings()
+        settlements = []
+        pendingReceipts = []
+        accounts = []
+        sharedDocuments = []
+        accountFilter = nil
+        householdView = .together
+        for folder in [imagesFolder, sharedFilesFolder] {
+            for file in (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [] {
+                try? FileManager.default.removeItem(at: file)
+            }
+        }
+        status = "All data removed. Import a statement or add a transaction to start."
+        persist()
     }
 
     // MARK: Shared files

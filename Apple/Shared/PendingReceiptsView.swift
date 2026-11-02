@@ -102,7 +102,8 @@ struct PendingReceiptDetail: View {
             }
         }
         .navigationTitle(receipt.editor.merchant.isEmpty ? "Receipt" : receipt.editor.merchant)
-        .confirmationDialog("Delete this receipt?", isPresented: $confirmingDelete) {
+        .alert("Delete this receipt?", isPresented: $confirmingDelete) {
+            Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
                 store.deletePending(receipt)
                 dismiss()
