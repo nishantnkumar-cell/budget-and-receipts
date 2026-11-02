@@ -33,6 +33,7 @@ struct HomeView: View {
         .navigationTitle("Home")
         #if os(iOS)
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { SyncStatusButton() }
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink { SettingsView() } label: { Image(systemName: "gearshape") }
                     .accessibilityLabel("Settings")
