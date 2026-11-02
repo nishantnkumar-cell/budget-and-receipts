@@ -15,18 +15,25 @@ ASSETS = HERE.parent.parent / "Apple" / "Shared" / "Assets.xcassets"
 
 MAC_SIZES = [16, 32, 128, 256, 512]
 
-# Colour tokens: name -> (light, dark). Dark values are lifted for contrast on dark backgrounds.
+# Colour tokens: name -> (light, dark). "Graphite and violet" (chosen 2026-11-02): neutral greys
+# with one violet accent; the token names are older than the scheme, so their roles are:
+# BrandPink = the main violet accent, BrandPlum/BrandIndigo = deeper violets for icons and "mine",
+# BrandPartner = the partner's colour, BrandTeal = shared, BrandAmber = warnings.
 COLOURS = {
-    "AccentColor": ("#D9286C", "#EC6096"),
-    "BrandPink": (PALETTE["pink"], "#EC6096"),
-    "BrandPlum": (PALETTE["plum"], "#C05AA8"),
-    "BrandIndigo": (PALETTE["indigo"], "#8C7BD6"),
-    "BrandAmber": ("#D9961C", PALETTE["amber"]),
-    "BrandCream": (PALETTE["cream"], "#2A1840"),
-    "BrandInk": (PALETTE["ink"], PALETTE["cream"]),
-    # Surfaces for the redesigned screens: a warm page with white cards.
-    "ScreenBackground": ("#F7F3EE", "#120A1E"),
-    "CardBackground": ("#FFFFFF", "#22152F"),
+    "AccentColor": ("#5E5CE6", "#8B89FF"),
+    "BrandPink": ("#5E5CE6", "#8B89FF"),
+    "BrandPlum": ("#4F4DD6", "#A3A1FF"),
+    "BrandIndigo": ("#3F3DBF", "#B4B2FF"),
+    "BrandAmber": ("#C2700A", "#FBBF24"),
+    "BrandCream": ("#F0F0F2", "#26262C"),
+    "BrandInk": ("#18181B", "#EDEDF0"),
+    "BrandPartner": ("#C0267A", "#F472B6"),
+    "BrandTeal": ("#0E7C86", "#5EEAD4"),
+    # Surfaces: a cool grey page with white cards, and the dark "left to spend" hero card.
+    "ScreenBackground": ("#F7F7F8", "#0E0E11"),
+    "CardBackground": ("#FFFFFF", "#17171B"),
+    "HeroBackground": ("#1C1C22", "#1F1F26"),
+    "HeroAccent": ("#A5A3FF", "#A5A3FF"),
 }
 
 

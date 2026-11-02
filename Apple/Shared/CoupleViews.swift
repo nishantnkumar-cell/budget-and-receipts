@@ -46,7 +46,10 @@ struct TransactionOwnerSection: View {
             } header: {
                 Text("Whose money")
             } footer: {
-                Text("Automatic uses your rules, which make this \(store.ledger.ruleOwner(of: current).label(partnerName: store.couple.partnerName)).")
+                let automatic = { var copy = current; copy.owner = nil; return copy }()
+                let source = store.ledger.ownerSource(of: automatic)
+                let accountName: String? = if case .account(let id) = source { store.account(id)?.label } else { nil }
+                Text("Automatic makes this \(store.ledger.owner(of: automatic).label(partnerName: store.couple.partnerName)). \(source.explanation(accountName: accountName))")
             }
         }
     }
