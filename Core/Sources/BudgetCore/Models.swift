@@ -18,6 +18,8 @@ public struct BankTransaction: Identifiable, Codable, Hashable, Sendable {
     public var accountID: UUID?
     /// Hidden from a partner the household is shared with. Everything is shared unless marked.
     public var isPrivate: Bool?
+    /// Free labels, e.g. "Holiday 2026" or "Work expenses", for reports.
+    public var tags: [String]?
 
     public init(
         date: Date,
