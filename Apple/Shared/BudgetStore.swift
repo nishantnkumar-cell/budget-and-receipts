@@ -138,7 +138,23 @@ final class BudgetStore: ObservableObject {
     /// False for a single person; the Me / Partner / Together switch is hidden then.
     var hasPartner: Bool { !couple.partnerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
-    var ledger: CoupleLedger { CoupleLedger(settings: couple, calculator: calculator) }
+    var ledger: CoupleLedger {
+        var ledger = CoupleLedger(settings: couple, calculator: calculator)
+        ledger.accountOwners = Dictionary(accounts.compactMap { account in account.owner.map { (account.id, $0) } }, uniquingKeysWith: { first, _ in first })
+        return ledger
+    }
+
+    /// How much can be spent today to stay within this month's budgets, after the bills still
+    /// to come. Nil when no budgets are set or another month is showing.
+    func safeToSpend(contracts: [SubscriptionContract], today: Date = Date()) -> SafeToSpend? {
+        let upcoming = ComingUpPlanner().payments(contracts, from: today)
+        return SafeToSpend.calculate(report: monthReport, upcomingBills: upcoming, today: today)
+    }
+
+    /// A warning when this receipt looks like one already saved or attached. Nil when it's new.
+    func possibleDuplicate(of editor: ReceiptDraftEditor, excluding pendingID: UUID? = nil) -> String? {
+        ReceiptDuplicates.match(editor, pending: pendingReceipts.filter { $0.id != pendingID }, transactions: transactions)
+    }
 
     /// Transactions scaled to the selected side of the household.
     var viewTransactions: [BankTransaction] {

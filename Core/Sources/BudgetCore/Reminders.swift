@@ -49,8 +49,11 @@ public struct ReminderPlanner: Sendable {
             result.append(ContractReminder(contractID: contract.id, kind: kind, fireDate: fire, eventDate: event, title: title, body: body))
         }
 
-        add(.paymentDue, event: contract.nextPaymentDueDate, leadDays: paymentLeadDays,
-            title: "\(contract.vendor) payment due", body: "\(amount) is due on \(dayText(contract.nextPaymentDueDate)).")
+        let paymentLead = contract.remindDaysBefore ?? paymentLeadDays
+        if paymentLead > 0 {
+            add(.paymentDue, event: contract.nextPaymentDueDate, leadDays: paymentLead,
+                title: "\(contract.vendor) payment due", body: "\(amount) is due on \(dayText(contract.nextPaymentDueDate)).")
+        }
 
         if let renewal = contract.renewalDate {
             if let notice = contract.cancellationNoticeDays, notice > 0, let deadline = calendar.date(byAdding: .day, value: -notice, to: renewal) {

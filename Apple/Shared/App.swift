@@ -55,6 +55,10 @@ struct BudgetReceiptsApp: App {
             } message: {
                 Text(store.shareSummary ?? "")
             }
+            // A price rise shows up when a statement brings the new payment.
+            .task(id: store.transactions.count) {
+                await PriceRiseNotifier.check(subscriptions.priceRises(transactions: store.transactions), enabled: settings.remindersEnabled)
+            }
             .task(id: subscriptions.contracts) {
                 await ReminderScheduler.reschedule(subscriptions.contracts, enabled: settings.remindersEnabled)
             }

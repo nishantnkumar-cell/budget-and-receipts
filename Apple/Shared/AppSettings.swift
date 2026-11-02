@@ -149,3 +149,24 @@ enum ReminderScheduler {
         }
     }
 }
+
+/// A local notification the first time a subscription or bill's price goes up.
+enum PriceRiseNotifier {
+    static func check(_ rises: [UUID: PriceRise], enabled: Bool, defaults: UserDefaults = .standard) async {
+        guard enabled else { return }
+        var told = Set(defaults.stringArray(forKey: "notifiedPriceRises") ?? [])
+        let hidden = defaults.bool(forKey: "appLockEnabled")
+        for rise in rises.values {
+            let key = "\(rise.contractID)|\(rise.latest)"
+            guard told.insert(key).inserted else { continue }
+            let content = UNMutableNotificationContent()
+            content.title = hidden ? "Duo Budget" : "\(rise.vendor) costs more"
+            content.body = hidden
+                ? "A subscription or bill has gone up in price."
+                : "Now \(rise.latest.formatted(.currency(code: AppSettings.currency))), up from \(rise.previous.formatted(.currency(code: AppSettings.currency))). Check it in Plan."
+            let request = UNNotificationRequest(identifier: "price-rise-\(key)", content: content, trigger: nil)
+            try? await UNUserNotificationCenter.current().add(request)
+        }
+        defaults.set(Array(told), forKey: "notifiedPriceRises")
+    }
+}

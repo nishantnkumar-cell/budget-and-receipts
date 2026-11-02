@@ -28,6 +28,11 @@ final class SubscriptionStore: ObservableObject {
         persist()
     }
 
+    /// Subscriptions and bills whose latest payment costs more than before, by contract.
+    func priceRises(transactions: [BankTransaction]) -> [UUID: PriceRise] {
+        Dictionary(SubscriptionTracker().priceRises(contracts, transactions: transactions).map { ($0.contractID, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
     func resetAllData() {
         contracts = []
         persist()
