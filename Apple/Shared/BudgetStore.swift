@@ -21,6 +21,8 @@ final class BudgetStore: ObservableObject {
     @Published var householdView: HouseholdView = .together
 
     private let storage: JSONFileStorage
+    /// Called after every local change is saved, so iCloud sync can send it.
+    var didPersist: (() -> Void)?
 
     /// - Parameter folder: where the JSON files live. Tests pass a temporary folder;
     ///   the app uses Application Support.
@@ -276,6 +278,11 @@ final class BudgetStore: ObservableObject {
     }
 
     private func persist() {
+        writeFiles()
+        didPersist?()
+    }
+
+    private func writeFiles() {
         storage.save(transactions, "transactions.json")
         storage.save(changes, "changes.json")
         storage.save(budgets, "budgets.json")
@@ -330,3 +337,61 @@ struct JSONFileStorage {
         return try? JSONDecoder().decode(T.self, from: data)
     }
 }
+
+// MARK: - iCloud sync
+
+extension BudgetStore: SyncSource {
+    /// Every item as an iCloud record. An item is private when marked, or when its account is.
+    func syncRecords() -> [SyncRecord] {
+        let privateAccounts = Set(accounts.filter { $0.isPrivate == true }.map(\.id))
+        func isPrivate(_ transaction: BankTransaction) -> Bool {
+            transaction.isPrivate == true || transaction.accountID.map(privateAccounts.contains) == true
+        }
+        return SyncRecord.records(transactions, collection: "transactions", id: \.fingerprint, isPrivate: isPrivate)
+            + SyncRecord.records(changes, collection: "changes", id: \.id.uuidString)
+            + SyncRecord.records(budgets, collection: "budgets", id: \.id.uuidString)
+            + SyncRecord.records(imports, collection: "imports", id: \.id.uuidString)
+            + SyncRecord.records([couple], collection: "couple", id: { _ in "settings" })
+            + SyncRecord.records(settlements, collection: "settlements", id: \.id.uuidString)
+            + SyncRecord.records(pendingReceipts, collection: "pendingReceipts", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })
+            + SyncRecord.records(accounts, collection: "accounts", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })
+            + imageRecords(privateTransactions: transactions.filter(isPrivate))
+    }
+
+    /// Receipt photos travel as files. A photo is private when only private items use it.
+    private func imageRecords(privateTransactions: [BankTransaction]) -> [SyncRecord] {
+        let images = ReceiptImageStore(dataFolder: storage.folder)
+        var used: [String: Bool] = [:]
+        func use(_ path: String?, _ isPrivate: Bool) {
+            guard let path, !path.isEmpty else { return }
+            let name = (path as NSString).lastPathComponent
+            used[name] = (used[name] ?? true) && isPrivate
+        }
+        let privateIDs = Set(privateTransactions.map(\.id))
+        for transaction in transactions {
+            use(transaction.pendingSplitDraft?.receipt.imagePath, privateIDs.contains(transaction.id))
+        }
+        for receipt in pendingReceipts { use(receipt.editor.imagePath, receipt.isPrivate == true) }
+        return used.compactMap { name, isPrivate in
+            guard images.url(for: name) != nil else { return nil }
+            return SyncRecord(collection: "images", id: name, payload: Data(), isPrivate: isPrivate, fileName: name)
+        }
+    }
+
+    var imagesFolder: URL { ReceiptImageStore(dataFolder: storage.folder).folder }
+
+    /// Applies changes from your other devices. Saved to disk, not sent back.
+    func applySync(saves: [SyncRecord], deletes: Set<String>) {
+        transactions = SyncMerge.apply(saves: saves, deletes: deletes, to: transactions, collection: "transactions", id: \.fingerprint)
+            .sorted { $0.date > $1.date }
+        changes = SyncMerge.apply(saves: saves, deletes: deletes, to: changes, collection: "changes", id: \.id.uuidString)
+        budgets = SyncMerge.apply(saves: saves, deletes: deletes, to: budgets, collection: "budgets", id: \.id.uuidString)
+        imports = SyncMerge.apply(saves: saves, deletes: deletes, to: imports, collection: "imports", id: \.id.uuidString)
+        couple = SyncMerge.apply(saves: saves, deletes: [], to: [couple], collection: "couple", id: { _ in "settings" }).last ?? couple
+        settlements = SyncMerge.apply(saves: saves, deletes: deletes, to: settlements, collection: "settlements", id: \.id.uuidString)
+        pendingReceipts = SyncMerge.apply(saves: saves, deletes: deletes, to: pendingReceipts, collection: "pendingReceipts", id: \.id.uuidString)
+        accounts = SyncMerge.apply(saves: saves, deletes: deletes, to: accounts, collection: "accounts", id: \.id.uuidString)
+        writeFiles()
+    }
+}
+

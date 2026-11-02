@@ -63,10 +63,15 @@ targets:
             UTTypeDescription: QIF bank statement
             UTTypeConformsTo: [public.data]
             UTTypeTagSpecification: {public.filename-extension: [qif]}
+        CloudKitContainer: iCloud.com.nishantkumar.budgetreceipts
+        UIBackgroundModes: [remote-notification]
     entitlements:
       path: iOS/BudgetReceipts.entitlements
       properties:
         com.apple.security.application-groups: [group.com.nishantkumar.budgetreceipts]
+        com.apple.developer.icloud-container-identifiers: [iCloud.com.nishantkumar.budgetreceipts]
+        com.apple.developer.icloud-services: [CloudKit]
+        aps-environment: development
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nishantkumar.budgetreceipts

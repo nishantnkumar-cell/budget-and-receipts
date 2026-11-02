@@ -30,6 +30,8 @@ public struct PendingReceipt: Identifiable, Codable, Hashable, Sendable {
     public var id: UUID
     public var scannedAt: Date
     public var editor: ReceiptDraftEditor
+    /// Hidden from a partner the household is shared with.
+    public var isPrivate: Bool?
 
     public init(id: UUID = UUID(), scannedAt: Date = Date(), editor: ReceiptDraftEditor) {
         self.id = id

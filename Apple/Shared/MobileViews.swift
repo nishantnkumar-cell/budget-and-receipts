@@ -104,6 +104,7 @@ struct TransactionEditor: View {
             if !store.accounts.isEmpty {
                 AccountPicker(selection: $transaction.accountID)
             }
+            PrivateToggle(isPrivate: $transaction.isPrivate)
             Section("Receipt") {
                 NavigationLink("Scan or review receipt") { ReceiptView(transaction: transaction) }
             }
