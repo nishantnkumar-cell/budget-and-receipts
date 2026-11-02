@@ -133,3 +133,34 @@ final class NetWorthStoreTests: XCTestCase {
         XCTAssertEqual(store.applyCategory("Eating out", toSimilar: first), 1)
     }
 }
+
+@MainActor
+final class LockedFilesTests: XCTestCase {
+    func testDamagedAndMissingAreDifferentFromNotYetReadable() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let storage = JSONFileStorage(folder: folder)
+        XCTAssertNil(try storage.loadChecked("missing.json") as [String]?)
+        try Data("nope".utf8).write(to: folder.appendingPathComponent("bad.json"))
+        XCTAssertThrowsError(try storage.loadChecked("bad.json") as [String]?) { error in
+            guard case JSONFileStorage.LoadError.unreadable = error else { return XCTFail("\(error)") }
+        }
+        // A folder in place of a file can't be read: like a locked file, it isn't "damaged".
+        try FileManager.default.createDirectory(at: folder.appendingPathComponent("locked.json"), withIntermediateDirectories: true)
+        XCTAssertThrowsError(try storage.loadChecked("locked.json") as [String]?) { error in
+            guard case JSONFileStorage.LoadError.locked = error else { return XCTFail("\(error)") }
+        }
+    }
+
+    func testAStoreWaitingForItsFilesNeverOverwritesThem() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try FileManager.default.createDirectory(at: folder.appendingPathComponent("transactions.json"), withIntermediateDirectories: true)
+        let store = BudgetStore(folder: folder)
+        XCTAssertTrue(store.isWaitingForFiles)
+        store.add(BankTransaction(date: Date(), merchant: "X", amount: -1, fingerprint: "x"))
+        var isFolder: ObjCBool = false
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent("transactions.json").path, isDirectory: &isFolder) && isFolder.boolValue, "Nothing was written over it")
+        XCTAssertTrue(store.unreadableFiles.isEmpty, "Not set aside as damaged")
+    }
+}
