@@ -13,6 +13,8 @@ public enum HouseholdPerspective {
         case "pendingReceipts": result.payload = flip(record.payload, as: PendingReceipt.self) { receipt in
             for index in receipt.editor.items.indices { receipt.editor.items[index].owner = receipt.editor.items[index].owner.map(flip) }
         }
+        case "wealth": result.payload = flip(record.payload, as: WealthAccount.self) { $0.owner = $0.owner.map(flip) }
+        case "notes": result.payload = flip(record.payload, as: TransactionNote.self) { $0.author = $0.author.other }
         case "settlements": result.payload = flip(record.payload, as: Settlement.self) { $0.from = $0.from.other }
         case "couple": result.payload = flip(record.payload, as: CoupleSettings.self, flipCouple)
         default: break
