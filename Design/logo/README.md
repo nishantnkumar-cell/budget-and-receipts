@@ -1,4 +1,4 @@
-# Budget & Receipts logo
+# Duo Budget logo
 
 The icon is **Rising receipt**: a receipt whose lines become a budget bar chart,
 with an amber sparkle for the Vision and AI features. Its colours are Chitra's
