@@ -27,7 +27,9 @@ struct TransactionsView: View {
     @State private var query = ""
 
     private var shown: [BankTransaction] {
-        let all = store.transactions.sorted { $0.date > $1.date }
+        let all = store.transactions
+            .filter { store.accountFilter == nil || $0.accountID == store.accountFilter }
+            .sorted { $0.date > $1.date }
         guard !query.isEmpty else { return all }
         return all.filter {
             $0.merchant.localizedCaseInsensitiveContains(query) || $0.category.localizedCaseInsensitiveContains(query)
@@ -73,6 +75,7 @@ struct TransactionsView: View {
         .searchable(text: $query)
         .navigationTitle("Activity")
         .toolbar {
+            ToolbarItem(placement: .primaryAction) { AccountFilterMenu() }
             ToolbarItem(placement: .primaryAction) {
                 Button(action: store.addTransaction) { Image(systemName: "plus") }
                     .accessibilityLabel("Add transaction")
@@ -97,6 +100,9 @@ struct TransactionEditor: View {
             TextField("Amount", value: $transaction.amount, format: .number).decimalKeyboard()
             Picker("Category", selection: $transaction.category) {
                 ForEach(FinanceCategories.all, id: \.self) { Text($0).tag($0) }
+            }
+            if !store.accounts.isEmpty {
+                AccountPicker(selection: $transaction.accountID)
             }
             Section("Receipt") {
                 NavigationLink("Scan or review receipt") { ReceiptView(transaction: transaction) }

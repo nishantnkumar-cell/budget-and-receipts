@@ -1,6 +1,7 @@
 import BudgetCore
 import Foundation
 import ImageIO
+import PDFKit
 import Vision
 #if os(iOS)
 import UIKit
@@ -37,6 +38,37 @@ actor ReceiptVisionService {
         return try await recognise(cgImage: cgImage)
     }
 
+    /// Reads a PDF e-receipt. Most have real text, which is exact; a scanned PDF is read
+    /// with Vision from its first page. Also returns a JPEG of the first page to keep.
+    func recognise(pdf data: Data) async throws -> (editor: ReceiptDraftEditor, preview: Data?) {
+        guard let document = PDFDocument(data: data), let page = document.page(at: 0) else { throw CocoaError(.fileReadCorruptFile) }
+        let preview = Self.jpeg(page.thumbnail(of: CGSize(width: 1200, height: 1700), for: .mediaBox))
+        let lines = (document.string ?? "")
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        if lines.count >= 2 {
+            return (await improveIfNeeded(ReceiptParser.parse(lines)), preview)
+        }
+        guard let preview else { throw CocoaError(.fileReadUnknown) }
+        return (try await recognise(data: preview), preview)
+    }
+
+    #if os(iOS)
+    private static func jpeg(_ image: UIImage) -> Data? { image.jpegData(compressionQuality: 0.8) }
+    #else
+    private static func jpeg(_ image: NSImage) -> Data? {
+        guard let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff) else { return nil }
+        return bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8])
+    }
+    #endif
+
+    private func improveIfNeeded(_ parsed: ReceiptDraftEditor) async -> ReceiptDraftEditor {
+        // Only ask the on-device model when the rules could not make the items add up.
+        guard AppSettings.smartReceipts, ReceiptAIMerge.needsHelp(parsed) else { return parsed }
+        return await ReceiptAIService.improve(parsed)
+    }
+
     private func recognise(cgImage: CGImage) async throws -> ReceiptDraftEditor {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
@@ -45,9 +77,6 @@ actor ReceiptVisionService {
         try VNImageRequestHandler(cgImage: cgImage).perform([request])
         let lines = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
         guard !lines.isEmpty else { throw CocoaError(.fileReadUnknown) }
-        let parsed = ReceiptParser.parse(lines)
-        // Only ask the on-device model when the rules could not make the items add up.
-        guard AppSettings.smartReceipts, ReceiptAIMerge.needsHelp(parsed) else { return parsed }
-        return await ReceiptAIService.improve(parsed)
+        return await improveIfNeeded(ReceiptParser.parse(lines))
     }
 }
