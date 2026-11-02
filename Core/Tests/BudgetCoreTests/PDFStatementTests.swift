@@ -160,4 +160,19 @@ final class PDFStatementTests: XCTestCase {
         XCTAssertEqual(rows.map { ymd($0.date) }, ["2026-7-24", "2026-7-24"])
         XCTAssertNil(PDFStatementParser.summaryDifference(lines, rows: rows))
     }
+
+    func testCardSummaryBoxAboveTheTableIsNotReadAsPayments() throws {
+        let lines = [
+            "Your Credit Card Statement", "Account Summary", "Credit Limit £ 5,000.00",
+            "Previous Balance 50.00", "Debits 30.00", "Credits 50.00", "New Balance 30.00",
+            "Payment to be credited by 15 Sep 2026", "Minimum payment £5.00",
+            "Received By Us Transaction Date Details Amount",
+            "22 Jul 26 21 Jul 26 ))) GROCER HAMPTON 30.00",
+            "17 Aug 26 17 Aug 26 DIRECT DEBIT PAYMENT - THANK YOU 50.00CR",
+            "Estimated interest - next month 1.20",
+        ]
+        let rows = try parse(lines)
+        XCTAssertEqual(rows.map(\.amount), [money("-30.00"), money("50.00")])
+        XCTAssertNil(PDFStatementParser.summaryDifference(lines, rows: rows))
+    }
 }
