@@ -57,9 +57,9 @@ struct OverviewView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())]) {
                     MoneyCard(title: "Income", amount: store.income, colour: .green)
-                    MoneyCard(title: "Spending", amount: store.spending, colour: .red)
-                    MoneyCard(title: "Net", amount: store.income - store.spending, colour: .blue)
-                    MoneyCard(title: "Annual contracts", amount: annualContracts, colour: .indigo)
+                    MoneyCard(title: "Spending", amount: store.spending, colour: .brandCoral)
+                    MoneyCard(title: "Net", amount: store.income - store.spending, colour: .brandPlum)
+                    MoneyCard(title: "Annual contracts", amount: annualContracts, colour: .brandAmber)
                 }
                 NavigationLink {
                     ReviewView()
@@ -67,7 +67,7 @@ struct OverviewView: View {
                     Label("\(store.needsReview.count) items need review", systemImage: "checklist")
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
-                        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
+                        .background(Color.brandAmber.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
                 }
                 UpcomingContractsView()
             }
@@ -204,7 +204,7 @@ struct ReviewView: View {
                     Text(transaction.merchant).bold()
                     Text(transaction.pendingSplitDraft == nil ? "Uncategorised" : "Receipt split awaiting approval")
                         .font(.caption)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(.brandAmber)
                 }
             }
         }
