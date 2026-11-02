@@ -1,6 +1,9 @@
 import BudgetCore
 import CloudKit
+import CryptoKit
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 
 /// What iCloud sync last did, for Settings.
 @MainActor
@@ -23,9 +26,18 @@ protocol SyncSource: AnyObject, Sendable {
 /// private iCloud database. Shared items live in the "Household" zone, which can later be
 /// shared with a partner; items marked private live in the "Private" zone and never are.
 /// Only items that changed are sent; the data never goes to any server but Apple's iCloud.
+///
+/// Everything is end-to-end encrypted: each item's JSON, its ids and any receipt photo are in
+/// CloudKit's `encryptedValues`, whose keys live in the person's iCloud Keychain (and are given
+/// only to people a zone is shared with). Record names are hashes, so nothing is readable in
+/// plain text, with or without Advanced Data Protection.
 actor CloudSync: CKSyncEngineDelegate {
-    static let householdZone = CKRecordZone.ID(zoneName: "Household")
-    static let privateZone = CKRecordZone.ID(zoneName: "Private")
+    static let householdZone = CKRecordZone.ID(zoneName: "HouseholdE2E")
+    static let privateZone = CKRecordZone.ID(zoneName: "PrivateE2E")
+    /// Zones from the first version, which kept data in plain fields. Deleted on upgrade.
+    static let legacyZones = [CKRecordZone.ID(zoneName: "Household"), CKRecordZone.ID(zoneName: "Private")]
+    /// Receipt photos are shrunk to stay inside CloudKit's 1 MB record limit.
+    static let maxImageBytes = 700_000
 
     /// The iCloud container, read from Info.plist. Nil in builds without iCloud (tests, unsigned).
     nonisolated static var containerID: String? {
@@ -59,8 +71,14 @@ actor CloudSync: CKSyncEngineDelegate {
         let saved = Self.load(CKSyncEngine.State.Serialization.self, stateFolder.appendingPathComponent("sync-engine.json"))
         let engine = CKSyncEngine(CKSyncEngine.Configuration(database: database, stateSerialization: saved, delegate: self))
         self.engine = engine
-        if saved == nil {
-            engine.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: Self.householdZone)), .saveZone(CKRecordZone(zoneID: Self.privateZone))])
+        let upgradeFlag = stateFolder.appendingPathComponent("sync-e2e-upgraded")
+        if saved == nil || !FileManager.default.fileExists(atPath: upgradeFlag.path) {
+            // First start, or upgrading from plain fields: remove the old zones from iCloud and
+            // send everything again, encrypted. Nothing on this device is deleted.
+            engine.state.add(pendingDatabaseChanges: Self.legacyZones.map { .deleteZone($0) }
+                + [.saveZone(CKRecordZone(zoneID: Self.householdZone)), .saveZone(CKRecordZone(zoneID: Self.privateZone))])
+            resetLocalSyncState()
+            FileManager.default.createFile(atPath: upgradeFlag.path, contents: Data())
         }
         await fetch()
         await localDataChanged()
@@ -94,7 +112,7 @@ actor CloudSync: CKSyncEngineDelegate {
             state.recordDeleted(delete.key)
         }
         for record in changes.saves {
-            outgoing[record.key] = record
+            outgoing[Self.recordName(record.key)] = record
             pending.append(.saveRecord(recordID(record.key, isPrivate: record.isPrivate)))
         }
         engine.state.add(pendingRecordZoneChanges: pending)
@@ -135,12 +153,16 @@ actor CloudSync: CKSyncEngineDelegate {
             }
             var deletes = Set<String>()
             for deletion in changes.deletions {
-                let key = deletion.recordID.recordName
+                let recordName = deletion.recordID.recordName
+                guard let key = state.entries.keys.first(where: { Self.recordName($0) == recordName }) else {
+                    systemFields[recordName] = nil
+                    continue
+                }
                 // Moving between zones deletes from one and saves in the other: keep the save.
                 guard !saves.contains(where: { $0.key == key }) else { continue }
                 deletes.insert(key)
                 state.recordDeleted(key)
-                systemFields[key] = nil
+                systemFields[recordName] = nil
             }
             saveState()
             if !saves.isEmpty || !deletes.isEmpty { await report("Received \(saves.count + deletes.count) change\(saves.count + deletes.count == 1 ? "" : "s")") }
@@ -199,7 +221,12 @@ actor CloudSync: CKSyncEngineDelegate {
     // MARK: Records
 
     private func recordID(_ key: String, isPrivate: Bool) -> CKRecord.ID {
-        CKRecord.ID(recordName: key, zoneID: isPrivate ? Self.privateZone : Self.householdZone)
+        CKRecord.ID(recordName: Self.recordName(key), zoneID: isPrivate ? Self.privateZone : Self.householdZone)
+    }
+
+    /// A record name that gives nothing away: a hash of the item's collection and id.
+    static func recordName(_ key: String) -> String {
+        SHA256.hash(data: Data(key.utf8)).prefix(16).map { String(format: "%02x", $0) }.joined()
     }
 
     private func ckRecord(for id: CKRecord.ID) -> CKRecord? {
@@ -208,33 +235,56 @@ actor CloudSync: CKSyncEngineDelegate {
         if let fields = systemFields[id.recordName], let saved = decodeSystemFields(fields), saved.recordID.zoneID == id.zoneID {
             record = saved
         }
-        record["collection"] = item.collection
-        record["itemID"] = item.id
-        record["payload"] = item.payload
-        record["modifiedAt"] = Date()
-        if let name = item.fileName {
-            record["file"] = CKAsset(fileURL: imagesFolder.appendingPathComponent(name))
+        // All in encrypted fields: end-to-end encrypted, unreadable to anyone but the owner
+        // (and, later, the people they share the household with).
+        record.encryptedValues["collection"] = item.collection
+        record.encryptedValues["itemID"] = item.id
+        record.encryptedValues["payload"] = item.payload
+        if let name = item.fileName, let image = Self.imageForUpload(imagesFolder.appendingPathComponent(name)) {
+            record.encryptedValues["fileName"] = name
+            record.encryptedValues["file"] = image
         }
         return record
     }
 
     private func syncRecord(from record: CKRecord) -> SyncRecord? {
-        guard let collection = record["collection"] as? String, let id = record["itemID"] as? String else { return nil }
+        guard let collection = record.encryptedValues["collection"] as? String,
+              let id = record.encryptedValues["itemID"] as? String else { return nil }
         var fileName: String?
-        if let asset = record["file"] as? CKAsset, let url = asset.fileURL {
-            let name = (id as NSString).lastPathComponent
-            let destination = imagesFolder.appendingPathComponent(name)
-            try? FileManager.default.removeItem(at: destination)
-            try? FileManager.default.copyItem(at: url, to: destination)
+        if let data = record.encryptedValues["file"] as? Data {
+            let name = ((record.encryptedValues["fileName"] as? String ?? id) as NSString).lastPathComponent
+            try? data.write(to: imagesFolder.appendingPathComponent(name), options: .atomic)
             fileName = name
         }
         return SyncRecord(
             collection: collection,
             id: id,
-            payload: record["payload"] as? Data ?? Data(),
+            payload: record.encryptedValues["payload"] as? Data ?? Data(),
             isPrivate: record.recordID.zoneID == Self.privateZone,
             fileName: fileName
         )
+    }
+
+    /// A receipt photo small enough for an encrypted field: shrunk until it fits under
+    /// `maxImageBytes`, still easily readable. Nil when the file is missing.
+    static func imageForUpload(_ url: URL) -> Data? {
+        guard let original = try? Data(contentsOf: url) else { return nil }
+        if original.count <= maxImageBytes { return original }
+        guard let source = CGImageSourceCreateWithData(original as CFData, nil) else { return nil }
+        for (side, quality) in [(2000, 0.7), (1600, 0.6), (1200, 0.5), (900, 0.45)] {
+            let options: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceThumbnailMaxPixelSize: side,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+            ]
+            guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+            let output = NSMutableData()
+            guard let destination = CGImageDestinationCreateWithData(output, UTType.jpeg.identifier as CFString, 1, nil) else { return nil }
+            CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary)
+            guard CGImageDestinationFinalize(destination) else { return nil }
+            if output.length <= maxImageBytes { return output as Data }
+        }
+        return nil
     }
 
     private func encodeSystemFields(_ record: CKRecord) -> Data {
