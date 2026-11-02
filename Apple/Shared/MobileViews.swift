@@ -30,6 +30,7 @@ struct TransactionsView: View {
     private var shown: [BankTransaction] {
         let all = store.transactions
             .filter { store.accountFilter == nil || $0.accountID == store.accountFilter }
+            .filter { !store.hasPartner || store.householdView.includes(store.ledger.owner(of: $0)) }
             .sorted { $0.date > $1.date }
         guard !query.isEmpty else { return all }
         return all.filter {
@@ -76,6 +77,11 @@ struct TransactionsView: View {
                 ContentUnavailableView.search(text: query)
             }
         }
+        .safeAreaInset(edge: .top) {
+            if store.hasPartner {
+                HouseholdSwitcher().padding(.horizontal).padding(.vertical, 8)
+            }
+        }
         .safeAreaInset(edge: .bottom) { CategorisingBanner().padding(.bottom, 8) }
         .searchable(text: $query)
         .sheet(isPresented: $addingTransaction) {
@@ -113,6 +119,7 @@ struct TransactionEditor: View {
                 AccountPicker(selection: $transaction.accountID)
             }
             PrivateToggle(isPrivate: $transaction.isPrivate)
+            TransactionOwnerSection(transaction: $transaction)
             Section("Receipt") {
                 NavigationLink("Scan or review receipt") { ReceiptView(transaction: transaction) }
             }
