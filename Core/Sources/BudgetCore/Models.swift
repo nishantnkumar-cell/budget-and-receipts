@@ -14,6 +14,8 @@ public struct BankTransaction: Identifiable, Codable, Hashable, Sendable {
     public var owner: MoneyOwner?
     /// Who paid. Nil means me, since statements are imported from my own accounts.
     public var paidBy: Person?
+    /// The bank account or card this came from. Nil for manual entries and older imports.
+    public var accountID: UUID?
 
     public init(
         date: Date,
