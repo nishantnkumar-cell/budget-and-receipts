@@ -39,6 +39,19 @@ final class ShareViewController: PlatformViewController {
                 break
             }
         }
+        #if os(iOS)
+        // Say what happened, so a shared file never seems to vanish.
+        let alert = saved == 0
+            ? UIAlertController(title: "Not a supported file", message: "Budget & Receipts takes PDFs, photos and CSV, OFX, QFX or QIF statements.", preferredStyle: .alert)
+            : UIAlertController(title: "Sent to Budget & Receipts", message: "Open the app to finish. Statements are imported and receipts wait for their payment. You'll find every file under Inbox › Shared files.", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in self.finish(saved) })
+        present(alert, animated: true)
+        #else
+        finish(saved)
+        #endif
+    }
+
+    private func finish(_ saved: Int) {
         if saved == 0 {
             extensionContext?.cancelRequest(withError: CocoaError(.fileReadUnsupportedScheme))
         } else {

@@ -90,6 +90,14 @@ struct PendingReceiptDetail: View {
                 Text("Picking one moves the receipt to the Inbox, where you check it and approve.")
             }
             Section {
+                Button("This is a statement: import it instead") {
+                    SharedReceiptReader.importAsStatement(receipt, store: store)
+                    dismiss()
+                }
+            } footer: {
+                Text("For a bank or card statement that was read as a receipt.")
+            }
+            Section {
                 Button("Delete Receipt", role: .destructive) { confirmingDelete = true }
             }
         }

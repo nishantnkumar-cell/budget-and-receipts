@@ -9,51 +9,116 @@ import PDFKit
 enum SharedReceiptReader {
     private static let vision = ReceiptVisionService()
 
-    /// Reads every file the share extension left. Returns how many receipts were added.
-    @discardableResult
-    static func readDropped(into store: BudgetStore, folder: URL? = SharedReceiptDrop.folder) async -> Int {
-        var added = 0
+    /// Reads every file the share extension left, then says once what happened to them.
+    static func readDropped(into store: BudgetStore, folder: URL? = SharedReceiptDrop.folder) async {
+        var documents: [SharedDocument] = []
         for url in SharedReceiptDrop.waitingFiles(in: folder) {
-            if SharedReceiptDrop.isStatement(url) {
-                importStatement(url, into: store)
-            } else if await read(url, into: store) {
-                added += 1
-            }
-            // Read or not, the shared copy is not needed any more.
+            documents.append(await process(url, into: store))
+            // The shared copy is not needed any more; the app keeps its own.
             try? FileManager.default.removeItem(at: url)
         }
-        if added > 0 {
-            store.status = "Added \(added) shared receipt\(added == 1 ? "" : "s") to Waiting for payment."
-            store.matchPendingReceipts()
-        }
-        return added
+        finish(documents, store: store)
     }
 
-    /// Opens a file handed to the app: a statement is imported, anything else is read as a receipt.
+    /// Opens a file handed to the app ("Open in", or Open With on the Mac).
     static func open(_ url: URL, into store: BudgetStore) async {
-        if SharedReceiptDrop.isStatement(url) {
-            importStatement(url, into: store)
-        } else if await read(url, into: store) {
-            store.matchPendingReceipts()
-        }
+        let document = await process(url, into: store)
+        finish([document], store: store)
     }
 
-    /// Imports a shared bank statement. Lines already imported are skipped, and waiting
-    /// receipts are matched to the new payments.
+    private static func finish(_ documents: [SharedDocument], store: BudgetStore) {
+        guard !documents.isEmpty else { return }
+        store.matchPendingReceipts()
+        let lines = documents.map { "\($0.fileName): \($0.summary)." }
+        store.shareSummary = lines.joined(separator: "\n")
+        store.status = documents.count == 1 ? lines[0] : "Read \(documents.count) shared files. See Inbox › Shared files."
+    }
+
+    /// Reads one shared file: a CSV, OFX, QFX or QIF statement is imported; a PDF that looks
+    /// like a statement is imported; anything else is read as a receipt. Every outcome,
+    /// including a failure and why, is recorded in Shared files.
     @discardableResult
-    static func importStatement(_ url: URL, into store: BudgetStore) -> Bool {
+    static func process(_ url: URL, into store: BudgetStore) async -> SharedDocument {
+        let name = url.lastPathComponent
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        guard let data = try? Data(contentsOf: url) else { return false }
-        let text = String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
-        do {
-            let result = try store.previewImport(text: text, fileName: url.lastPathComponent, mapping: nil)
-            store.commitImport(result, fileName: url.lastPathComponent)
-            return true
-        } catch {
-            store.status = "Couldn't import \(url.lastPathComponent) automatically. Open Import Statement to choose its columns."
-            return false
+        guard let data = try? Data(contentsOf: url) else {
+            return recorded(SharedDocument(fileName: name, outcome: .failed(reason: "the file couldn't be opened")), store)
         }
+        let stored = "\(UUID().uuidString).\(url.pathExtension.lowercased())"
+        try? data.write(to: store.sharedFilesFolder.appendingPathComponent(stored), options: .atomic)
+        var document = SharedDocument(fileName: name, outcome: .failed(reason: "unknown"), storedFile: stored)
+        let ext = url.pathExtension.lowercased()
+
+        if SharedReceiptDrop.isStatement(url) {
+            let text = String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
+            do {
+                document.outcome = importResult(try store.previewImport(text: text, fileName: name, mapping: nil), fileName: name, store: store)
+            } catch {
+                document.outcome = .failed(reason: "its columns couldn't be worked out. Use Import Statement to choose them")
+            }
+            return recorded(document, store)
+        }
+        if ext == "pdf", let lines = pdfLines(data), PDFStatementParser.looksLikeStatement(lines) {
+            document.outcome = importPDF(lines, fileName: name, store: store)
+            return recorded(document, store)
+        }
+        do {
+            var editor: ReceiptDraftEditor
+            if ext == "pdf" {
+                let result = try await vision.recognise(pdf: data)
+                editor = result.editor
+                editor.imagePath = result.preview.flatMap { try? ReceiptImageStore().save($0, fileExtension: "jpg") } ?? ""
+            } else {
+                editor = try await vision.recognise(data: data)
+                editor.imagePath = (try? ReceiptImageStore().save(data, fileExtension: ext.isEmpty ? "jpg" : ext)) ?? ""
+            }
+            store.categoriser.categorise(&editor)
+            let pending = PendingReceipt(editor: editor)
+            store.pendingReceipts.append(pending)
+            document.outcome = .receipt(pendingID: pending.id)
+        } catch {
+            document.outcome = .failed(reason: ext == "pdf" ? "no text could be read from this PDF" : "no text could be read from this image. Try a sharper photo")
+        }
+        return recorded(document, store)
+    }
+
+    /// Reads a waiting receipt again as a statement: for a statement the app took for a receipt.
+    @discardableResult
+    static func importAsStatement(_ receipt: PendingReceipt, store: BudgetStore) -> SharedDocument.Outcome {
+        var document = store.sharedDocument(forReceipt: receipt.id)
+        let original = document?.storedFile.flatMap { try? Data(contentsOf: store.sharedFilesFolder.appendingPathComponent($0)) }
+        let lines = original.flatMap(pdfLines)
+            ?? receipt.editor.rawText.components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        let outcome = importPDF(lines, fileName: document?.fileName ?? receipt.editor.merchant, store: store)
+        if case .statement = outcome {
+            store.pendingReceipts.removeAll { $0.id == receipt.id }
+            if document == nil { document = SharedDocument(fileName: receipt.editor.merchant.isEmpty ? "Statement" : receipt.editor.merchant, outcome: outcome) }
+        }
+        if var document {
+            document.outcome = outcome
+            store.sharedDocuments.contains { $0.id == document.id } ? store.update(document) : store.record(document)
+        }
+        store.shareSummary = document.map { "\($0.fileName): \($0.summary)." }
+        return outcome
+    }
+
+    private static func importPDF(_ lines: [String], fileName: String, store: BudgetStore) -> SharedDocument.Outcome {
+        do {
+            return importResult(try store.previewImport(pdfLines: lines), fileName: fileName, store: store)
+        } catch {
+            return .failed(reason: "no payments could be found in this statement. Try your bank's CSV or OFX download")
+        }
+    }
+
+    private static func importResult(_ result: StatementImportResult, fileName: String, store: BudgetStore) -> SharedDocument.Outcome {
+        store.commitImport(result, fileName: fileName)
+        return .statement(imported: result.newTransactions.count, alreadyThere: result.duplicates.count, totalsDifference: result.summaryDifference)
+    }
+
+    private static func recorded(_ document: SharedDocument, _ store: BudgetStore) -> SharedDocument {
+        store.record(document)
+        return document
     }
 
     /// The text lines of a PDF as they appear on the page, or nil when it has no real text (a scan).
@@ -94,52 +159,5 @@ enum SharedReceiptReader {
             lines = text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         }
         return lines
-    }
-
-    /// Imports a PDF bank or credit card statement.
-    @discardableResult
-    static func importPDFStatement(_ lines: [String], fileName: String, into store: BudgetStore) -> Bool {
-        do {
-            let result = try store.previewImport(pdfLines: lines)
-            store.commitImport(result, fileName: fileName)
-            if let difference = result.summaryDifference {
-                store.status += " Check it: the payments read differ from the statement's totals by \(difference.formatted(.currency(code: AppSettings.currency)))."
-            }
-            return true
-        } catch {
-            store.status = "Couldn't read the statement in \(fileName). Try your bank's CSV or OFX download instead."
-            return false
-        }
-    }
-
-    /// Reads one PDF or image file into the waiting list.
-    @discardableResult
-    static func read(_ url: URL, into store: BudgetStore) async -> Bool {
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        guard let data = try? Data(contentsOf: url) else { return false }
-        let ext = url.pathExtension.lowercased()
-        do {
-            var editor: ReceiptDraftEditor
-            if ext == "pdf", let lines = pdfLines(data), PDFStatementParser.looksLikeStatement(lines) {
-                // A bank statement shared as a PDF, not a receipt: import it, add no receipt.
-                importPDFStatement(lines, fileName: url.lastPathComponent, into: store)
-                return false
-            }
-            if ext == "pdf" {
-                let result = try await vision.recognise(pdf: data)
-                editor = result.editor
-                editor.imagePath = result.preview.flatMap { try? ReceiptImageStore().save($0, fileExtension: "jpg") } ?? ""
-            } else {
-                editor = try await vision.recognise(data: data)
-                editor.imagePath = (try? ReceiptImageStore().save(data, fileExtension: ext.isEmpty ? "jpg" : ext)) ?? ""
-            }
-            store.categoriser.categorise(&editor)
-            store.savePending(editor)
-            return true
-        } catch {
-            store.status = "Couldn't read \(url.lastPathComponent). Try a clearer copy."
-            return false
-        }
     }
 }

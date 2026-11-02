@@ -13,6 +13,10 @@ final class BudgetStore: ObservableObject {
     /// Scanned receipts whose card payment is not on a statement yet.
     @Published var pendingReceipts: [PendingReceipt] = []
     @Published var accounts: [BankAccount] = []
+    /// Every file shared or opened with the app, and what became of it.
+    @Published var sharedDocuments: [SharedDocument] = []
+    /// What the app just did with shared files, shown once as a confirmation.
+    @Published var shareSummary: String?
     /// Show one account's money only. Nil shows every account.
     @Published var accountFilter: UUID?
     /// Accounts found in the statement being previewed, added when it is imported.
@@ -36,6 +40,7 @@ final class BudgetStore: ObservableObject {
         settlements = storage.load("settlements.json") ?? []
         pendingReceipts = storage.load("pending-receipts.json") ?? []
         accounts = storage.load("accounts.json") ?? []
+        sharedDocuments = storage.load("shared-documents.json") ?? []
     }
 
     func saveDraft(_ draft: SplitDraft, for transaction: BankTransaction) {
@@ -253,6 +258,40 @@ final class BudgetStore: ObservableObject {
             .sorted { ($0.account == nil ? 1 : 0, -$0.spent) < ($1.account == nil ? 1 : 0, -$1.spent) }
     }
 
+    // MARK: Shared files
+
+    /// Where copies of shared files are kept, so a file can be read again another way.
+    var sharedFilesFolder: URL {
+        let folder = storage.folder.appendingPathComponent("Shared", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
+    }
+
+    func record(_ document: SharedDocument) {
+        sharedDocuments.insert(document, at: 0)
+        persist()
+    }
+
+    func update(_ document: SharedDocument) {
+        guard let index = sharedDocuments.firstIndex(where: { $0.id == document.id }) else { return }
+        sharedDocuments[index] = document
+        persist()
+    }
+
+    /// The shared file a waiting receipt came from, if any.
+    func sharedDocument(forReceipt id: UUID) -> SharedDocument? {
+        sharedDocuments.first { if case .receipt(let pendingID) = $0.outcome { pendingID == id } else { false } }
+    }
+
+    /// Removes a shared file from the list, with its waiting receipt and stored copy.
+    /// Payments already imported from a statement stay.
+    func deleteSharedDocument(_ document: SharedDocument) {
+        if case .receipt(let id) = document.outcome { pendingReceipts.removeAll { $0.id == id } }
+        if let name = document.storedFile { try? FileManager.default.removeItem(at: sharedFilesFolder.appendingPathComponent(name)) }
+        sharedDocuments.removeAll { $0.id == document.id }
+        persist()
+    }
+
     // MARK: Waiting receipts
 
     /// Keeps a scanned receipt until its card payment shows up on a statement.
@@ -306,6 +345,7 @@ final class BudgetStore: ObservableObject {
         storage.save(settlements, "settlements.json")
         storage.save(pendingReceipts, "pending-receipts.json")
         storage.save(accounts, "accounts.json")
+        storage.save(sharedDocuments, "shared-documents.json")
     }
 }
 
