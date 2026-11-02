@@ -54,6 +54,41 @@ final class SharedReceiptTests: XCTestCase {
         XCTAssertEqual(receipt.editor.items.count, 2)
     }
 
+    func testSharedPDFStatementIsImportedNotTreatedAsAReceipt() async throws {
+        let store = BudgetStore(folder: folder)
+        let url = drop.appendingPathComponent("statement.pdf")
+        try Self.pdf(lines: [
+            "Current Account statement",
+            "Account number 87654321",
+            "1 October 2026 to 31 October 2026",
+            "01 Oct BALANCE BROUGHT FORWARD 500.00",
+            "03 Oct TESCO STORES 12.40 487.60",
+            "04 Oct COSTA COFFEE 3.20 484.40",
+            "05 Oct ACME SALARY 1,000.00 1,484.40",
+            "06 Oct BOOTS 6.00 1,478.40",
+        ]).write(to: url)
+
+        await SharedReceiptReader.open(url, into: store)
+
+        XCTAssertTrue(store.pendingReceipts.isEmpty, "Not a receipt")
+        XCTAssertEqual(store.transactions.count, 4)
+        XCTAssertEqual(store.transactions.first { $0.merchant == "ACME SALARY" }?.amount, 1000)
+        XCTAssertEqual(store.accounts.map(\.label), ["Account ••4321"])
+    }
+
+    func testPartnersAccountMakesItsSpendingTheirs() async throws {
+        let store = BudgetStore(folder: folder)
+        store.updateCouple(CoupleSettings(partnerName: "Priya"))
+        var wife = store.addAccount(name: "Priya's current", number: "87654321")
+        wife.owner = .partner
+        store.updateAccount(wife)
+        let ofx = "<OFX><ACCTID>87654321\n<STMTTRN><DTPOSTED>20261003\n<TRNAMT>-12.40\n<FITID>A1\n<NAME>TESCO\n</STMTTRN></OFX>"
+        store.commitImport(try store.previewImport(text: ofx, fileName: "priya.ofx", mapping: nil), fileName: "priya.ofx")
+        XCTAssertEqual(store.transactions.first?.owner, .partner)
+        XCTAssertEqual(store.transactions.first?.paidBy, .partner)
+        XCTAssertNil(store.coupleBalance.debtor, "She paid for her own shopping")
+    }
+
     /// A one-page PDF with real text, like an emailed e-receipt.
     static func pdf(lines: [String]) -> Data {
         let data = NSMutableData()

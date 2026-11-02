@@ -172,6 +172,16 @@ final class BudgetStore: ObservableObject {
             guard let mapping = mapping ?? CSVColumnMapping.guess(header: header) else { throw StatementImportError.missingColumn("date, description or amount") }
             rows = try StatementImporter.parseCSV(text, mapping: mapping)
         }
+        return preview(rows, account: account)
+    }
+
+    /// A PDF statement, from the text lines PDFKit read out of it.
+    func previewImport(pdfLines lines: [String], account: UUID? = nil) throws -> StatementImportResult {
+        let year = Calendar.current.component(.year, from: Date())
+        return preview(try PDFStatementParser.parse(lines, fallbackYear: year), account: account)
+    }
+
+    private func preview(_ rows: [StatementRow], account: UUID?) -> StatementImportResult {
         proposedAccounts = []
         for number in Set(rows.compactMap(\.accountNumber)).sorted() where BankAccounts.account(forNumber: number, in: accounts) == nil {
             if BankAccounts.account(forNumber: number, in: proposedAccounts) == nil, !BankAccount.lastFour(number).isEmpty {
@@ -182,6 +192,8 @@ final class BudgetStore: ObservableObject {
         var result = StatementImporter.prepare(rows, existing: transactions, account: account) { BankAccounts.account(forNumber: $0, in: known)?.id }
         // Fill in categories from your past choices and well-known shops; you can change any of them.
         result.newTransactions = categoriser.categorise(result.newTransactions)
+        // A partner's or joint account makes its spending theirs or shared.
+        result.newTransactions = BankAccounts.applyOwners(result.newTransactions, accounts: known)
         return result
     }
 
