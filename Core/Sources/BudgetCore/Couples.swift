@@ -130,7 +130,11 @@ public struct CoupleLedger: Sendable {
     /// else the first category rule, else the default. Merchant rules win because they
     /// are more specific ("Netflix is mine" beats "Subscriptions are shared").
     public func owner(of transaction: BankTransaction) -> MoneyOwner {
-        if let owner = transaction.owner { return owner }
+        transaction.owner ?? ruleOwner(of: transaction)
+    }
+
+    /// The owner the rules give, ignoring any owner set by hand.
+    public func ruleOwner(of transaction: BankTransaction) -> MoneyOwner {
         let merchantRules = settings.rules.filter { if case .merchant = $0.match { true } else { false } }
         let categoryRules = settings.rules.filter { if case .category = $0.match { true } else { false } }
         return (merchantRules + categoryRules).first { $0.matches(transaction) }?.owner ?? settings.defaultOwner

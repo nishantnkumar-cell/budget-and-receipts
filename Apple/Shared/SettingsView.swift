@@ -42,7 +42,7 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .navigationTitle("Settings")
-        .fileExporter(isPresented: $exportingCSV, document: ExportDocument(data: Data(CSVExporter.transactions(store.transactions).utf8), type: .commaSeparatedText), contentType: .commaSeparatedText, defaultFilename: "Budget transactions.csv") { result in
+        .fileExporter(isPresented: $exportingCSV, document: ExportDocument(data: Data(CSVExporter.transactions(store.transactions, ledger: store.hasPartner ? store.ledger : nil).utf8), type: .commaSeparatedText), contentType: .commaSeparatedText, defaultFilename: "Budget transactions.csv") { result in
             if case .failure(let error) = result { exportError = error.localizedDescription }
         }
         .fileExporter(isPresented: $exportingPDF, document: ExportDocument(data: MonthReportPDF.render(store.monthReport), type: .pdf), contentType: .pdf, defaultFilename: "Budget \(store.selectedMonth.formatted(.dateTime.year().month(.twoDigits))).pdf") { result in
