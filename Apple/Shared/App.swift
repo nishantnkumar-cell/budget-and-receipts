@@ -55,6 +55,9 @@ struct BudgetReceiptsApp: App {
             } message: {
                 Text(store.shareSummary ?? "")
             }
+            .task(id: store.wealthAccounts.isEmpty) {
+                await MonthlyCheckIn.schedule(enabled: settings.remindersEnabled, hasWealthAccounts: !store.wealthAccounts.isEmpty)
+            }
             // A price rise shows up when a statement brings the new payment.
             .task(id: store.transactions.count) {
                 await PriceRiseNotifier.check(subscriptions.priceRises(transactions: store.transactions), enabled: settings.remindersEnabled)

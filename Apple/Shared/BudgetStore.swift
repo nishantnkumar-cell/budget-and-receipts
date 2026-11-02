@@ -19,6 +19,10 @@ final class BudgetStore: ObservableObject {
     @Published var categorisingResult: String?
     /// Categories found for merchants the app didn't know, by merchant key.
     @Published var merchantCategories: [String: MerchantCategory] = [:]
+    /// Pensions, investments, property, mortgages and other debts, entered by hand.
+    @Published var wealthAccounts: [WealthAccount] = []
+    /// Comments and reactions on transactions.
+    @Published var notes: [TransactionNote] = []
     /// This device's place in a shared household (set from iCloud sync).
     @Published var householdRole: HouseholdLink.Role = .solo
     /// Items changed or deleted by another device or the partner, kept 30 days to restore.
@@ -65,6 +69,8 @@ final class BudgetStore: ObservableObject {
         sharedDocuments = loadOrSetAside("shared-documents.json") ?? []
         merchantCategories = loadOrSetAside("merchant-categories.json") ?? [:]
         recentChanges = (loadOrSetAside("recent-changes.json") ?? []).filter { $0.date > Date().addingTimeInterval(-30 * 86_400) }
+        wealthAccounts = loadOrSetAside("wealth.json") ?? []
+        notes = loadOrSetAside("notes.json") ?? []
         removeOldSharedCopies()
     }
 
@@ -326,6 +332,82 @@ final class BudgetStore: ObservableObject {
             .sorted { ($0.account == nil ? 1 : 0, -$0.spent) < ($1.account == nil ? 1 : 0, -$1.spent) }
     }
 
+    // MARK: Net worth
+
+    func saveWealthAccount(_ account: WealthAccount) {
+        if let index = wealthAccounts.firstIndex(where: { $0.id == account.id }) {
+            wealthAccounts[index] = account
+        } else {
+            wealthAccounts.append(account)
+        }
+        persist()
+    }
+
+    func deleteWealthAccount(_ account: WealthAccount) {
+        wealthAccounts.removeAll { $0.id == account.id }
+        persist()
+    }
+
+    /// A new value for an account today (or another date). Debts take the amount owed.
+    func recordBalance(_ amount: Decimal, for accountID: UUID, on date: Date = Date()) {
+        guard let index = wealthAccounts.firstIndex(where: { $0.id == accountID }) else { return }
+        wealthAccounts[index].balances.append(.init(date: date, amount: amount))
+        persist()
+    }
+
+    var netWorthCalculator: NetWorthCalculator { NetWorthCalculator() }
+
+    /// Net worth for the Me / Partner / Together switch (everything for one person).
+    var netWorth: Decimal {
+        hasPartner ? netWorthCalculator.total(wealthAccounts, for: householdView, ledger: ledger) : netWorthCalculator.total(wealthAccounts)
+    }
+
+    var netWorthTrend: [(month: Date, total: Decimal)] { netWorthCalculator.monthlyTrend(wealthAccounts) }
+    var netWorthByGroup: [(group: WealthAccount.Group, amount: Decimal)] { netWorthCalculator.byGroup(wealthAccounts) }
+    var netWorthByOwner: [MoneyOwner: Decimal] { netWorthCalculator.byOwner(wealthAccounts) }
+    /// Accounts whose latest value is over 30 days old.
+    var staleWealthAccounts: [WealthAccount] { wealthAccounts.filter { $0.needsUpdate() } }
+
+    // MARK: Comments, corrections, set-asides, month in review
+
+    func notes(for transaction: BankTransaction) -> [TransactionNote] {
+        notes.filter { $0.transactionID == transaction.id }.sorted { $0.date < $1.date }
+    }
+
+    /// A comment or reaction from this person on a transaction.
+    func addNote(to transaction: BankTransaction, text: String = "", reaction: String? = nil) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty || reaction != nil else { return }
+        notes.append(TransactionNote(transactionID: transaction.id, author: .me, text: trimmed, reaction: reaction))
+        persist()
+    }
+
+    func deleteNote(_ note: TransactionNote) {
+        notes.removeAll { $0.id == note.id }
+        persist()
+    }
+
+    /// Other uncategorised payments from the same shop as this one.
+    func similarUncategorised(to transaction: BankTransaction) -> [BankTransaction] {
+        Categoriser.similarUncategorised(to: transaction, in: transactions)
+    }
+
+    /// Gives them all the same category in one go, after a correction. Returns how many.
+    @discardableResult
+    func applyCategory(_ category: String, toSimilar transaction: BankTransaction) -> Int {
+        let ids = Set(similarUncategorised(to: transaction).map(\.id))
+        for index in transactions.indices where ids.contains(transactions[index].id) {
+            transactions[index].category = category
+        }
+        if !ids.isEmpty { persist() }
+        return ids.count
+    }
+
+    func setAsides(contracts: [SubscriptionContract]) -> [SetAside] { SetAside.plan(contracts) }
+
+    /// The month just shown, looked back on.
+    var monthReview: MonthReview { MonthReview.make(viewTransactions, budgets: budgets, month: selectedMonth, calculator: calculator) }
+
     // MARK: Starting again
 
     /// Removes every transaction, budget, receipt, account and shared file, here and (through
@@ -342,6 +424,8 @@ final class BudgetStore: ObservableObject {
         sharedDocuments = []
         merchantCategories = [:]
         recentChanges = []
+        wealthAccounts = []
+        notes = []
         accountFilter = nil
         householdView = .together
         for folder in [imagesFolder, sharedFilesFolder] {
@@ -476,6 +560,8 @@ final class BudgetStore: ObservableObject {
             storage.save(sharedDocuments, "shared-documents.json"),
             storage.save(merchantCategories, "merchant-categories.json"),
             storage.save(recentChanges, "recent-changes.json"),
+            storage.save(wealthAccounts, "wealth.json"),
+            storage.save(notes, "notes.json"),
         ]
         lastSaveSucceeded = !results.contains(false)
         return lastSaveSucceeded
@@ -607,6 +693,8 @@ extension BudgetStore: SyncSource {
             + SyncRecord.records(settlements, collection: "settlements", id: \.id.uuidString)
             + SyncRecord.records(pendingReceipts, collection: "pendingReceipts", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })
             + SyncRecord.records(accounts, collection: "accounts", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })
+            + SyncRecord.records(wealthAccounts, collection: "wealth", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })
+            + SyncRecord.records(notes, collection: "notes", id: \.id.uuidString)
             + imageRecords(privateTransactions: transactions.filter(isPrivate))
     }
 
@@ -678,7 +766,10 @@ extension BudgetStore: SyncSource {
         if record.collection == "accounts", let account = try? SyncRecord.decoder().decode(BankAccount.self, from: record.payload) {
             return "Account \(account.label)"
         }
-        let names = ["budgets": "A budget", "settlements": "A settle-up", "pendingReceipts": "A waiting receipt", "couple": "Couple settings", "imports": "An import record", "changes": "A history entry"]
+        if record.collection == "wealth", let account = try? SyncRecord.decoder().decode(WealthAccount.self, from: record.payload) {
+            return "\(account.kind.title): \(account.name)"
+        }
+        let names = ["notes": "A comment", "budgets": "A budget", "settlements": "A settle-up", "pendingReceipts": "A waiting receipt", "couple": "Couple settings", "imports": "An import record", "changes": "A history entry"]
         return names[record.collection] ?? record.collection
     }
 
@@ -700,6 +791,8 @@ extension BudgetStore: SyncSource {
         settlements = SyncMerge.apply(saves: saves, deletes: deletes, to: settlements, collection: "settlements", id: \.id.uuidString)
         pendingReceipts = SyncMerge.apply(saves: saves, deletes: deletes, to: pendingReceipts, collection: "pendingReceipts", id: \.id.uuidString)
         accounts = SyncMerge.apply(saves: saves, deletes: deletes, to: accounts, collection: "accounts", id: \.id.uuidString)
+        wealthAccounts = SyncMerge.apply(saves: saves, deletes: deletes, to: wealthAccounts, collection: "wealth", id: \.id.uuidString)
+        notes = SyncMerge.apply(saves: saves, deletes: deletes, to: notes, collection: "notes", id: \.id.uuidString)
         return writeFiles()
     }
 }
