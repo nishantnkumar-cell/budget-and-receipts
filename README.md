@@ -10,7 +10,6 @@ A private budgeting and receipt app for one person or a couple, for iPhone and M
 | `Apple/` | iPhone and Mac apps. `project.yml` is the XcodeGen spec; the `.xcodeproj` is generated and not committed. |
 | `Apple/Shared/` | SwiftUI screens, stores and the Vision OCR service shared by both apps. |
 | `docs/design/` | Feature notes from the original prototype. |
-| `docs/history/` | The prototype's handoff documents, kept for reference. |
 
 ## Build and test (Mac)
 
