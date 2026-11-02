@@ -36,6 +36,7 @@ struct SettingsView: View {
                 if settings.iCloudSyncEnabled, CloudSync.containerID != nil {
                     LabeledContent("Status", value: syncStatus.text)
                     HeldDeletionsRow()
+                    SendEverythingAgainRow()
                 }
             } header: {
                 Text("iCloud")

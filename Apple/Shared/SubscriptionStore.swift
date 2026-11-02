@@ -6,17 +6,33 @@ final class SubscriptionStore: ObservableObject {
     @Published var contracts: [SubscriptionContract] = []
     private let storage: JSONFileStorage
     private(set) var unreadableFiles: [String] = []
+    /// True while the file is locked away (see `BudgetStore.isWaitingForFiles`).
+    private(set) var isWaitingForFiles = false
     /// Called after every local change is saved, so iCloud sync can send it.
     var didPersist: (() -> Void)?
 
     init(folder: URL = JSONFileStorage.defaultFolder) {
         storage = JSONFileStorage(folder: folder)
+        load()
+    }
+
+    private func load() {
+        isWaitingForFiles = false
         do {
             contracts = try storage.loadChecked("subscriptions.json") ?? []
+        } catch JSONFileStorage.LoadError.locked {
+            isWaitingForFiles = true
         } catch {
             storage.setAside("subscriptions.json")
             unreadableFiles = ["subscriptions.json"]
         }
+    }
+
+    @discardableResult
+    func reloadIfWaiting() -> Bool {
+        guard isWaitingForFiles else { return true }
+        load()
+        return !isWaitingForFiles
     }
 
     func save(_ contract: SubscriptionContract) {
@@ -44,6 +60,7 @@ final class SubscriptionStore: ObservableObject {
     }
 
     private func persist() {
+        guard !isWaitingForFiles else { return }
         storage.save(contracts, "subscriptions.json")
         didPersist?()
     }
