@@ -27,6 +27,10 @@ final class AppSettings: ObservableObject {
     /// Look up unknown merchants with Apple Maps (sends the name and town). Off until switched on.
     @Published var onlineCategoriesEnabled: Bool { didSet { defaults.set(onlineCategoriesEnabled, forKey: Keys.onlineCategories) } }
 
+    /// The day budget months start, e.g. 25 for payday on the 25th. 1 means calendar months.
+    @Published var monthStartDay: Int { didSet { defaults.set(monthStartDay, forKey: Keys.monthStartDay) } }
+    nonisolated static var monthStartDay: Int { max(1, UserDefaults.standard.integer(forKey: Keys.monthStartDay)) }
+
     nonisolated static var aiCategories: Bool { UserDefaults.standard.object(forKey: Keys.aiCategories) as? Bool ?? true }
     nonisolated static var onlineCategories: Bool { UserDefaults.standard.bool(forKey: Keys.onlineCategories) }
 
@@ -42,6 +46,7 @@ final class AppSettings: ObservableObject {
         static let reminders = "remindersEnabled"
         static let smartReceipts = "smartReceiptsEnabled"
         static let iCloudSync = "iCloudSyncEnabled"
+        static let monthStartDay = "monthStartDay"
         static let aiCategories = "aiCategoriesEnabled"
         static let onlineCategories = "onlineCategoriesEnabled"
     }
@@ -54,6 +59,7 @@ final class AppSettings: ObservableObject {
         smartReceiptsEnabled = defaults.object(forKey: Keys.smartReceipts) as? Bool ?? true
         iCloudSyncEnabled = defaults.object(forKey: Keys.iCloudSync) as? Bool ?? true
         aiCategoriesEnabled = defaults.object(forKey: Keys.aiCategories) as? Bool ?? true
+        monthStartDay = max(1, defaults.integer(forKey: Keys.monthStartDay))
         onlineCategoriesEnabled = defaults.bool(forKey: Keys.onlineCategories)
     }
 }
