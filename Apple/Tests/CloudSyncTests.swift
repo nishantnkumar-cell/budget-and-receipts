@@ -23,10 +23,16 @@ final class CloudSyncTests: XCTestCase {
 }
 
 final class CloudSyncPermissionTests: XCTestCase {
-    func testWithoutAProfileGrantingICloudSyncStaysOff() {
-        // Test builds have no provisioning profile with iCloud: the app must not touch CloudKit.
+    func testSyncFollowsTheProvisioningProfile() {
+        #if targetEnvironment(simulator)
+        // Simulator test builds have no profile with iCloud: the app must not touch CloudKit.
         XCTAssertFalse(CloudSync.isSigned(for: "iCloud.com.nishantkumar.budgetreceipts"))
         XCTAssertNil(CloudSync.containerID)
+        #else
+        // The signed Mac test host does have it.
+        XCTAssertTrue(CloudSync.isSigned(for: "iCloud.com.nishantkumar.budgetreceipts"))
+        XCTAssertFalse(CloudSync.isSigned(for: "iCloud.example.other"))
+        #endif
     }
 
     func testOnlyTheAppsOwnPhotoNamesAreAccepted() {

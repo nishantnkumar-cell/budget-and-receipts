@@ -1,4 +1,5 @@
 import BudgetCore
+import ImageIO
 import XCTest
 @testable import BudgetReceipts
 
@@ -75,5 +76,22 @@ final class HouseholdStoreTests: XCTestCase {
     func testDataFolderIsLeftOutOfDeviceBackup() throws {
         _ = BudgetStore(folder: folder)
         XCTAssertEqual(try folder.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup, true)
+    }
+}
+
+final class ReceiptPhotoPrivacyTests: XCTestCase {
+    func testLocationAndCameraDetailsAreRemoved() throws {
+        let context = CGContext(data: nil, width: 64, height: 64, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+        let output = NSMutableData()
+        let destination = CGImageDestinationCreateWithData(output, "public.jpeg" as CFString, 1, nil)!
+        let gps: [CFString: Any] = [kCGImagePropertyGPSLatitude: 51.5, kCGImagePropertyGPSLongitude: 0.12]
+        CGImageDestinationAddImage(destination, context.makeImage()!, [kCGImagePropertyGPSDictionary: gps] as CFDictionary)
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+        let clean = try XCTUnwrap(ReceiptImageStore.withoutMetadata(output as Data))
+        let properties = CGImageSourceCopyPropertiesAtIndex(CGImageSourceCreateWithData(clean as CFData, nil)!, 0, nil) as? [CFString: Any]
+        XCTAssertNil(properties?[kCGImagePropertyGPSDictionary])
+        XCTAssertNil(ReceiptImageStore.withoutMetadata(Data("%PDF-1.4".utf8)), "Not an image: kept as it is")
     }
 }

@@ -42,7 +42,9 @@ struct SettingsView: View {
             } header: {
                 Text("Privacy")
             } footer: {
-                Text("Asks for \(AppLock().methodName) when the app opens or comes back from the background.")
+                Text(AppLock().methodName == "Passcode" && !AppLock().canAuthenticate
+                     ? "This device has no passcode, so the lock can't work. Set one in System Settings."
+                     : "Asks for \(AppLock().methodName) when the app opens, comes back after being away, or (on the Mac) after sleep or the screen locks. Hides your figures in the app switcher and keeps details off the lock screen.")
             }
             Section {
                 Toggle("Suggest categories with Apple Intelligence", isOn: $settings.aiCategoriesEnabled)

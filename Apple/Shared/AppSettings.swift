@@ -64,6 +64,11 @@ final class AppLock: ObservableObject {
     @Published private(set) var isUnlocked = false
     @Published var message: String?
 
+    /// False when the device has no passcode or biometrics, so the lock can't work.
+    var canAuthenticate: Bool {
+        LAContext().canEvaluatePolicy(.deviceOwnerAuthentication, error: nil)
+    }
+
     /// "Face ID", "Touch ID" or "Passcode", for button labels.
     var methodName: String {
         let context = LAContext()
@@ -133,8 +138,10 @@ enum ReminderScheduler {
         // iOS keeps at most 64 pending notifications per app; keep the soonest.
         for reminder in ReminderPlanner().reminders(for: contracts, now: now).prefix(60) {
             let content = UNMutableNotificationContent()
-            content.title = reminder.title
-            content.body = reminder.body
+            // With the app lock on, the lock screen shouldn't show vendors or amounts.
+            let private_ = UserDefaults.standard.bool(forKey: "appLockEnabled")
+            content.title = private_ ? "Duo Budget" : reminder.title
+            content.body = private_ ? "You have a payment or contract date coming up." : reminder.body
             content.sound = .default
             let parts = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: reminder.fireDate)
             let request = UNNotificationRequest(identifier: prefix + reminder.identifier, content: content, trigger: UNCalendarNotificationTrigger(dateMatching: parts, repeats: false))

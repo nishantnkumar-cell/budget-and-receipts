@@ -7,6 +7,9 @@ struct ImportStatementView: View {
     @EnvironmentObject var store: BudgetStore
     @Environment(\.dismiss) private var dismiss
     @State private var choosingFile = false
+    /// A shared statement to preview straight away (from Inbox › Shared files).
+    var preloadURL: URL? = nil
+    var sharedDocument: SharedDocument? = nil
     @State private var fileName = ""
     @State private var text = ""
     @State private var header: [String] = []
@@ -111,6 +114,7 @@ struct ImportStatementView: View {
                 Section {
                     Button("Import \(preview.newTransactions.count) Transactions") {
                         store.commitImport(preview, fileName: fileName)
+                        if let sharedDocument { store.finishSharedImport(sharedDocument, result: preview) }
                         Task { await store.categoriseUnknownMerchants() }
                         dismiss()
                     }
@@ -120,6 +124,12 @@ struct ImportStatementView: View {
         }
         .formStyle(.grouped)
         .navigationTitle("Import Statement")
+        .onAppear {
+            if let preloadURL, text.isEmpty {
+                load(.success(preloadURL))
+                if let sharedDocument { fileName = sharedDocument.fileName }
+            }
+        }
         .fileImporter(isPresented: $choosingFile, allowedContentTypes: Self.types) { result in
             load(result)
         }

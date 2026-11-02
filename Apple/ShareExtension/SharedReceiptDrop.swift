@@ -13,6 +13,14 @@ enum SharedReceiptDrop {
     static let statementTypes: Set<String> = ["csv", "ofx", "qfx", "qif"]
     static var fileTypes: Set<String> { receiptTypes.union(statementTypes) }
 
+    /// Bigger files are refused: statements and receipts are far smaller, and the share
+    /// extension has little memory.
+    static let maxFileBytes = 20_000_000
+
+    static func isTooLarge(_ url: URL) -> Bool {
+        ((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) > maxFileBytes
+    }
+
     static func isStatement(_ url: URL) -> Bool { statementTypes.contains(url.pathExtension.lowercased()) }
 
     /// Nil when the App Group is missing, e.g. in an unsigned test build.
