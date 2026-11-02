@@ -1,4 +1,4 @@
-"""Generates the Budget & Receipts logo concepts as 1024px SVGs.
+"""Generates the Duo Budget logo concepts as 1024px SVGs.
 
 Shares the frame of Vault's macOS icon (824px squircle, 185 radius, soft drop
 shadow) and uses the colours of Chitra's icon.
