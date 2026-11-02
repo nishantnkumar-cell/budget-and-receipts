@@ -69,37 +69,3 @@ struct PhoneRootView: View {
     }
 }
 #endif
-
-#if os(macOS)
-struct MacRootView: View {
-    @EnvironmentObject var store: BudgetStore
-    @State private var selection: AppSection? = .home
-
-    var body: some View {
-        NavigationSplitView {
-            List(selection: $selection) {
-                ForEach([AppSection.home, .inbox, .activity, .budgets, .plan]) { section in
-                    Label(section.rawValue, systemImage: section.systemImage)
-                        .badge(section == .inbox ? store.needsReview.count : 0)
-                        .tag(section)
-                }
-                Section {
-                    Label(AppSection.settings.rawValue, systemImage: AppSection.settings.systemImage)
-                        .tag(AppSection.settings)
-                }
-            }
-            .navigationTitle("Duo Budget")
-            .navigationSplitViewColumnWidth(min: 200, ideal: 220)
-        } detail: {
-            NavigationStack { (selection ?? .home).screen }
-                .toolbar {
-                    ToolbarItem(placement: .primaryAction) { SyncStatusButton() }
-                    ToolbarItem(placement: .primaryAction) {
-                        Button { selection = .scan } label: { Label("Add Receipt", systemImage: "doc.viewfinder") }
-                    }
-                }
-        }
-        .tint(.brandPink)
-    }
-}
-#endif
