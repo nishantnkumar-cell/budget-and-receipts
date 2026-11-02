@@ -150,6 +150,23 @@ enum ReminderScheduler {
     }
 }
 
+/// On the 1st of each month: a nudge to update balances more than 30 days old, and to look
+/// at the month in review.
+enum MonthlyCheckIn {
+    static func schedule(enabled: Bool, hasWealthAccounts: Bool) async {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: ["monthly-check-in"])
+        guard enabled else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "Your month in review"
+        content.body = hasWealthAccounts
+            ? "See how last month went, and update any balances that are out of date."
+            : "See how last month went."
+        let trigger = UNCalendarNotificationTrigger(dateMatching: DateComponents(day: 1, hour: 9), repeats: true)
+        try? await center.add(UNNotificationRequest(identifier: "monthly-check-in", content: content, trigger: trigger))
+    }
+}
+
 /// A local notification the first time a subscription or bill's price goes up.
 enum PriceRiseNotifier {
     static func check(_ rises: [UUID: PriceRise], enabled: Bool, defaults: UserDefaults = .standard) async {
