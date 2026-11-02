@@ -269,16 +269,45 @@ final class BudgetStore: ObservableObject {
     /// Suggests categories on the device, learning from the ones you already chose.
     var categoriser: Categoriser { Categoriser(history: transactions, lookedUp: merchantCategories) }
 
+    /// Merchants already asked about since the app opened, so automatic runs don't ask again.
+    private var triedMerchants = Set<String>()
+
+    /// Payments that still have no category and no receipt.
+    var uncategorisedCount: Int {
+        transactions.filter { $0.category == "Uncategorised" && $0.splits.isEmpty && $0.amount < 0 }.count
+    }
+
+    /// The Inbox's "Categorise with AI" button: asks Apple Intelligence (and Apple Maps, if
+    /// allowed) about every shop still without a category, and says why when it can't.
+    func categoriseNow() async {
+        guard !isCategorising else { return }
+        if !AppSettings.onlineCategories, let reason = ReceiptAIService.unavailableReason {
+            categorisingResult = reason
+            return
+        }
+        let filled = await categoriseUnknownMerchants(useAI: true, retry: true)
+        if filled == 0, categorisingResult == nil {
+            categorisingResult = uncategorisedCount == 0
+                ? "Every payment already has a category."
+                : "No new categories found. You can set them yourself."
+        }
+    }
+
     /// Finds categories for merchants nobody has categorised yet (Apple Intelligence, then
-    /// Apple Maps if allowed) and fills them in. Each merchant is looked up once.
+    /// Apple Maps if allowed) and fills them in. Runs after imports and when the app opens;
+    /// each merchant is asked about once per launch unless `retry`.
     /// Returns how many transactions got a category.
     @discardableResult
     func categoriseUnknownMerchants(useAI: Bool = AppSettings.aiCategories, useMaps: Bool = AppSettings.onlineCategories,
+                                    retry: Bool = false,
                                     lookup: (String) async -> MerchantCategory? = { _ in nil }) async -> Int {
-        guard useAI || useMaps else { return 0 }
-        let merchants = MerchantCategories.unknownMerchants(transactions, known: merchantCategories, categoriser: categoriser).prefix(60)
+        guard useAI || useMaps, !isCategorising, !isWaitingForFiles else { return 0 }
+        let merchants = MerchantCategories.unknownMerchants(transactions, known: merchantCategories, categoriser: categoriser)
+            .filter { retry || !triedMerchants.contains(Categoriser.merchantKey($0)) }
+            .prefix(60)
         guard !merchants.isEmpty else { return 0 }
         isCategorising = true
+        categorisingResult = nil
         defer { isCategorising = false }
         for merchant in merchants {
             let found: MerchantCategory?
@@ -287,6 +316,7 @@ final class BudgetStore: ObservableObject {
             } else {
                 found = await MerchantCategoryService.category(for: merchant, useAI: useAI, useMaps: useMaps)
             }
+            triedMerchants.insert(Categoriser.merchantKey(merchant))
             if let found { merchantCategories[Categoriser.merchantKey(merchant)] = found }
         }
         let before = transactions.filter { $0.category == "Uncategorised" }.count
