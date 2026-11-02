@@ -39,6 +39,8 @@ final class SharedReceiptTests: XCTestCase {
         XCTAssertNotNil(store.transactions.first?.pendingSplitDraft, "The waiting receipt was matched")
         XCTAssertTrue(store.pendingReceipts.isEmpty)
         XCTAssertTrue(SharedReceiptDrop.waitingFiles(in: drop).isEmpty, "Shared copies are removed once read")
+        XCTAssertEqual(store.sharedDocuments.first?.summary, "Imported as a statement: 1 payment")
+        XCTAssertNotNil(store.shareSummary, "The person is told what happened")
     }
 
     func testTextPDFReceiptGoesToTheWaitingList() async throws {
@@ -120,6 +122,31 @@ final class SharedReceiptTests: XCTestCase {
         let parsed = try PDFStatementParser.parse(lines, fallbackYear: 2026)
         XCTAssertEqual(parsed.map(\.amount), [-12.40, -31.49, 25.00, -20.41].map { Decimal(string: "\($0)")! })
         XCTAssertNil(PDFStatementParser.summaryDifference(lines, rows: parsed))
+    }
+
+    func testUnreadableFileIsListedWithTheReason() async throws {
+        let store = BudgetStore(folder: folder)
+        let url = drop.appendingPathComponent("blank.pdf")
+        try Self.pdf(lines: []).write(to: url)
+        await SharedReceiptReader.open(url, into: store)
+        guard case .failed(let reason)? = store.sharedDocuments.first?.outcome else { return XCTFail("Should be listed as failed") }
+        XCTAssertTrue(reason.contains("no text"))
+        XCTAssertTrue(store.pendingReceipts.isEmpty)
+    }
+
+    func testStatementTakenForAReceiptCanBeImportedInstead() throws {
+        let store = BudgetStore(folder: folder)
+        // As an earlier version left it: a statement's text saved as a waiting receipt.
+        let text = ["Your Account statement", "Date Payment type and details Paid out Paid in Balance",
+                    "01 Oct 26 BALANCE BROUGHT FORWARD 100.00", "03 Oct 26 TESCO 10.00 90.00",
+                    "04 Oct 26 COSTA 3.00 87.00", "05 Oct 26 BOOTS 2.00 85.00", "06 Oct 26 PRET 5.00 80.00"].joined(separator: "\n")
+        store.savePending(ReceiptDraftEditor(merchant: "Your Account statement", rawText: text))
+        let outcome = SharedReceiptReader.importAsStatement(store.pendingReceipts[0], store: store)
+        guard case .statement(let imported, _, _) = outcome else { return XCTFail("\(outcome)") }
+        XCTAssertEqual(imported, 4)
+        XCTAssertTrue(store.pendingReceipts.isEmpty)
+        XCTAssertEqual(store.transactions.count, 4)
+        XCTAssertEqual(store.sharedDocuments.count, 1)
     }
 
     static func pdf(pieces: [(CGFloat, CGFloat, String)]) -> Data {
