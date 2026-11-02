@@ -10,7 +10,6 @@ struct SettingsView: View {
     @State private var exportingCSV = false
     @State private var exportingPDF = false
     @State private var exportError: String?
-    @State private var confirmingReset = false
 
     var body: some View {
         Form {
@@ -26,6 +25,7 @@ struct SettingsView: View {
                     .disabled(CloudSync.containerID == nil)
                 if settings.iCloudSyncEnabled, CloudSync.containerID != nil {
                     LabeledContent("Status", value: syncStatus.text)
+                    HeldDeletionsRow()
                 }
             } header: {
                 Text("iCloud")
@@ -34,6 +34,7 @@ struct SettingsView: View {
                      ? "iCloud sync isn't available in this version of the app yet."
                      : "Keeps your budget, receipts and contracts the same on your iPhone and Mac, through your own iCloud. Items marked Private stay private when you later share your household with a partner.")
             }
+            HouseholdSharingSection()
             CoupleSettingsSection()
             AccountsSettingsSection()
             Section {
@@ -41,7 +42,9 @@ struct SettingsView: View {
             } header: {
                 Text("Privacy")
             } footer: {
-                Text("Asks for \(AppLock().methodName) when the app opens or comes back from the background.")
+                Text(AppLock().methodName == "Passcode" && !AppLock().canAuthenticate
+                     ? "This device has no passcode, so the lock can't work. Set one in System Settings."
+                     : "Asks for \(AppLock().methodName) when the app opens, comes back after being away, or (on the Mac) after sleep or the screen locks. Hides your figures in the app switcher and keeps details off the lock screen.")
             }
             Section {
                 Toggle("Suggest categories with Apple Intelligence", isOn: $settings.aiCategoriesEnabled)
@@ -64,11 +67,13 @@ struct SettingsView: View {
                 Text("Notifies you 2 days before a payment, 2 weeks before a renewal or fixed price ends, and a week before a cancellation deadline.")
             }
             Section {
-                Button("Erase All Data…", role: .destructive) { confirmingReset = true }
+                NavigationLink { EraseAllDataView() } label: {
+                    Label("Erase All Data…", systemImage: "trash").foregroundStyle(.red)
+                }
             } header: {
                 Text("Start again")
             } footer: {
-                Text("Removes every transaction, budget, receipt, contract and shared file. With iCloud sync on, they're removed from your other devices too. Your settings are kept.")
+                Text("Asks for Face ID or your passcode, then for the word ERASE, before deleting anything.")
             }
             Section("Export") {
                 Button("Export All Transactions (CSV)") { exportingCSV = true }
@@ -80,15 +85,6 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .navigationTitle("Settings")
-        .alert("Erase all data?", isPresented: $confirmingReset) {
-            Button("Cancel", role: .cancel) {}
-            Button("Erase Everything", role: .destructive) {
-                store.resetAllData()
-                subscriptions.resetAllData()
-            }
-        } message: {
-            Text("This can't be undone. Export a CSV first if you want a copy.")
-        }
         .fileExporter(isPresented: $exportingCSV, document: ExportDocument(data: Data(CSVExporter.transactions(store.transactions, ledger: store.hasPartner ? store.ledger : nil).utf8), type: .commaSeparatedText), contentType: .commaSeparatedText, defaultFilename: "Budget transactions.csv") { result in
             if case .failure(let error) = result { exportError = error.localizedDescription }
         }

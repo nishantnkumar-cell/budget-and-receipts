@@ -70,6 +70,12 @@ struct CoupleSettingsSection: View {
 
     var body: some View {
         Section {
+            if store.householdRole == .member {
+                Text("Set by \(store.couple.partnerName.isEmpty ? "your partner" : store.couple.partnerName), who owns the household.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            TextField("Your name", text: Binding(get: { store.couple.ownerName ?? "" }, set: { settings.wrappedValue.ownerName = $0 }), prompt: Text("Shown to your partner"))
             TextField("Partner's name", text: settings.partnerName, prompt: Text("Leave empty if it's just you"))
             if store.hasPartner {
                 Stepper("Your share of shared costs: \(myPercent.wrappedValue)%", value: myPercent, in: 0...100, step: 5)

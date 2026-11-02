@@ -6,6 +6,8 @@ public struct SharedDocument: Identifiable, Codable, Hashable, Sendable {
     public enum Outcome: Codable, Hashable, Sendable {
         /// Imported as a bank or card statement.
         case statement(imported: Int, alreadyThere: Int, totalsDifference: Decimal?)
+        /// A statement read and waiting for the person to check the preview and import it.
+        case statementReady(payments: Int)
         /// Read as a receipt, now in Waiting for payment (or matched to a payment).
         case receipt(pendingID: UUID)
         /// Not read. The reason is in plain words.
@@ -35,6 +37,8 @@ public struct SharedDocument: Identifiable, Codable, Hashable, Sendable {
             if alreadyThere > 0 { text += ", \(alreadyThere) already there" }
             if difference != nil { text += ". Totals don't match the statement, so check it" }
             return text
+        case .statementReady(let payments):
+            return "Statement with \(payments) payment\(payments == 1 ? "" : "s"), ready to review and import"
         case .receipt:
             return "Read as a receipt"
         case .failed(let reason):
@@ -45,6 +49,7 @@ public struct SharedDocument: Identifiable, Codable, Hashable, Sendable {
     public var needsAttention: Bool {
         switch outcome {
         case .statement(_, _, let difference): difference != nil
+        case .statementReady: true
         case .receipt: false
         case .failed: true
         }

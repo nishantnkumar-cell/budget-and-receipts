@@ -2,6 +2,11 @@ import SwiftUI
 
 @main
 struct BudgetReceiptsApp: App {
+    #if os(iOS)
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    #else
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    #endif
     @StateObject private var store = BudgetStore()
     @StateObject private var subscriptions = SubscriptionStore()
     @StateObject private var settings = AppSettings()
@@ -9,12 +14,17 @@ struct BudgetReceiptsApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @State private var cloud: CloudSync?
     @StateObject private var syncStatus = SyncStatus()
+    /// When the app last stopped being in front, to lock the Mac after a while away.
+    @State private var leftAt: Date?
 
     var body: some Scene {
         WindowGroup {
             Group {
                 if settings.appLockEnabled && !lock.isUnlocked {
                     LockScreen(lock: lock)
+                } else if settings.appLockEnabled && scenePhase != .active {
+                    // Covers figures in the app switcher and screenshots taken while away.
+                    PrivacyCover()
                 } else {
                     AdaptiveRootView()
                         // Rebuild every screen when the currency changes so all amounts update.
@@ -35,8 +45,12 @@ struct BudgetReceiptsApp: App {
                 if scenePhase == .active { await cloud?.refresh() }
             }
             .task(id: settings.iCloudSyncEnabled) { await startOrStopSync() }
+            #if os(macOS)
+            .task { MacLockWatcher.shared.watch(lock) }
+            #endif
+            .onChange(of: syncStatus.household) { _, link in store.householdRole = link.role }
             // Says what happened to files just shared, so nothing vanishes silently.
-            .alert("Shared files", isPresented: Binding(get: { store.shareSummary != nil }, set: { if !$0 { store.shareSummary = nil } })) {
+            .alert("Shared files", isPresented: Binding(get: { store.shareSummary != nil && (!settings.appLockEnabled || lock.isUnlocked) }, set: { if !$0 { store.shareSummary = nil } })) {
                 Button("OK") { store.shareSummary = nil }
             } message: {
                 Text(store.shareSummary ?? "")
@@ -46,7 +60,18 @@ struct BudgetReceiptsApp: App {
             }
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background { lock.lock() }
+            switch phase {
+            case .background:
+                lock.lock()
+            case .inactive:
+                leftAt = leftAt ?? Date()
+            case .active:
+                // The Mac rarely goes to the background: lock after five minutes away instead.
+                if let leftAt, Date().timeIntervalSince(leftAt) > 300 { lock.lock() }
+                leftAt = nil
+            @unknown default:
+                break
+            }
         }
         #if os(macOS)
         .commands { ImportFromDevicesCommands() }
@@ -58,6 +83,7 @@ struct BudgetReceiptsApp: App {
         let testing = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
         guard settings.iCloudSyncEnabled, CloudSync.containerID != nil, !testing else {
             syncStatus.set(.off, pending: 0)
+            syncStatus.sync = nil
             cloud = nil
             store.didPersist = nil
             subscriptions.didPersist = nil
@@ -65,6 +91,15 @@ struct BudgetReceiptsApp: App {
         }
         let sync = CloudSync(sources: [store, subscriptions], imagesFolder: store.imagesFolder, stateFolder: JSONFileStorage.defaultFolder, status: syncStatus)
         cloud = sync
+        syncStatus.sync = sync
+        ShareAcceptor.shared.setHandler { metadata in
+            do {
+                try await sync.accept(metadata)
+                store.status = "You've joined the household."
+            } catch {
+                store.status = "Couldn't join the household: \(error.localizedDescription)"
+            }
+        }
         store.didPersist = { Task { await sync.localDataChanged() } }
         subscriptions.didPersist = { Task { await sync.localDataChanged() } }
         await sync.start()

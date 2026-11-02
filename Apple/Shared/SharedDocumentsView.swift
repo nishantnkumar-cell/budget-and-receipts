@@ -49,6 +49,7 @@ struct SharedDocumentRow: View {
     private var symbol: String {
         switch document.outcome {
         case .statement(_, _, let difference): difference == nil ? "doc.text" : "exclamationmark.triangle"
+        case .statementReady: "doc.badge.clock"
         case .receipt: "receipt"
         case .failed: "xmark.octagon"
         }
@@ -74,6 +75,18 @@ struct SharedDocumentDetail: View {
                     NavigationLink("See payments in Activity") { TransactionsView() }
                 } footer: {
                     Text("Deleting this entry keeps the imported payments.")
+                }
+            case .statementReady:
+                Section {
+                    if let name = current.storedFile {
+                        NavigationLink("Review and Import") {
+                            ImportStatementView(preloadURL: store.sharedFilesFolder.appendingPathComponent(name), sharedDocument: current)
+                        }
+                    } else {
+                        Text("The copy has expired. Share the statement again.").foregroundStyle(.secondary)
+                    }
+                } footer: {
+                    Text("Nothing is imported until you've checked the preview.")
                 }
             case .receipt(let id):
                 if let receipt = store.pendingReceipts.first(where: { $0.id == id }) {

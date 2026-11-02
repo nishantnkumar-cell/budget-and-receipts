@@ -21,6 +21,7 @@ public enum PDFStatementParser {
     }
 
     public static func parse(_ lines: [String], fallbackYear: Int, timeZone: TimeZone = .current) throws -> [StatementRow] {
+        let lines = lines.prefix(20_000).map { String($0.prefix(2_000)) }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone
         let years = statementYears(lines, fallback: fallbackYear)
