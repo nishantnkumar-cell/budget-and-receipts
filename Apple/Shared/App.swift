@@ -35,6 +35,12 @@ struct BudgetReceiptsApp: App {
                 if scenePhase == .active { await cloud?.refresh() }
             }
             .task(id: settings.iCloudSyncEnabled) { await startOrStopSync() }
+            // Says what happened to files just shared, so nothing vanishes silently.
+            .alert("Shared files", isPresented: Binding(get: { store.shareSummary != nil }, set: { if !$0 { store.shareSummary = nil } })) {
+                Button("OK") { store.shareSummary = nil }
+            } message: {
+                Text(store.shareSummary ?? "")
+            }
             .task(id: subscriptions.contracts) {
                 await ReminderScheduler.reschedule(subscriptions.contracts, enabled: settings.remindersEnabled)
             }
@@ -51,6 +57,7 @@ struct BudgetReceiptsApp: App {
     private func startOrStopSync() async {
         let testing = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
         guard settings.iCloudSyncEnabled, CloudSync.containerID != nil, !testing else {
+            syncStatus.set(.off, pending: 0)
             cloud = nil
             store.didPersist = nil
             subscriptions.didPersist = nil

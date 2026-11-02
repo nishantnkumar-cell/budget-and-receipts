@@ -22,6 +22,14 @@ final class AppSettings: ObservableObject {
     /// Keep data in step across your devices with iCloud. On by default where iCloud is available.
     @Published var iCloudSyncEnabled: Bool { didSet { defaults.set(iCloudSyncEnabled, forKey: Keys.iCloudSync) } }
 
+    /// Suggest categories for unknown merchants with Apple Intelligence on the device. On by default.
+    @Published var aiCategoriesEnabled: Bool { didSet { defaults.set(aiCategoriesEnabled, forKey: Keys.aiCategories) } }
+    /// Look up unknown merchants with Apple Maps (sends the name and town). Off until switched on.
+    @Published var onlineCategoriesEnabled: Bool { didSet { defaults.set(onlineCategoriesEnabled, forKey: Keys.onlineCategories) } }
+
+    nonisolated static var aiCategories: Bool { UserDefaults.standard.object(forKey: Keys.aiCategories) as? Bool ?? true }
+    nonisolated static var onlineCategories: Bool { UserDefaults.standard.bool(forKey: Keys.onlineCategories) }
+
     nonisolated static var smartReceipts: Bool {
         UserDefaults.standard.object(forKey: Keys.smartReceipts) as? Bool ?? true
     }
@@ -34,6 +42,8 @@ final class AppSettings: ObservableObject {
         static let reminders = "remindersEnabled"
         static let smartReceipts = "smartReceiptsEnabled"
         static let iCloudSync = "iCloudSyncEnabled"
+        static let aiCategories = "aiCategoriesEnabled"
+        static let onlineCategories = "onlineCategoriesEnabled"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -43,6 +53,8 @@ final class AppSettings: ObservableObject {
         remindersEnabled = defaults.bool(forKey: Keys.reminders)
         smartReceiptsEnabled = defaults.object(forKey: Keys.smartReceipts) as? Bool ?? true
         iCloudSyncEnabled = defaults.object(forKey: Keys.iCloudSync) as? Bool ?? true
+        aiCategoriesEnabled = defaults.object(forKey: Keys.aiCategories) as? Bool ?? true
+        onlineCategoriesEnabled = defaults.bool(forKey: Keys.onlineCategories)
     }
 }
 
@@ -90,7 +102,7 @@ struct LockScreen: View {
     var body: some View {
         VStack(spacing: 16) {
             Image(systemName: "lock.fill").font(.system(size: 48)).foregroundStyle(Color.brandPlum)
-            Text("Budget & Receipts is locked").font(.title2.bold())
+            Text("Duo Budget is locked").font(.title2.bold())
             Button("Unlock with \(lock.methodName)") { Task { await lock.unlock() } }
                 .buttonStyle(.borderedProminent)
             if let message = lock.message {

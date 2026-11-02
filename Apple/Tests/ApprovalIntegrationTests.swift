@@ -64,7 +64,7 @@ final class ApprovalIntegrationTests: XCTestCase {
 
     func testStoreUsesGivenFolderOnly() {
         let store = BudgetStore(folder: folder)
-        store.addTransaction()
+        store.add(BankTransaction(date: Date(), merchant: "Cash", amount: -5, fingerprint: "manual:1"))
         XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent("transactions.json").path))
     }
 

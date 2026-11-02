@@ -7,7 +7,7 @@ import AppKit
 typealias PlatformViewController = NSViewController
 #endif
 
-/// "Budget & Receipts" in the share sheet. It saves shared receipts (PDFs and images) and bank
+/// "Duo Budget" in the share sheet. It saves shared receipts (PDFs and images) and bank
 /// statements (CSV, OFX, QFX, QIF) for the app; it does no reading itself, so it stays fast
 /// and small. The app reads them when it opens.
 final class ShareViewController: PlatformViewController {
@@ -39,6 +39,19 @@ final class ShareViewController: PlatformViewController {
                 break
             }
         }
+        #if os(iOS)
+        // Say what happened, so a shared file never seems to vanish.
+        let alert = saved == 0
+            ? UIAlertController(title: "Not a supported file", message: "Duo Budget takes PDFs, photos and CSV, OFX, QFX or QIF statements.", preferredStyle: .alert)
+            : UIAlertController(title: "Sent to Duo Budget", message: "Open the app to finish. Statements are imported and receipts wait for their payment. You'll find every file under Inbox › Shared files.", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in self.finish(saved) })
+        present(alert, animated: true)
+        #else
+        finish(saved)
+        #endif
+    }
+
+    private func finish(_ saved: Int) {
         if saved == 0 {
             extensionContext?.cancelRequest(withError: CocoaError(.fileReadUnsupportedScheme))
         } else {
