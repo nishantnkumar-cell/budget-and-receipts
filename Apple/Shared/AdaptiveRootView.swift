@@ -88,7 +88,7 @@ struct MacRootView: View {
                         .tag(AppSection.settings)
                 }
             }
-            .navigationTitle("Budget & Receipts")
+            .navigationTitle("Duo Budget")
             .navigationSplitViewColumnWidth(min: 200, ideal: 220)
         } detail: {
             NavigationStack { (selection ?? .home).screen }

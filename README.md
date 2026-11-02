@@ -1,4 +1,4 @@
-# Budget & Receipts
+# Duo Budget
 
 A private budgeting and receipt app for one person or a couple, for iPhone and Mac, with a Windows version planned. Receipts are read on the device with Apple Vision; nothing leaves the device by default.
 

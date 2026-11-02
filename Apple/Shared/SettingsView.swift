@@ -177,7 +177,7 @@ struct MonthReportPage: View {
                 }
             }
             Spacer()
-            Text("Made with Budget & Receipts on \(Date().formatted(date: .abbreviated, time: .omitted))").font(.caption).foregroundStyle(.secondary)
+            Text("Made with Duo Budget on \(Date().formatted(date: .abbreviated, time: .omitted))").font(.caption).foregroundStyle(.secondary)
         }
         .padding(40)
         .foregroundStyle(.black)

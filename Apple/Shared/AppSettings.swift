@@ -102,7 +102,7 @@ struct LockScreen: View {
     var body: some View {
         VStack(spacing: 16) {
             Image(systemName: "lock.fill").font(.system(size: 48)).foregroundStyle(Color.brandPlum)
-            Text("Budget & Receipts is locked").font(.title2.bold())
+            Text("Duo Budget is locked").font(.title2.bold())
             Button("Unlock with \(lock.methodName)") { Task { await lock.unlock() } }
                 .buttonStyle(.borderedProminent)
             if let message = lock.message {
