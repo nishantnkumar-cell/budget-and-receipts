@@ -35,12 +35,12 @@ targets:
     info:
       path: iOS/Info.plist
       properties:
-        CFBundleDisplayName: Budget & Receipts
+        CFBundleDisplayName: Duo Budget
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
-        NSCameraUsageDescription: Budget & Receipts uses the camera to scan receipts. Images stay on this device.
-        NSPhotoLibraryUsageDescription: Budget & Receipts reads the receipt photos you choose so it can read their text on this device.
-        NSFaceIDUsageDescription: Budget & Receipts uses Face ID to unlock your budget.
+        NSCameraUsageDescription: Duo Budget uses the camera to scan receipts. Images stay on this device.
+        NSPhotoLibraryUsageDescription: Duo Budget reads the receipt photos you choose so it can read their text on this device.
+        NSFaceIDUsageDescription: Duo Budget uses Face ID to unlock your budget.
         LSSupportsOpeningDocumentsInPlace: false
         CFBundleDocumentTypes:
           - CFBundleTypeName: Receipt
@@ -91,7 +91,8 @@ targets:
     info:
       path: macOS/Info.plist
       properties:
-        CFBundleDisplayName: Budget & Receipts
+        CFBundleDisplayName: Duo Budget
+        CFBundleName: Duo Budget
         LSApplicationCategoryType: public.app-category.finance
         CloudKitContainer: iCloud.com.nishantkumar.budgetreceipts
         CFBundleDocumentTypes:
@@ -132,7 +133,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.nishantkumar.budgetreceipts
         PRODUCT_MODULE_NAME: BudgetReceipts
         ENABLE_HARDENED_RUNTIME: YES
-  # "Budget & Receipts" in the share sheet: saves shared PDFs and images for the app to read.
+  # "Duo Budget" in the share sheet: saves shared PDFs and images for the app to read.
   ShareExtension-iOS:
     type: app-extension
     platform: iOS
@@ -142,7 +143,7 @@ targets:
     info:
       path: ShareExtension/Info-iOS.plist
       properties:
-        CFBundleDisplayName: Budget & Receipts
+        CFBundleDisplayName: Duo Budget
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
@@ -167,7 +168,7 @@ targets:
     info:
       path: ShareExtension/Info-macOS.plist
       properties:
-        CFBundleDisplayName: Budget & Receipts
+        CFBundleDisplayName: Duo Budget
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController

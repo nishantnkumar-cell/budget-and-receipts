@@ -19,7 +19,7 @@ struct SharedDocumentsView: View {
         .overlay {
             if store.sharedDocuments.isEmpty {
                 ContentUnavailableView("Nothing shared yet", systemImage: "square.and.arrow.down",
-                                       description: Text("Share a statement or receipt to Budget & Receipts from any app."))
+                                       description: Text("Share a statement or receipt to Duo Budget from any app."))
             }
         }
         .navigationTitle("Shared files")
