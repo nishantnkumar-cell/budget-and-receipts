@@ -79,25 +79,51 @@ final class BudgetStore: ObservableObject {
         persist()
     }
 
-    var spending: Decimal {
-        transactions
-            .filter { $0.amount < 0 && $0.category != "Card payment" && $0.category != "Internal transfer" }
-            .reduce(0) { $0 - $1.amount }
+    /// The month the Overview and Budgets screens show.
+    @Published var selectedMonth = Date()
+
+    var calculator: BudgetCalculator { BudgetCalculator() }
+
+    var monthReport: MonthlyBudgetReport {
+        calculator.report(transactions, budgets: budgets, month: selectedMonth)
     }
 
-    var income: Decimal {
-        transactions
-            .filter { $0.amount > 0 && $0.category != "Internal transfer" }
-            .reduce(0) { $0 + $1.amount }
+    var spending: Decimal { monthReport.spending }
+    var income: Decimal { monthReport.income }
+
+    func moveMonth(by months: Int) {
+        selectedMonth = Calendar.current.date(byAdding: .month, value: months, to: selectedMonth) ?? selectedMonth
+    }
+
+    /// Reads a statement file and works out what importing it would add, without changing anything.
+    /// CSV files need a column mapping; pass nil to guess it from the header row.
+    func previewImport(text: String, fileName: String, mapping: CSVColumnMapping?) throws -> StatementImportResult {
+        let rows: [StatementRow]
+        switch StatementFormat(fileName: fileName) {
+        case .ofx:
+            rows = try StatementImporter.parseOFX(text)
+        case .qif:
+            rows = try StatementImporter.parseQIF(text)
+        case .csv:
+            let header = CSVReader.firstRecord(text)
+            guard let mapping = mapping ?? CSVColumnMapping.guess(header: header) else { throw StatementImportError.missingColumn("date, description or amount") }
+            rows = try StatementImporter.parseCSV(text, mapping: mapping)
+        }
+        return StatementImporter.prepare(rows, existing: transactions)
+    }
+
+    /// Adds the new transactions from a previewed import and records it in the import history.
+    func commitImport(_ result: StatementImportResult, fileName: String) {
+        transactions.insert(contentsOf: result.newTransactions, at: 0)
+        transactions.sort { $0.date > $1.date }
+        let status = result.duplicates.isEmpty ? "Imported" : "Imported, \(result.duplicates.count) already present"
+        imports.insert(ImportRecord(fileName: fileName, transactionCount: result.newTransactions.count, status: status), at: 0)
+        persist()
+        self.status = "Imported \(result.newTransactions.count) transactions from \(fileName)."
     }
 
     var needsReview: [BankTransaction] {
         transactions.filter { $0.category == "Uncategorised" || $0.pendingSplitDraft != nil }
-    }
-
-    func recordImport(fileName: String, count: Int, status: String) {
-        imports.insert(ImportRecord(fileName: fileName, transactionCount: count, status: status), at: 0)
-        persist()
     }
 
     private func persist() {
