@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Budget &amp; Receipts</string>
+	<string>Duo Budget</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -56,9 +56,11 @@
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<false/>
 	<key>NSCameraUsageDescription</key>
-	<string>Budget &amp; Receipts uses the camera to scan receipts. Images stay on this device.</string>
+	<string>Duo Budget uses the camera to scan receipts. Images stay on this device.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Duo Budget uses Face ID to unlock your budget.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Budget &amp; Receipts reads the receipt photos you choose so it can read their text on this device.</string>
+	<string>Duo Budget reads the receipt photos you choose so it can read their text on this device.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>

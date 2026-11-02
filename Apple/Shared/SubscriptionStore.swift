@@ -22,6 +22,11 @@ final class SubscriptionStore: ObservableObject {
         persist()
     }
 
+    func resetAllData() {
+        contracts = []
+        persist()
+    }
+
     func delete(_ contract: SubscriptionContract) {
         contracts.removeAll { $0.id == contract.id }
         persist()

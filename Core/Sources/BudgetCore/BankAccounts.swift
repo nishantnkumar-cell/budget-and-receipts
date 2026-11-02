@@ -11,6 +11,9 @@ public struct BankAccount: Identifiable, Codable, Hashable, Sendable {
     public var cardEndings: [String]
     /// Hidden, with its transactions, from a partner the household is shared with.
     public var isPrivate: Bool?
+    /// Whose account it is: a partner's account makes its spending theirs (and paid by them),
+    /// a joint account makes it shared. Nil or mine changes nothing.
+    public var owner: MoneyOwner?
 
     public init(id: UUID = UUID(), name: String, number: String = "", cardEndings: [String] = []) {
         self.id = id
@@ -31,6 +34,18 @@ public struct BankAccount: Identifiable, Codable, Hashable, Sendable {
 }
 
 public enum BankAccounts {
+    /// Sets whose money new transactions are from their account's owner. Owners already set are kept.
+    public static func applyOwners(_ transactions: [BankTransaction], accounts: [BankAccount]) -> [BankTransaction] {
+        transactions.map { transaction in
+            guard transaction.owner == nil, let id = transaction.accountID,
+                  let owner = accounts.first(where: { $0.id == id })?.owner, owner != .mine else { return transaction }
+            var owned = transaction
+            owned.owner = owner
+            if owner == .partner { owned.paidBy = .partner }
+            return owned
+        }
+    }
+
     /// The account a statement number belongs to, compared on the last four digits.
     public static func account(forNumber number: String, in accounts: [BankAccount]) -> BankAccount? {
         let ending = BankAccount.lastFour(number)

@@ -28,6 +28,7 @@ struct HomeView: View {
             .frame(maxWidth: 720)
             .frame(maxWidth: .infinity)
         }
+        .safeAreaInset(edge: .bottom) { CategorisingBanner().padding(.bottom, 8) }
         .appBackground()
         .navigationTitle("Home")
         #if os(iOS)

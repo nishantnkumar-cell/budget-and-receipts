@@ -13,6 +13,16 @@ final class BudgetStore: ObservableObject {
     /// Scanned receipts whose card payment is not on a statement yet.
     @Published var pendingReceipts: [PendingReceipt] = []
     @Published var accounts: [BankAccount] = []
+    /// True while Apple Intelligence or Apple Maps is finding categories.
+    @Published var isCategorising = false
+    /// What the last category lookup did, shown briefly.
+    @Published var categorisingResult: String?
+    /// Categories found for merchants the app didn't know, by merchant key.
+    @Published var merchantCategories: [String: MerchantCategory] = [:]
+    /// Every file shared or opened with the app, and what became of it.
+    @Published var sharedDocuments: [SharedDocument] = []
+    /// What the app just did with shared files, shown once as a confirmation.
+    @Published var shareSummary: String?
     /// Show one account's money only. Nil shows every account.
     @Published var accountFilter: UUID?
     /// Accounts found in the statement being previewed, added when it is imported.
@@ -36,6 +46,8 @@ final class BudgetStore: ObservableObject {
         settlements = storage.load("settlements.json") ?? []
         pendingReceipts = storage.load("pending-receipts.json") ?? []
         accounts = storage.load("accounts.json") ?? []
+        sharedDocuments = storage.load("shared-documents.json") ?? []
+        merchantCategories = storage.load("merchant-categories.json") ?? [:]
     }
 
     func saveDraft(_ draft: SplitDraft, for transaction: BankTransaction) {
@@ -62,16 +74,10 @@ final class BudgetStore: ObservableObject {
         return result
     }
 
-    func addTransaction() {
-        let transaction = BankTransaction(
-            date: Date(),
-            merchant: "New transaction",
-            description: "Manual entry",
-            amount: 0,
-            category: "Uncategorised",
-            fingerprint: UUID().uuidString
-        )
-        transactions.insert(transaction, at: 0)
+    /// Adds a transaction entered by hand (see `NewTransactionView`).
+    func add(_ transaction: BankTransaction) {
+        transactions.append(transaction)
+        transactions.sort { $0.date > $1.date }
         persist()
     }
 
@@ -172,6 +178,19 @@ final class BudgetStore: ObservableObject {
             guard let mapping = mapping ?? CSVColumnMapping.guess(header: header) else { throw StatementImportError.missingColumn("date, description or amount") }
             rows = try StatementImporter.parseCSV(text, mapping: mapping)
         }
+        return preview(rows, account: account)
+    }
+
+    /// A PDF statement, from the text lines PDFKit read out of it.
+    func previewImport(pdfLines lines: [String], account: UUID? = nil) throws -> StatementImportResult {
+        let year = Calendar.current.component(.year, from: Date())
+        let rows = try PDFStatementParser.parse(lines, fallbackYear: year)
+        var result = preview(rows, account: account)
+        result.summaryDifference = PDFStatementParser.summaryDifference(lines, rows: rows)
+        return result
+    }
+
+    private func preview(_ rows: [StatementRow], account: UUID?) -> StatementImportResult {
         proposedAccounts = []
         for number in Set(rows.compactMap(\.accountNumber)).sorted() where BankAccounts.account(forNumber: number, in: accounts) == nil {
             if BankAccounts.account(forNumber: number, in: proposedAccounts) == nil, !BankAccount.lastFour(number).isEmpty {
@@ -182,11 +201,43 @@ final class BudgetStore: ObservableObject {
         var result = StatementImporter.prepare(rows, existing: transactions, account: account) { BankAccounts.account(forNumber: $0, in: known)?.id }
         // Fill in categories from your past choices and well-known shops; you can change any of them.
         result.newTransactions = categoriser.categorise(result.newTransactions)
+        // A partner's or joint account makes its spending theirs or shared.
+        result.newTransactions = BankAccounts.applyOwners(result.newTransactions, accounts: known)
         return result
     }
 
     /// Suggests categories on the device, learning from the ones you already chose.
-    var categoriser: Categoriser { Categoriser(history: transactions) }
+    var categoriser: Categoriser { Categoriser(history: transactions, lookedUp: merchantCategories) }
+
+    /// Finds categories for merchants nobody has categorised yet (Apple Intelligence, then
+    /// Apple Maps if allowed) and fills them in. Each merchant is looked up once.
+    /// Returns how many transactions got a category.
+    @discardableResult
+    func categoriseUnknownMerchants(useAI: Bool = AppSettings.aiCategories, useMaps: Bool = AppSettings.onlineCategories,
+                                    lookup: (String) async -> MerchantCategory? = { _ in nil }) async -> Int {
+        guard useAI || useMaps else { return 0 }
+        let merchants = MerchantCategories.unknownMerchants(transactions, known: merchantCategories, categoriser: categoriser).prefix(60)
+        guard !merchants.isEmpty else { return 0 }
+        isCategorising = true
+        defer { isCategorising = false }
+        for merchant in merchants {
+            let found: MerchantCategory?
+            if let result = await lookup(merchant) {
+                found = result
+            } else {
+                found = await MerchantCategoryService.category(for: merchant, useAI: useAI, useMaps: useMaps)
+            }
+            if let found { merchantCategories[Categoriser.merchantKey(merchant)] = found }
+        }
+        let before = transactions.filter { $0.category == "Uncategorised" }.count
+        transactions = categoriser.categorise(transactions)
+        let filled = before - transactions.filter { $0.category == "Uncategorised" }.count
+        categorisingResult = filled == 0
+            ? "No new categories found. You can set them yourself."
+            : "Categorised \(filled) payment\(filled == 1 ? "" : "s"). Check them in Activity."
+        persist()
+        return filled
+    }
 
     /// Adds the new transactions from a previewed import and records it in the import history.
     func commitImport(_ result: StatementImportResult, fileName: String) {
@@ -236,6 +287,65 @@ final class BudgetStore: ObservableObject {
         BankAccounts.spendingByAccount(transactions, month: selectedMonth, calculator: calculator)
             .map { (account: account($0.key), spent: $0.value) }
             .sorted { ($0.account == nil ? 1 : 0, -$0.spent) < ($1.account == nil ? 1 : 0, -$1.spent) }
+    }
+
+    // MARK: Starting again
+
+    /// Removes every transaction, budget, receipt, account and shared file, here and (through
+    /// iCloud sync, as deletions) on your other devices. Settings such as currency are kept.
+    func resetAllData() {
+        transactions = []
+        changes = []
+        budgets = []
+        imports = []
+        couple = CoupleSettings()
+        settlements = []
+        pendingReceipts = []
+        accounts = []
+        sharedDocuments = []
+        accountFilter = nil
+        householdView = .together
+        for folder in [imagesFolder, sharedFilesFolder] {
+            for file in (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [] {
+                try? FileManager.default.removeItem(at: file)
+            }
+        }
+        status = "All data removed. Import a statement or add a transaction to start."
+        persist()
+    }
+
+    // MARK: Shared files
+
+    /// Where copies of shared files are kept, so a file can be read again another way.
+    var sharedFilesFolder: URL {
+        let folder = storage.folder.appendingPathComponent("Shared", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
+    }
+
+    func record(_ document: SharedDocument) {
+        sharedDocuments.insert(document, at: 0)
+        persist()
+    }
+
+    func update(_ document: SharedDocument) {
+        guard let index = sharedDocuments.firstIndex(where: { $0.id == document.id }) else { return }
+        sharedDocuments[index] = document
+        persist()
+    }
+
+    /// The shared file a waiting receipt came from, if any.
+    func sharedDocument(forReceipt id: UUID) -> SharedDocument? {
+        sharedDocuments.first { if case .receipt(let pendingID) = $0.outcome { pendingID == id } else { false } }
+    }
+
+    /// Removes a shared file from the list, with its waiting receipt and stored copy.
+    /// Payments already imported from a statement stay.
+    func deleteSharedDocument(_ document: SharedDocument) {
+        if case .receipt(let id) = document.outcome { pendingReceipts.removeAll { $0.id == id } }
+        if let name = document.storedFile { try? FileManager.default.removeItem(at: sharedFilesFolder.appendingPathComponent(name)) }
+        sharedDocuments.removeAll { $0.id == document.id }
+        persist()
     }
 
     // MARK: Waiting receipts
@@ -291,6 +401,8 @@ final class BudgetStore: ObservableObject {
         storage.save(settlements, "settlements.json")
         storage.save(pendingReceipts, "pending-receipts.json")
         storage.save(accounts, "accounts.json")
+        storage.save(sharedDocuments, "shared-documents.json")
+        storage.save(merchantCategories, "merchant-categories.json")
     }
 }
 

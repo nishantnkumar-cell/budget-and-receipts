@@ -104,6 +104,11 @@ struct AccountEditor: View {
         Form {
             TextField("Name", text: $account.name, prompt: Text("e.g. Joint current account"))
             TextField("Account number (last 4 digits are enough)", text: $account.number)
+            Picker("Whose account", selection: Binding(get: { account.owner ?? .mine }, set: { account.owner = $0 == .mine ? nil : $0 })) {
+                Text("Mine").tag(MoneyOwner.mine)
+                Text(store.couple.partnerName.isEmpty ? "Partner's" : "\(store.couple.partnerName)'s").tag(MoneyOwner.partner)
+                Text("Joint").tag(MoneyOwner.shared)
+            }
             PrivateToggle(isPrivate: $account.isPrivate, footer: "Its transactions are private too.")
             Section {
                 TextField("Card endings, e.g. 1234, 5678", text: $cards)
@@ -120,7 +125,8 @@ struct AccountEditor: View {
         .navigationTitle(account.name.isEmpty ? "Account" : account.name)
         .onAppear { cards = account.cardEndings.joined(separator: ", ") }
         .onDisappear(perform: save)
-        .confirmationDialog("Delete \(account.label)?", isPresented: $confirmingDelete) {
+        .alert("Delete \(account.label)?", isPresented: $confirmingDelete) {
+            Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
                 store.deleteAccount(account)
                 dismiss()
