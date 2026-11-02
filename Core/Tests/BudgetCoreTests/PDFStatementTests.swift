@@ -87,7 +87,7 @@ final class PDFStatementTests: XCTestCase {
     func testFullDatesAndSlashes() throws {
         let rows = try parse([
             "Statement",
-            "Balance",
+            "Date Description Paid out Balance",
             "03/10/2026 COSTA COFFEE 3.20 996.80",
             "04/10/26 PRET 4.50 992.30",
         ])
@@ -108,5 +108,56 @@ final class PDFStatementTests: XCTestCase {
 
     func testNothingFoundIsAnError() {
         XCTAssertThrowsError(try parse(["Statement", "No transactions this month"]))
+    }
+
+    // Layouts below are made up, shaped like real UK statements (no real data).
+
+    func testAmexStyleMonthFirstDatesForeignSpendAndCreditOnTheNextLine() throws {
+        let lines = [
+            "Statement of Account", "Credit Limit £ 5,000.00",
+            "Previous Closing Balance New Credits New Debits Closing Balance",
+            "£100.00 - £100.00 + = £37.50 £ 37.50",
+            "Statement Period From 6 August to 5 September 2026",
+            "Date Date Transaction Details Foreign Spend Amount £",
+            "Aug 17 Aug 17 PAYMENT RECEIVED - THANK YOU 100.00", "CR",
+            "Aug 5 Aug 5 CORNER SHOP LONDON 7.50", "GOODS",
+            "Aug 19 Aug 19 TAXI AMSTERDAM 35.00 30.00",
+        ]
+        let rows = try parse(lines)
+        XCTAssertEqual(rows.map(\.amount), [money("100.00"), money("-7.50"), money("-30.00")])
+        XCTAssertNil(PDFStatementParser.summaryDifference(lines, rows: rows))
+    }
+
+    func testPaymentsWhoseSignsOnlyTheBalanceCanTell() throws {
+        // Two lines share one balance, a "BP" code is money in here, and a time looks like money.
+        let lines = [
+            "Your Account statement", "Payments In 500.00", "Payments Out 160.00",
+            "Date Payment type and details £ Paid out £ Paid in £ Balance",
+            "15 Aug 26 Balance brought forward . 1,000.00",
+            "20 Aug 26 BP SMITH J", "RENT SHARE 500.00",
+            "ATM CASH AUG20", "HIGH ST@19.06 150.00 1,350.00",
+            "02 Sep 26 DD PHONE CO 10.00",
+            "Balance carried forward 1,340.00",
+            "small print", "more small print", "and more",
+            "Balance brought forward 1,340.00",
+        ]
+        let rows = try parse(lines)
+        XCTAssertEqual(rows.map(\.amount), [money("500.00"), money("-150.00"), money("-10.00")])
+        XCTAssertNil(PDFStatementParser.summaryDifference(lines, rows: rows))
+    }
+
+    func testNewPageWithoutADateAndCardTotals() throws {
+        let lines = [
+            "Statement", "Paid In £0.00", "Withdrawn £9.00",
+            "Date Description Paid In(£) Withdrawn(£) Balance(£)",
+            "23 JUL 2026 BROUGHT FORWARD 100.00",
+            "24 JUL Card Transaction CD BAKERY", "LONDON GB 4.00 96.00",
+            "Registered in England and Wales", "Authorised by the regulator", "RETSTMT",
+            "BROUGHT FORWARD 96.00",
+            "Card Transaction CD CAFE", "LONDON GB 5.00 91.00",
+        ]
+        let rows = try parse(lines)
+        XCTAssertEqual(rows.map { ymd($0.date) }, ["2026-7-24", "2026-7-24"])
+        XCTAssertNil(PDFStatementParser.summaryDifference(lines, rows: rows))
     }
 }
