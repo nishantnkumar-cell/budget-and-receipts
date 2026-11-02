@@ -65,8 +65,33 @@ actor CloudSync: CKSyncEngineDelegate {
     static let maxImageBytes = 700_000
 
     /// The iCloud container, read from Info.plist. Nil in builds without iCloud (tests, unsigned).
+    /// Also nil whenever this copy of the app isn't signed for it: CloudKit stops the app outright
+    /// if it's asked for a container it has no permission for (an iPhone build run on a Mac, for
+    /// example), so the app runs without sync instead.
     nonisolated static var containerID: String? {
-        Bundle.main.object(forInfoDictionaryKey: "CloudKitContainer") as? String
+        guard let id = Bundle.main.object(forInfoDictionaryKey: "CloudKitContainer") as? String,
+              isSigned(for: id) else { return nil }
+        return id
+    }
+
+    /// True when the app's provisioning profile grants the iCloud container.
+    nonisolated static func isSigned(for container: String) -> Bool {
+        let candidates = [
+            Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
+            Bundle.main.bundleURL.appendingPathComponent("Contents/embedded.provisionprofile"),
+        ].compactMap { $0 }
+        for url in candidates {
+            guard let data = try? Data(contentsOf: url),
+                  let text = String(data: data, encoding: .isoLatin1),
+                  let start = text.range(of: "<?xml"),
+                  let end = text.range(of: "</plist>", range: start.lowerBound..<text.endIndex) else { continue }
+            let plistData = Data(text[start.lowerBound..<end.upperBound].utf8)
+            guard let profile = try? PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any],
+                  let entitlements = profile["Entitlements"] as? [String: Any] else { continue }
+            let containers = entitlements["com.apple.developer.icloud-container-identifiers"] as? [String] ?? []
+            if containers.contains(container) || containers.contains("*") { return true }
+        }
+        return false
     }
 
     private let sources: [SyncSource]
