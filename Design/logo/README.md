@@ -1,21 +1,22 @@
 # Budget & Receipts logo
 
 The icon is **Rising receipt**: a receipt whose lines become a budget bar chart,
-with an amber sparkle for the Vision and AI features. It uses the same frame as
-Vault's macOS icon and takes its colours from Vault and Chitra, so the apps read
-as one family.
+with an amber sparkle for the Vision and AI features. Its colours are Chitra's
+icon colours (from `~/Chitra/tools/make_icon.py`), so the two apps read as one
+family; the frame matches Vault's macOS icon.
 
-| Token | Light | Dark | Use | Source |
+| Token | Light | Dark | Use | Chitra source |
 |---|---|---|---|---|
-| BrandCoral | `#EE4B4E` | `#FF6B6E` | brand, spending | Vault red `#EE3B36` |
-| BrandPlum | `#5A1D63` | `#B45CC0` | deep brand, net | Chitra background `#6E1E5C` |
-| BrandAmber | `#E8A321` | `#FFC454` | accent, AI, needs review | Chitra petals `#FFC454` |
-| BrandBlush | `#FFC9C4` | `#5A2A3A` | soft fills | Vault ring `#FFC9C4` |
-| BrandCream | `#FFF4E0` | `#2E1838` | paper, surfaces | Chitra glint `#FFECBE` |
-| BrandInk | `#24112E` | `#FFF4E0` | text on brand | Chitra centre `#180C28` |
-| AccentColor | `#E23E44` | `#FF6B6E` | system tint | |
+| BrandIndigo | `#261852` | `#8C7BD6` | net, deep brand | background top |
+| BrandPlum | `#6E1E5C` | `#C05AA8` | deep brand | background bottom |
+| BrandPink | `#E93278` | `#EC6096` | brand, spending | front petal edge |
+| BrandAmber | `#D9961C` | `#FFC454` | accent, AI, needs review | front petal centre `#FFC454` |
+| BrandCream | `#FFECBE` | `#2A1840` | paper, surfaces | lens glint |
+| BrandInk | `#180C28` | `#FFECBE` | text on brand | lens centre |
+| AccentColor | `#D9286C` | `#EC6096` | system tint | |
 
-The icon background is a diagonal gradient from coral (top left) to plum (bottom right).
+The icon background is a vertical gradient from indigo (top) to plum (bottom),
+and the bars run pink to amber like Chitra's petals.
 
 ## Files
 

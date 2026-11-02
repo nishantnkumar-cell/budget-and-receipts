@@ -57,8 +57,8 @@ struct OverviewView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())]) {
                     MoneyCard(title: "Income", amount: store.income, colour: .green)
-                    MoneyCard(title: "Spending", amount: store.spending, colour: .brandCoral)
-                    MoneyCard(title: "Net", amount: store.income - store.spending, colour: .brandPlum)
+                    MoneyCard(title: "Spending", amount: store.spending, colour: .brandPink)
+                    MoneyCard(title: "Net", amount: store.income - store.spending, colour: .brandIndigo)
                     MoneyCard(title: "Annual contracts", amount: annualContracts, colour: .brandAmber)
                 }
                 NavigationLink {

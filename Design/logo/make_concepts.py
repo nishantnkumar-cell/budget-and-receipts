@@ -1,33 +1,35 @@
 """Generates the Budget & Receipts logo concepts as 1024px SVGs.
 
 Shares the frame of Vault's macOS icon (824px squircle, 185 radius, soft drop
-shadow) and draws its colours from Vault (coral red) and Chitra (plum, amber).
+shadow) and uses the colours of Chitra's icon.
 """
 from pathlib import Path
 
 OUT = Path(__file__).parent
 
 PALETTE = {
-    "coral": "#EE4B4E",   # between Vault #EE3B36 and Chitra pink #E93278
-    "plum": "#5A1D63",    # Chitra background bottom #6E1E5C, a little deeper
-    "amber": "#FFC454",   # Chitra petal highlight
-    "blush": "#FFC9C4",   # Vault ring
-    "cream": "#FFF4E0",   # receipt paper, from Chitra glint #FFECBE
-    "ink": "#24112E",     # Chitra centre #180C28, warmed
+    # Taken straight from Chitra's icon (~/Chitra/tools/make_icon.py).
+    "indigo": "#261852",  # background top
+    "plum": "#6E1E5C",    # background bottom
+    "pink": "#E93278",    # front petal edge
+    "amber": "#FFC454",   # front petal centre
+    "peach": "#FFD68C",   # back petal centre
+    "cream": "#FFECBE",   # lens glint
+    "ink": "#180C28",     # lens centre
 }
 
 
-def defs(bg=("coral", "plum")):
+def defs(bg=("indigo", "plum")):
     p = PALETTE
     return f'''<defs>
-<linearGradient id="bg" gradientUnits="userSpaceOnUse" x1="100" y1="100" x2="924" y2="924"><stop offset="0" stop-color="{p[bg[0]]}"/><stop offset="1" stop-color="{p[bg[1]]}"/></linearGradient>
-<linearGradient id="gold" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#F7834A"/><stop offset="1" stop-color="{p["amber"]}"/></linearGradient>
+<linearGradient id="bg" gradientUnits="userSpaceOnUse" x1="512" y1="100" x2="512" y2="924"><stop offset="0" stop-color="{p[bg[0]]}"/><stop offset="1" stop-color="{p[bg[1]]}"/></linearGradient>
+<linearGradient id="gold" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="{p["pink"]}"/><stop offset="1" stop-color="{p["amber"]}"/></linearGradient>
 <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity="0.28"/></filter>
 <filter id="lift" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#2A0A2E" flood-opacity="0.35"/></filter>
 </defs>'''
 
 
-def frame(body, bg=("coral", "plum")):
+def frame(body, bg=("indigo", "plum")):
     """Mac-style icon: rounded square with margin and shadow, as in Vault."""
     return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
 {defs(bg)}
@@ -37,7 +39,7 @@ def frame(body, bg=("coral", "plum")):
 '''
 
 
-def full_bleed(body, scale=1.12, bg=("coral", "plum")):
+def full_bleed(body, scale=1.12, bg=("indigo", "plum")):
     """iPhone icon: square edge to edge (iOS rounds the corners itself)."""
     return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
 {defs(bg)}
@@ -76,7 +78,7 @@ RISING_RECEIPT = f'''<circle cx="512" cy="512" r="322" fill="#FFFFFF" fill-opaci
 <rect x="400" y="350" width="100" height="26" rx="13" fill="{P["plum"]}" fill-opacity="0.2"/>
 <rect x="404" y="560" width="56" height="130" rx="16" fill="url(#gold)"/>
 <rect x="484" y="500" width="56" height="190" rx="16" fill="url(#gold)"/>
-<rect x="564" y="420" width="56" height="270" rx="16" fill="{P["coral"]}"/>
+<rect x="564" y="420" width="56" height="270" rx="16" fill="{P["pink"]}"/>
 {sparkle(690, 270, 66, P["amber"])}'''
 a = frame(RISING_RECEIPT)
 
@@ -90,14 +92,14 @@ b = frame(f'''<path {br} d="M250,370 V310 Q250,250 310,250 H370"/>
 <rect x="422" y="372" width="180" height="22" rx="11" fill="{P["plum"]}" fill-opacity="0.3"/>
 <rect x="422" y="420" width="130" height="22" rx="11" fill="{P["plum"]}" fill-opacity="0.3"/>
 <rect x="422" y="468" width="160" height="22" rx="11" fill="{P["plum"]}" fill-opacity="0.3"/>
-<rect x="408" y="532" width="208" height="8" rx="4" fill="{P["coral"]}"/>
-<rect x="422" y="566" width="80" height="34" rx="17" fill="{P["coral"]}"/>
+<rect x="408" y="532" width="208" height="8" rx="4" fill="{P["pink"]}"/>
+<rect x="422" y="566" width="80" height="34" rx="17" fill="{P["pink"]}"/>
 <rect x="522" y="566" width="80" height="34" rx="17" fill="url(#gold)"/>
-{sparkle(712, 520, 46, P["amber"])}''', bg=("plum", "coral"))
+{sparkle(712, 520, 46, P["amber"])}''', bg=("indigo", "plum"))
 
-# C: Two receipts. A pair of receipts (one person or a couple) with a coin-amber sparkle.
+# C: Two receipts. A pair of receipts (one person or a couple) with an amber sparkle.
 c = frame(f'''<circle cx="512" cy="512" r="322" fill="#FFFFFF" fill-opacity="0.12"/>
-<g transform="rotate(-10 512 512)"><path filter="url(#lift)" fill="{P["blush"]}" d="{receipt(310, 270, 280, 480)}"/></g>
+<g transform="rotate(-10 512 512)"><path filter="url(#lift)" fill="{P["peach"]}" d="{receipt(310, 270, 280, 480)}"/></g>
 <g transform="rotate(7 512 512)"><path filter="url(#lift)" fill="{P["cream"]}" d="{receipt(430, 290, 290, 480)}"/>
 <rect x="476" y="356" width="160" height="24" rx="12" fill="{P["plum"]}" fill-opacity="0.32"/>
 <rect x="476" y="404" width="110" height="24" rx="12" fill="{P["plum"]}" fill-opacity="0.2"/>
