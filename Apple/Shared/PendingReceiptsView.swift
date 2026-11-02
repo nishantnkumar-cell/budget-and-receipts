@@ -61,6 +61,7 @@ struct PendingReceiptDetail: View {
         List {
             Section("Receipt") {
                 PendingReceiptRow(receipt: receipt)
+                DuplicateReceiptBanner(warning: store.possibleDuplicate(of: receipt.editor, excluding: receipt.id))
             }
             Section {
                 ForEach(options) { option in

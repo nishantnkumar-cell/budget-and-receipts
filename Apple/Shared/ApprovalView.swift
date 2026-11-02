@@ -74,6 +74,7 @@ struct ApprovalView: View {
     private var details: some View {
         Form {
             Section("Editable receipt") {
+                DuplicateReceiptBanner(warning: store.possibleDuplicate(of: editor))
                 TextField("Merchant", text: $editor.merchant)
                 DatePicker("Date", selection: Binding(get: { editor.purchaseDate ?? transaction.date }, set: { editor.purchaseDate = $0 }), displayedComponents: .date)
                 TextField("Receipt total", value: $editor.receiptTotal, format: .number)

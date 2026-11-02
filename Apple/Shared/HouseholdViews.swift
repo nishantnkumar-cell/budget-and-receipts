@@ -97,8 +97,8 @@ struct OwnerChip: View {
     private var tint: Color {
         switch owner {
         case .mine: .brandPlum
-        case .partner: .brandPink
-        case .shared: .brandAmber
+        case .partner: .brandPartner
+        case .shared: .brandTeal
         }
     }
 }
