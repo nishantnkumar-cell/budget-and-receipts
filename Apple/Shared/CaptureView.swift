@@ -118,19 +118,9 @@ struct CaptureView: View {
         .card(padding: 20)
     }
 
-    /// Spending payments this receipt could belong to, closest total and date first.
+    /// Spending payments this receipt could belong to, best match on total, date and shop first.
     private func candidates(for editor: ReceiptDraftEditor) -> [BankTransaction] {
-        let total = editor.receiptTotal ?? editor.splitTotal
-        let date = editor.purchaseDate ?? Date()
-        return store.transactions
-            .filter { $0.amount < 0 && $0.splits.isEmpty }
-            .sorted { lhs, rhs in
-                let lhsExact = abs(lhs.amount) == total, rhsExact = abs(rhs.amount) == total
-                if lhsExact != rhsExact { return lhsExact }
-                return abs(lhs.date.timeIntervalSince(date)) < abs(rhs.date.timeIntervalSince(date))
-            }
-            .prefix(5)
-            .map { $0 }
+        ReceiptMatcher.candidates(for: editor, in: store.transactions).map(\.transaction)
     }
 
     @ViewBuilder private func matches(for editor: ReceiptDraftEditor) -> some View {
@@ -188,7 +178,9 @@ struct CaptureView: View {
         message = nil
         defer { reading = false }
         do {
-            editor = try await vision.recognise(data: data)
+            var result = try await vision.recognise(data: data)
+            store.categoriser.categorise(&result)
+            editor = result
             imageName = (try? ReceiptImageStore().save(data, fileExtension: fileExtension)) ?? ""
         } catch {
             editor = nil

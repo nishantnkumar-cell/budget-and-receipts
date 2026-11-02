@@ -84,6 +84,7 @@ struct ReceiptView: View {
         Task {
             do {
                 var result = try await vision.recognise(image: picked)
+                store.categoriser.categorise(&result)
                 // Keep the receipt so it can be looked at again after approval.
                 if let saved = data ?? picked.jpegData(compressionQuality: 0.8) {
                     result.imagePath = (try? ReceiptImageStore().save(saved)) ?? ""
