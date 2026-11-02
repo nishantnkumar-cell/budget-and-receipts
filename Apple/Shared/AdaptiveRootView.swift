@@ -93,6 +93,7 @@ struct MacRootView: View {
         } detail: {
             NavigationStack { (selection ?? .home).screen }
                 .toolbar {
+                    ToolbarItem(placement: .primaryAction) { SyncStatusButton() }
                     ToolbarItem(placement: .primaryAction) {
                         Button { selection = .scan } label: { Label("Add Receipt", systemImage: "doc.viewfinder") }
                     }
