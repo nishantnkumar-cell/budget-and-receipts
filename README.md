@@ -1,9 +1,35 @@
-# BudgetMac Personal Receipt Approval
+# Budget & Receipts
 
-This update adds a manual-editing and approval gate before receipt splits are committed. Integrate `ApprovalView.swift`, `SplitDraft`, and the store approval methods into the full receipt-scanning project.
+A private budgeting and receipt app for one person or a couple, for iPhone and Mac, with a Windows version planned. Receipts are read on the device with Apple Vision; nothing leaves the device by default.
 
-## Subscriptions and contracts
-Add `SubscriptionView` to the Recurring section. It tracks contract start, minimum term, renewal, next payment, billing frequency, fixed-price end, notice period, expected amount and total actually paid to each vendor.
+## Layout
 
-## iPhone
-The shared SwiftUI source now supports iOS 17+ with a five-tab mobile interface, camera/photo receipt scanning, transaction editing, budgets, recurring contracts, review workflows and local persistence. Open Package.swift in Xcode for source validation; create or verify an iOS app target for signing, camera privacy text and device installation.
+| Folder | What it holds |
+| --- | --- |
+| `Core/` | `BudgetCore` Swift package: models and money rules (split approval, contracts, receipt parsing). Foundation only, so it also builds on Linux and Windows. |
+| `Apple/` | iPhone and Mac apps. `project.yml` is the XcodeGen spec; the `.xcodeproj` is generated and not committed. |
+| `Apple/Shared/` | SwiftUI screens, stores and the Vision OCR service shared by both apps. |
+| `docs/design/` | Feature notes from the original prototype. |
+| `docs/history/` | The prototype's handoff documents, kept for reference. |
+
+## Build and test (Mac)
+
+Requires Xcode 26 or later and XcodeGen (`brew install xcodegen`).
+
+```bash
+Scripts/verify.command
+```
+
+Or step by step:
+
+```bash
+cd Core && swift test
+cd ../Apple && xcodegen generate && open BudgetReceipts.xcodeproj
+```
+
+Minimum OS: iOS 26 and macOS 26, so the on-device Apple Intelligence features can be added.
+
+## Money rules
+
+- Amounts are `Decimal`. In tests, write money as `money("3.69")`, never as the literal `3.69`, which goes through floating point.
+- A receipt split is only applied after `SplitApprovalPolicy` passes: reviewed, every line has a description, a category and a positive amount, and the total is within half a penny of the bank amount.

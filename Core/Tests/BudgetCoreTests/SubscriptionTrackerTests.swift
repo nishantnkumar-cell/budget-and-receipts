@@ -1,0 +1,6 @@
+import XCTest
+@testable import BudgetCore
+final class SubscriptionTrackerTests:XCTestCase{
+ func testVendorTotalAndAverage(){let id=UUID();let c=SubscriptionContract(id:id,vendor:"Spotify",category:.streaming,startDate:Date(),billingPeriod:.monthly,nextPaymentDueDate:Date(),expectedAmount:money("21.99"),transactionMatchers:["spotify"]);let tx=[BankTransaction(date:Date(),merchant:"Spotify",description:"SPOTIFY LIMITED",amount:-money("21.99"),category:"Subscriptions",fingerprint:"1"),BankTransaction(date:Date(),merchant:"Spotify",description:"SPOTIFY P470",amount:-money("21.99"),category:"Subscriptions",fingerprint:"2")];let s=SubscriptionTracker().vendorSummary(contract:c,transactions:tx);XCTAssertEqual(s.totalPaid,Decimal(string:"43.98"));XCTAssertEqual(s.paymentCount,2);XCTAssertEqual(s.averagePayment,Decimal(string:"21.99"))}
+ func testRefundOrCreditIsNotCountedAsPayment(){let c=SubscriptionContract(vendor:"Mobile",category:.mobile,startDate:Date(),billingPeriod:.monthly,nextPaymentDueDate:Date(),expectedAmount:9,transactionMatchers:["mobile"]);let tx=[BankTransaction(date:Date(),merchant:"Mobile",description:"MOBILE",amount:9,category:"Subscriptions",fingerprint:"credit")];XCTAssertEqual(SubscriptionTracker().payments(for:c,transactions:tx).count,0)}
+}
