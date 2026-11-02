@@ -30,3 +30,11 @@ final class CloudSyncTests: XCTestCase {
         XCTAssertNil(CloudSync.imageForUpload(url.appendingPathExtension("missing")))
     }
 }
+
+final class CloudSyncPermissionTests: XCTestCase {
+    func testWithoutAProfileGrantingICloudSyncStaysOff() {
+        // Test builds have no provisioning profile with iCloud: the app must not touch CloudKit.
+        XCTAssertFalse(CloudSync.isSigned(for: "iCloud.com.nishantkumar.budgetreceipts"))
+        XCTAssertNil(CloudSync.containerID)
+    }
+}
