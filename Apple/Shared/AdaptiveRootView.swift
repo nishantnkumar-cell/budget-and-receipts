@@ -17,6 +17,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     case activity = "Activity"
     case budgets = "Budgets"
     case plan = "Plan"
+    case netWorth = "Net worth"
     case scan = "Scan"
     case settings = "Settings"
 
@@ -29,6 +30,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .activity: "list.bullet"
         case .budgets: "chart.bar"
         case .plan: "calendar"
+        case .netWorth: "chart.line.uptrend.xyaxis"
         case .scan: "doc.viewfinder"
         case .settings: "gearshape"
         }
@@ -41,6 +43,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .activity: TransactionsView()
         case .budgets: BudgetsView()
         case .plan: PlanView()
+        case .netWorth: NetWorthView()
         case .scan: CaptureView()
         case .settings: SettingsView()
         }
@@ -66,40 +69,6 @@ struct PhoneRootView: View {
                 NavigationStack { CaptureView() }
             }
         }
-    }
-}
-#endif
-
-#if os(macOS)
-struct MacRootView: View {
-    @EnvironmentObject var store: BudgetStore
-    @State private var selection: AppSection? = .home
-
-    var body: some View {
-        NavigationSplitView {
-            List(selection: $selection) {
-                ForEach([AppSection.home, .inbox, .activity, .budgets, .plan]) { section in
-                    Label(section.rawValue, systemImage: section.systemImage)
-                        .badge(section == .inbox ? store.needsReview.count : 0)
-                        .tag(section)
-                }
-                Section {
-                    Label(AppSection.settings.rawValue, systemImage: AppSection.settings.systemImage)
-                        .tag(AppSection.settings)
-                }
-            }
-            .navigationTitle("Duo Budget")
-            .navigationSplitViewColumnWidth(min: 200, ideal: 220)
-        } detail: {
-            NavigationStack { (selection ?? .home).screen }
-                .toolbar {
-                    ToolbarItem(placement: .primaryAction) { SyncStatusButton() }
-                    ToolbarItem(placement: .primaryAction) {
-                        Button { selection = .scan } label: { Label("Add Receipt", systemImage: "doc.viewfinder") }
-                    }
-                }
-        }
-        .tint(.brandPink)
     }
 }
 #endif

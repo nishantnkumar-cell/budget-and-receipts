@@ -87,6 +87,7 @@ struct SettingsView: View {
                 Text("Asks for Face ID or your passcode, then for the word ERASE, before deleting anything.")
             }
             Section("Export") {
+                NavigationLink { ExpenseReportView() } label: { Label("Expense Report", systemImage: "doc.text.below.ecg") }
                 Button("Export All Transactions (CSV)") { exportingCSV = true }
                 Button("Export \(store.selectedMonth.formatted(.dateTime.month(.wide).year())) Report (PDF)") { exportingPDF = true }
                 if let exportError {
