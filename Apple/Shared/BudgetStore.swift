@@ -178,7 +178,10 @@ final class BudgetStore: ObservableObject {
     /// A PDF statement, from the text lines PDFKit read out of it.
     func previewImport(pdfLines lines: [String], account: UUID? = nil) throws -> StatementImportResult {
         let year = Calendar.current.component(.year, from: Date())
-        return preview(try PDFStatementParser.parse(lines, fallbackYear: year), account: account)
+        let rows = try PDFStatementParser.parse(lines, fallbackYear: year)
+        var result = preview(rows, account: account)
+        result.summaryDifference = PDFStatementParser.summaryDifference(lines, rows: rows)
+        return result
     }
 
     private func preview(_ rows: [StatementRow], account: UUID?) -> StatementImportResult {

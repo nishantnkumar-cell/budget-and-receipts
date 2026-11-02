@@ -107,6 +107,8 @@ public struct StatementImportResult: Hashable, Sendable {
     /// New transactions that match an existing one on date and amount but not description,
     /// e.g. a manual entry. They are imported but should be checked.
     public var possibleDuplicates: [BankTransaction]
+    /// For a PDF statement: how far what was read is from the statement's own totals. Nil when they agree.
+    public var summaryDifference: Decimal? = nil
 }
 
 public enum StatementImporter {

@@ -89,6 +89,55 @@ final class SharedReceiptTests: XCTestCase {
         XCTAssertNil(store.coupleBalance.debtor, "She paid for her own shopping")
     }
 
+    func testTableColumnsAreReadRowByRow() throws {
+        // A bank-style table: each column drawn separately, as statement PDFs often are.
+        var pieces: [(CGFloat, CGFloat, String)] = [
+            (20, 380, "Your Premier Statement"),
+            (20, 360, "Payments In £25.00"),
+            (20, 345, "Payments Out £64.30"),
+            (20, 300, "30 Sep 26"), (90, 300, "BALANCE BROUGHT FORWARD"), (330, 300, "1,000.00"),
+        ]
+        let rows: [(String, String, String, String?)] = [
+            // HSBC puts the amount on the last line of a two-line entry.
+            ("01 Oct 26", "))) WAITROSE STORES", "", nil),
+            ("", "HAMPTON 612", "12.40", "987.60"),
+            ("02 Oct 26", "DD ID MOBILE LIMITED", "31.49", "956.11"),
+            ("03 Oct 26", "CR REFUND SHOP", "25.00", "981.11"),
+            ("04 Oct 26", "))) TESCO STORES", "20.41", "960.70"),
+            ("", "BALANCE CARRIED FORWARD", "", "960.70"),
+        ]
+        var y: CGFloat = 285
+        for row in rows {
+            if !row.0.isEmpty { pieces.append((20, y, row.0)) }
+            pieces.append((90, y, row.1))
+            if !row.2.isEmpty { pieces.append((row.1.hasPrefix("CR") ? 260 : 210, y, row.2)) }
+            if let balance = row.3 { pieces.append((330, y, balance)) }
+            y -= 15
+        }
+        let data = Self.pdf(pieces: pieces)
+        let lines = try XCTUnwrap(SharedReceiptReader.pdfLines(data))
+        XCTAssertTrue(lines.contains("02 Oct 26 DD ID MOBILE LIMITED 31.49 956.11"), "\(lines)")
+        let parsed = try PDFStatementParser.parse(lines, fallbackYear: 2026)
+        XCTAssertEqual(parsed.map(\.amount), [-12.40, -31.49, 25.00, -20.41].map { Decimal(string: "\($0)")! })
+        XCTAssertNil(PDFStatementParser.summaryDifference(lines, rows: parsed))
+    }
+
+    static func pdf(pieces: [(CGFloat, CGFloat, String)]) -> Data {
+        let data = NSMutableData()
+        var box = CGRect(x: 0, y: 0, width: 420, height: 400)
+        let consumer = CGDataConsumer(data: data as CFMutableData)!
+        let context = CGContext(consumer: consumer, mediaBox: &box, nil)!
+        context.beginPDFPage(nil)
+        for (x, y, text) in pieces {
+            let line = NSAttributedString(string: text, attributes: [.font: CTFontCreateWithName("Helvetica" as CFString, 9, nil)])
+            context.textPosition = CGPoint(x: x, y: y)
+            CTLineDraw(CTLineCreateWithAttributedString(line), context)
+        }
+        context.endPDFPage()
+        context.closePDF()
+        return data as Data
+    }
+
     /// A one-page PDF with real text, like an emailed e-receipt.
     static func pdf(lines: [String]) -> Data {
         let data = NSMutableData()
