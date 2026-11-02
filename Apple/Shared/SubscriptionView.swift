@@ -17,7 +17,7 @@ struct SubscriptionView: View {
             HStack(spacing: 12) {
                 GroupBox("Due in 30 days") { Text("\(tracker.dueSoon(subscriptionStore.contracts, from: Date()).count)").font(.title.bold()).frame(minWidth: 130) }
                 GroupBox("Renewing in 60 days") { Text("\(tracker.renewalSoon(subscriptionStore.contracts, from: Date()).count)").font(.title.bold()).frame(minWidth: 150) }
-                GroupBox("Annual committed cost") { Text(annualTotal, format: .currency(code: "GBP")).font(.title2.bold()).frame(minWidth: 180) }
+                GroupBox("Annual committed cost") { Text(annualTotal, format: .currency(code: AppSettings.currency)).font(.title2.bold()).frame(minWidth: 180) }
             }.padding(.horizontal)
             Table(subscriptionStore.contracts) {
                 TableColumn("Vendor", value: \.vendor)
@@ -32,7 +32,7 @@ struct SubscriptionView: View {
     }
 
     var annualTotal: Decimal { subscriptionStore.contracts.filter { $0.status == .active }.reduce(0) { $0 + SubscriptionSchedule().annualisedCost($1) } }
-    func newContract() -> SubscriptionContract { SubscriptionContract(vendor: "", category: .other, startDate: Date(), billingPeriod: .monthly, nextPaymentDueDate: Date(), expectedAmount: 0) }
+    func newContract() -> SubscriptionContract { SubscriptionContract(vendor: "", category: .other, startDate: Date(), billingPeriod: .monthly, nextPaymentDueDate: Date(), expectedAmount: 0, currency: AppSettings.currency) }
 }
 
 struct SubscriptionEditor: View {
