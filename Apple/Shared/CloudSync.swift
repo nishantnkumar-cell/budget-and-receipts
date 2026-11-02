@@ -8,10 +8,35 @@ import UniformTypeIdentifiers
 /// What iCloud sync last did, for Settings.
 @MainActor
 final class SyncStatus: ObservableObject {
+    /// For the sync indicator (a cloud on iPhone Home, a toolbar item on the Mac).
+    enum State: Equatable {
+        /// Sync is switched off, or this build has no iCloud.
+        case off
+        case syncing
+        /// Everything on this device is in iCloud and nothing is waiting.
+        case upToDate
+        /// Changes are waiting to be sent, e.g. with no internet. They go when it's back.
+        case pendingOffline
+        /// Something needs the person: signed out of iCloud, storage full and so on.
+        case error(String)
+    }
+
+    @Published private(set) var state: State = .off
+    /// When everything was last confirmed in step with iCloud.
+    @Published private(set) var lastSynced: Date?
+    /// Changes on this device not yet in iCloud.
+    @Published private(set) var pendingCount = 0
+    /// One line for Settings, e.g. "Up to date · 17:20".
     @Published var text = "Not synced yet."
 
     func update(_ text: String) {
         self.text = text + " · " + Date().formatted(date: .omitted, time: .shortened)
+    }
+
+    func set(_ state: State, pending: Int) {
+        self.state = state
+        pendingCount = pending
+        if state == .upToDate { lastSynced = Date() }
     }
 }
 
@@ -86,10 +111,29 @@ actor CloudSync: CKSyncEngineDelegate {
 
     private func report(_ text: String) async {
         guard let status else { return }
-        await MainActor.run { status.update(text) }
+        let pending = engine?.state.pendingRecordZoneChanges.count ?? 0
+        let state: SyncStatus.State
+        if text.hasPrefix("Couldn't") {
+            state = pending > 0 ? .pendingOffline : .error(text)
+        } else if text.hasPrefix("Sign") {
+            state = .error(text)
+        } else {
+            state = pending > 0 ? .pendingOffline : .upToDate
+        }
+        await MainActor.run {
+            status.update(text)
+            status.set(state, pending: pending)
+        }
+    }
+
+    private func reportSyncing() async {
+        guard let status else { return }
+        let pending = engine?.state.pendingRecordZoneChanges.count ?? 0
+        await MainActor.run { status.set(.syncing, pending: pending) }
     }
 
     private func fetch() async {
+        await reportSyncing()
         do {
             try await engine?.fetchChanges()
             await report("Up to date")
@@ -117,6 +161,7 @@ actor CloudSync: CKSyncEngineDelegate {
         }
         engine.state.add(pendingRecordZoneChanges: pending)
         saveState()
+        await reportSyncing()
         do {
             try await engine.sendChanges()
             await report("Sent \(changes.saves.count + changes.deletes.count) change\(changes.saves.count + changes.deletes.count == 1 ? "" : "s")")

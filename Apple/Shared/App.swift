@@ -57,6 +57,7 @@ struct BudgetReceiptsApp: App {
     private func startOrStopSync() async {
         let testing = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
         guard settings.iCloudSyncEnabled, CloudSync.containerID != nil, !testing else {
+            syncStatus.set(.off, pending: 0)
             cloud = nil
             store.didPersist = nil
             subscriptions.didPersist = nil
