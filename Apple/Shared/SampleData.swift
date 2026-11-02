@@ -46,6 +46,32 @@ enum SampleData {
             transaction.accountID = row.4
             store.add(transaction)
         }
+        func months(_ n: Int) -> Date { calendar.date(byAdding: .month, value: -n, to: Date()) ?? Date() }
+        let wealth: [(String, WealthAccount.Kind, MoneyOwner, [Decimal])] = [
+            ("Our home", .property, .shared, [395_000, 398_000, 400_000]),
+            ("Mortgage", .mortgage, .shared, [231_400, 230_200, 229_000]),
+            ("Workplace pension", .pension, .mine, [46_100, 47_300, 48_200]),
+            ("Priya's pension", .pension, .partner, [31_800, 32_400]),
+            ("Stocks and shares ISA", .investment, .mine, [20_400, 21_100, 22_000]),
+            ("Easy access savings", .savings, .shared, [8_200, 8_600, 9_000]),
+            ("HSBC joint current", .cash, .shared, [2_900, 3_150, 3_412])
+        ]
+        var homeID: UUID?
+        for item in wealth {
+            var account = WealthAccount(name: item.0, kind: item.1, owner: item.2,
+                                        balances: item.3.enumerated().map { WealthAccount.Balance(date: months(item.3.count - 1 - $0.offset), amount: $0.element) })
+            if item.1 == .property { homeID = account.id }
+            if item.1 == .mortgage {
+                account.propertyID = homeID
+                account.repayment = WealthAccount.Repayment(annualRate: 0.0449, monthlyPayment: 1_120)
+            }
+            if item.0 == "Priya's pension" { account.balances = account.balances.map { .init(date: calendar.date(byAdding: .month, value: -2, to: $0.date) ?? $0.date, amount: $0.amount) } }
+            store.saveWealthAccount(account)
+        }
+        if let tesco = store.transactions.first(where: { $0.merchant == "Tesco Extra" }) {
+            store.addNote(to: tesco, text: "Includes the party food for Saturday")
+            store.addNote(to: tesco, reaction: "👍")
+        }
         store.setBudget(category: "Groceries", limit: 400)
         store.setBudget(category: "Eating out", limit: 200)
         store.setBudget(category: "Shopping", limit: 200)
@@ -64,6 +90,10 @@ enum SampleData {
             store.save(SubscriptionContract(vendor: bill.0, category: bill.1, startDate: ahead(-400), billingPeriod: .monthly,
                                             nextPaymentDueDate: ahead(bill.2), expectedAmount: bill.3, currency: AppSettings.currency))
         }
+        store.save(SubscriptionContract(vendor: "Car insurance", category: .insurance, startDate: ahead(-300), billingPeriod: .yearly,
+                                        nextPaymentDueDate: ahead(150), expectedAmount: 540, currency: AppSettings.currency))
+        store.save(SubscriptionContract(vendor: "Amazon Prime", category: .membership, startDate: ahead(-200), billingPeriod: .yearly,
+                                        nextPaymentDueDate: ahead(90), expectedAmount: 95, currency: AppSettings.currency))
         return store
     }
 }

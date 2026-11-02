@@ -18,6 +18,7 @@ struct HomeView: View {
                 }
                 LeftToSpendCard(report: report, month: store.selectedMonth,
                                 safeToSpend: store.safeToSpend(contracts: subscriptions.contracts))
+                BalanceForecastLine()
                 CoupleBalanceCard()
                 AccountSpendingCard()
                 if !store.needsReview.isEmpty {
@@ -26,6 +27,7 @@ struct HomeView: View {
                 }
                 topBudgets(report)
                 ComingUpCard()
+                NetWorthCard()
             }
             .padding()
             .frame(maxWidth: 720)

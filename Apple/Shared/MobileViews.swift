@@ -35,6 +35,7 @@ struct TransactionsView: View {
         guard !query.isEmpty else { return all }
         return all.filter {
             $0.merchant.localizedCaseInsensitiveContains(query) || $0.category.localizedCaseInsensitiveContains(query)
+                || ($0.tags ?? []).contains { $0.localizedCaseInsensitiveContains(query) }
         }
     }
 
@@ -105,6 +106,8 @@ struct TransactionsView: View {
 struct TransactionEditor: View {
     @EnvironmentObject var store: BudgetStore
     @State var transaction: BankTransaction
+    @State private var savedCategory: String?
+    @State private var similarCount = 0
 
     var body: some View {
         Form {
@@ -123,14 +126,32 @@ struct TransactionEditor: View {
             Section("Receipt") {
                 NavigationLink("Scan or review receipt") { ReceiptView(transaction: transaction) }
             }
+            TransactionTagsSection(tags: Binding(get: { transaction.tags ?? [] }, set: { transaction.tags = $0.isEmpty ? nil : $0 }))
+            TransactionNotesSection(transaction: transaction)
             Section {
                 DeleteTransactionButton(transaction: transaction)
             }
         }
         .navigationTitle("Edit")
+        .onAppear { if savedCategory == nil { savedCategory = transaction.category } }
         .toolbar {
-            Button("Save") { store.update(transaction) }
+            Button("Save", action: save)
         }
+        // One correction teaches the rest: offer the same category for this shop's other payments.
+        .alert("Apply \(transaction.category) to \(similarCount) more from \(transaction.merchant)?", isPresented: Binding(get: { similarCount > 0 }, set: { if !$0 { similarCount = 0 } })) {
+            Button("Apply to All") { store.applyCategory(transaction.category, toSimilar: transaction) }
+            Button("Just This One", role: .cancel) {}
+        } message: {
+            Text("They're still uncategorised.")
+        }
+    }
+
+    private func save() {
+        store.update(transaction)
+        if transaction.category != savedCategory, transaction.category != "Uncategorised" {
+            similarCount = store.similarUncategorised(to: transaction).count
+        }
+        savedCategory = transaction.category
     }
 }
 
@@ -160,6 +181,7 @@ struct PlanView: View {
                     }
                 }
             }
+            SetAsidesSection()
             Section("All bills and subscriptions") {
                 ForEach(subscriptions.contracts) { contract in
                     NavigationLink { ContractEditor(contract: contract, priceRise: rises[contract.id]) } label: { ContractRow(contract: contract, priceRise: rises[contract.id]) }
