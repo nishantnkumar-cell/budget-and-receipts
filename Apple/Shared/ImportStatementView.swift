@@ -14,6 +14,8 @@ struct ImportStatementView: View {
     @State private var preview: StatementImportResult?
     @State private var error: String?
     @State private var account: UUID?
+    /// Text lines of a PDF statement; nil for CSV, OFX and QIF files.
+    @State private var pdfLines: [String]?
     @State private var newAccountName = ""
 
     private static let types: [UTType] = [
@@ -21,10 +23,11 @@ struct ImportStatementView: View {
         UTType(filenameExtension: "ofx") ?? .data,
         UTType(filenameExtension: "qfx") ?? .data,
         UTType(filenameExtension: "qif") ?? .data,
+        .pdf,
         .plainText
     ]
 
-    private var isCSV: Bool { StatementFormat(fileName: fileName) == .csv }
+    private var isCSV: Bool { pdfLines == nil && StatementFormat(fileName: fileName) == .csv }
 
     var body: some View {
         Form {
@@ -34,7 +37,7 @@ struct ImportStatementView: View {
                 } label: {
                     Label(fileName.isEmpty ? "Choose statement file" : fileName, systemImage: "doc.badge.plus")
                 }
-                Text("CSV, OFX or QIF exported from your bank. The file is read on this device only.")
+                Text("A CSV, OFX, QIF or PDF statement from your bank. The file is read on this device only.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -153,6 +156,19 @@ struct ImportStatementView: View {
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
             let data = try Data(contentsOf: url)
             fileName = url.lastPathComponent
+            if url.pathExtension.lowercased() == "pdf" {
+                guard let lines = SharedReceiptReader.pdfLines(data) else {
+                    error = "This PDF has no text to read (it may be a scan). Download a CSV or OFX from your bank instead."
+                    return
+                }
+                pdfLines = lines
+                text = lines.joined(separator: "\n")
+                header = []
+                mapping = nil
+                refresh()
+                return
+            }
+            pdfLines = nil
             text = String(decoding: data, as: UTF8.self)
             header = isCSV ? CSVReader.firstRecord(text) : []
             mapping = isCSV ? (CSVColumnMapping.guess(header: header) ?? CSVColumnMapping(date: 0, description: min(1, max(header.count - 1, 0)), amount: max(header.count - 1, 0))) : nil
@@ -165,7 +181,11 @@ struct ImportStatementView: View {
     private func refresh() {
         guard !text.isEmpty else { return }
         do {
-            preview = try store.previewImport(text: text, fileName: fileName, mapping: mapping, account: account)
+            if let pdfLines {
+                preview = try store.previewImport(pdfLines: pdfLines, account: account)
+            } else {
+                preview = try store.previewImport(text: text, fileName: fileName, mapping: mapping, account: account)
+            }
             error = nil
         } catch let failure as StatementImportError {
             preview = nil

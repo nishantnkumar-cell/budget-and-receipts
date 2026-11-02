@@ -1,5 +1,6 @@
 import BudgetCore
 import Foundation
+import PDFKit
 
 /// Reads files shared into the app (share sheet, "Open in", or the Mac's "Open With").
 /// Receipts go to the waiting list until their payment is on a statement; bank statements
@@ -55,6 +56,26 @@ enum SharedReceiptReader {
         }
     }
 
+    /// The text lines of a PDF, or nil when it has no real text (a scan).
+    static func pdfLines(_ data: Data) -> [String]? {
+        guard let document = PDFDocument(data: data), let text = document.string else { return nil }
+        let lines = text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        return lines.count >= 2 ? lines : nil
+    }
+
+    /// Imports a PDF bank or credit card statement.
+    @discardableResult
+    static func importPDFStatement(_ lines: [String], fileName: String, into store: BudgetStore) -> Bool {
+        do {
+            let result = try store.previewImport(pdfLines: lines)
+            store.commitImport(result, fileName: fileName)
+            return true
+        } catch {
+            store.status = "Couldn't read the statement in \(fileName). Try your bank's CSV or OFX download instead."
+            return false
+        }
+    }
+
     /// Reads one PDF or image file into the waiting list.
     @discardableResult
     static func read(_ url: URL, into store: BudgetStore) async -> Bool {
@@ -64,6 +85,11 @@ enum SharedReceiptReader {
         let ext = url.pathExtension.lowercased()
         do {
             var editor: ReceiptDraftEditor
+            if ext == "pdf", let lines = pdfLines(data), PDFStatementParser.looksLikeStatement(lines) {
+                // A bank statement shared as a PDF, not a receipt: import it, add no receipt.
+                importPDFStatement(lines, fileName: url.lastPathComponent, into: store)
+                return false
+            }
             if ext == "pdf" {
                 let result = try await vision.recognise(pdf: data)
                 editor = result.editor
