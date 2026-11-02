@@ -59,9 +59,7 @@ struct UpcomingRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: symbol)
-                .foregroundStyle(item.kind == .cancellationDeadline ? Color.brandPink : Color.accentColor)
-                .frame(width: 22)
+            IconBadge(systemImage: symbol, tint: item.kind == .cancellationDeadline ? .brandPink : .brandPlum, size: 32)
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.vendor).font(.subheadline.weight(.medium)).lineLimit(1)
                 Text("\(label) · \(when)").font(.caption).foregroundStyle(.secondary)

@@ -16,6 +16,8 @@ struct SharedDocumentsView: View {
                 Text("Statements are imported straight away. Receipts wait for their payment. If the app guessed wrong, open the file to fix it.")
             }
         }
+        .scrollContentBackground(.hidden)
+        .appBackground()
         .overlay {
             if store.sharedDocuments.isEmpty {
                 ContentUnavailableView("Nothing shared yet", systemImage: "square.and.arrow.down",
@@ -33,10 +35,8 @@ struct SharedDocumentRow: View {
     let document: SharedDocument
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: symbol)
-                .foregroundStyle(document.needsAttention ? Color.brandPink : Color.accentColor)
-                .frame(width: 22)
+        HStack(spacing: 12) {
+            IconBadge(systemImage: symbol, tint: document.needsAttention ? .brandPink : .brandPlum)
             VStack(alignment: .leading, spacing: 2) {
                 Text(document.fileName).font(.body.weight(.semibold)).lineLimit(1)
                 Text(document.summary).font(.caption).foregroundStyle(.secondary).lineLimit(2)
@@ -117,12 +117,22 @@ struct SharedDocumentsBanner: View {
         if !store.sharedDocuments.isEmpty {
             let attention = store.sharedDocuments.filter(\.needsAttention).count
             Button { showing = true } label: {
-                Label(attention > 0 ? "Shared files: \(attention) need\(attention == 1 ? "s" : "") a look" : "Shared files (\(store.sharedDocuments.count))",
-                      systemImage: attention > 0 ? "exclamationmark.triangle" : "tray.and.arrow.down")
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 12) {
+                    IconBadge(systemImage: attention > 0 ? "exclamationmark.triangle" : "tray.and.arrow.down",
+                              tint: attention > 0 ? .brandPink : .brandPlum, size: 32)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Shared files").font(.subheadline.weight(.semibold))
+                        Text(attention > 0 ? "\(attention) need\(attention == 1 ? "s" : "") a look" : "\(store.sharedDocuments.count) received")
+                            .font(.caption)
+                            .foregroundStyle(attention > 0 ? Color.brandPink : .secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                }
+                .card(padding: 12)
+                .contentShape(Rectangle())
             }
-            .buttonStyle(.bordered)
-            .tint(attention > 0 ? Color.brandPink : nil)
+            .buttonStyle(.plain)
             .padding(.horizontal)
             .padding(.top, 8)
             .sheet(isPresented: $showing) {

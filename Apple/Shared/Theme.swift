@@ -78,6 +78,15 @@ struct BudgetProgressRow: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(line.category).font(.body.weight(.semibold))
                     .foregroundStyle(line.isOverBudget ? Color.red : Color.primary)
+                if line.isTentative {
+                    Label("Tentative", systemImage: "wand.and.stars")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .foregroundStyle(Color.brandPlum)
+                        .background(Color.brandPlum.opacity(0.12), in: Capsule())
+                        .help("Your 3-month average. Set a budget to replace it.")
+                }
                 Spacer()
                 if let remaining = line.remaining, let limit = line.limit {
                     if remaining < 0 {
@@ -93,11 +102,6 @@ struct BudgetProgressRow: View {
             .monospacedDigit()
             if let progress = line.progress {
                 ProgressView(value: min(progress, 1)).tint(tint)
-                if line.isTentative {
-                    Label("Tentative: your 3-month average. Set a budget to replace it.", systemImage: "wand.and.stars")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
             } else {
                 Text("No limit set").font(.caption).foregroundStyle(.secondary)
             }
@@ -108,6 +112,7 @@ struct BudgetProgressRow: View {
 
 /// One transaction: merchant, category and amount; money in shows in green.
 struct TransactionRow: View {
+    @EnvironmentObject var store: BudgetStore
     let transaction: BankTransaction
 
     var body: some View {
@@ -123,7 +128,12 @@ struct TransactionRow: View {
                 if transaction.pendingSplitDraft != nil {
                     Text("Receipt waiting for approval").font(.caption).foregroundStyle(Color.brandAmber)
                 } else {
-                    Text(transaction.category).font(.caption).foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        Text(transaction.category).font(.caption).foregroundStyle(.secondary)
+                        if store.hasPartner {
+                            OwnerChip(owner: store.ledger.owner(of: transaction), partnerName: store.couple.partnerName)
+                        }
+                    }
                 }
             }
             Spacer()

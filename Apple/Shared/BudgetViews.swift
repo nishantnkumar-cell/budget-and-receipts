@@ -18,6 +18,7 @@ struct BudgetsView: View {
         let budgeted = report.lines.compactMap(\.limit).reduce(0, +)
         ScrollView {
             VStack(spacing: Theme.spacing) {
+                HouseholdSwitcher()
                 HStack {
                     Spacer()
                     MonthSwitcher()
@@ -40,6 +41,12 @@ struct BudgetsView: View {
                     }
                 }
                 .card(padding: 16)
+                if report.lines.contains(where: \.isTentative) {
+                    Label("Tentative budgets are your 3-month average. Tap one to set your own limit.", systemImage: "wand.and.stars")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
             .padding()
             .frame(maxWidth: 720)
