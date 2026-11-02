@@ -19,6 +19,7 @@ struct SettingsView: View {
                     }
                 }
             }
+            CoupleSettingsSection()
             Section {
                 Toggle("Lock with \(AppLock().methodName)", isOn: $settings.appLockEnabled)
             } header: {
