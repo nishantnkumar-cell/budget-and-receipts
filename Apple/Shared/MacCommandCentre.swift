@@ -64,7 +64,7 @@ struct MacSidebar: View {
     var body: some View {
         List(selection: $selection) {
             Section {
-                ForEach([AppSection.home, .activity, .inbox, .budgets, .plan]) { section in
+                ForEach([AppSection.home, .activity, .inbox, .budgets, .plan, .netWorth]) { section in
                     Label(section.macTitle, systemImage: section.macSymbol)
                         .badge(section == .inbox ? store.needsReview.count : 0)
                         .tag(section)
@@ -288,8 +288,22 @@ struct MacKeyNumbers: View {
                 }
                 MacKeyNumber(title: "Bills, next 30 days", symbol: "calendar", value: dueTotal.money,
                              caption: due.count == 1 ? "1 payment" : "\(due.count) payments", tint: .brandAmber)
+                if !store.wealthAccounts.isEmpty {
+                    MacKeyNumber(title: "Net worth", symbol: "chart.line.uptrend.xyaxis", value: store.netWorth.wholeMoney,
+                                 caption: netWorthCaption, tint: .brandTeal)
+                }
             }
         }
+    }
+}
+
+extension MacKeyNumbers {
+    /// "+£2,180 this month", from the net worth trend.
+    var netWorthCaption: String {
+        let trend = store.netWorthTrend
+        guard trend.count > 1, let last = trend.last?.total else { return "across all accounts" }
+        let change = last - trend[trend.count - 2].total
+        return "\(change >= 0 ? "+" : "−")\(abs(change).wholeMoney) this month"
     }
 }
 
@@ -450,6 +464,17 @@ struct MacNeedsYou: View {
                               detail: debtor == .partner ? "\(amount) owed to you" : "You owe \(amount)",
                               action: "Settle") { confirmingSettle = true })
         }
+        if let forecast = store.balanceForecast(contracts: subscriptions.contracts), forecast.goesOverdrawn {
+            items.append(Item(id: "overdrawn", symbol: "exclamationmark.triangle", tint: .red,
+                              title: "Heading for \(forecast.endOfMonth.money) by month end",
+                              detail: "\(forecast.billsToCome.money) of bills still to come", action: "See Bills") { selection = .plan })
+        }
+        let stale = store.staleWealthAccounts.count
+        if stale > 0 {
+            items.append(Item(id: "stale", symbol: "clock.badge.exclamationmark", tint: .orange,
+                              title: stale == 1 ? "1 balance needs updating" : "\(stale) balances need updating",
+                              detail: "Pensions, savings or debts not updated for a month", action: "Update") { selection = .netWorth })
+        }
         let attention = store.sharedDocuments.filter(\.needsAttention).count
         if attention > 0 {
             items.append(Item(id: "shared", symbol: "exclamationmark.triangle", tint: .orange,
@@ -538,7 +563,8 @@ struct MacRecentActivity: View {
         store.transactions
             .filter { store.accountFilter == nil || $0.accountID == store.accountFilter }
             .filter { !store.hasPartner || store.householdView.includes(store.ledger.owner(of: $0)) }
-            .filter { query.isEmpty || $0.merchant.localizedCaseInsensitiveContains(query) || $0.category.localizedCaseInsensitiveContains(query) }
+            .filter { query.isEmpty || $0.merchant.localizedCaseInsensitiveContains(query) || $0.category.localizedCaseInsensitiveContains(query)
+                || ($0.tags ?? []).contains { $0.localizedCaseInsensitiveContains(query) } }
             .sorted { $0.date > $1.date }
     }
 
