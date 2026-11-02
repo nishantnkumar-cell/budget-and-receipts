@@ -74,7 +74,19 @@ struct AccountsSettingsSection: View {
         Section {
             ForEach(store.accounts) { account in
                 NavigationLink { AccountEditor(account: account) } label: {
-                    LabeledContent(account.label, value: account.cardEndings.isEmpty ? "" : "Cards ••" + account.cardEndings.joined(separator: ", ••"))
+                    HStack(spacing: 12) {
+                        IconBadge(systemImage: account.isPrivate == true ? "lock" : "building.columns", size: 32)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(account.label).lineLimit(1)
+                            if !account.cardEndings.isEmpty {
+                                Text("Cards ••" + account.cardEndings.joined(separator: ", ••")).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        if store.hasPartner {
+                            OwnerChip(owner: account.owner ?? .mine, partnerName: store.couple.partnerName)
+                        }
+                    }
                 }
             }
             HStack {

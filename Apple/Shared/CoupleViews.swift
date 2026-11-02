@@ -28,23 +28,23 @@ struct OwnerPicker: View {
 }
 
 /// Whose money a transaction is and who paid, for the transaction detail screen.
-/// Shows nothing for a single person.
+/// Edits the screen's copy, so they're kept with its Save. Shows nothing for a single person.
 struct TransactionOwnerSection: View {
     @EnvironmentObject var store: BudgetStore
-    let transaction: BankTransaction
+    @Binding var transaction: BankTransaction
 
-    private var current: BankTransaction { store.transactions.first { $0.id == transaction.id } ?? transaction }
+    private var current: BankTransaction { transaction }
 
     var body: some View {
         if store.hasPartner {
             Section {
-                OwnerPicker(owner: Binding(get: { current.owner }, set: { store.setOwner($0, paidBy: current.paidBy, for: current) }))
-                Picker("Paid by", selection: Binding(get: { current.paidBy ?? .me }, set: { store.setOwner(current.owner, paidBy: $0, for: current) })) {
+                OwnerPicker(owner: $transaction.owner)
+                Picker("Paid by", selection: Binding(get: { transaction.paidBy ?? .me }, set: { transaction.paidBy = $0 })) {
                     Text("Me").tag(Person.me)
                     Text(store.couple.partnerName).tag(Person.partner)
                 }
             } header: {
-                Text("Couple")
+                Text("Whose money")
             } footer: {
                 Text("Automatic uses your rules, which make this \(store.ledger.ruleOwner(of: current).label(partnerName: store.couple.partnerName)).")
             }
