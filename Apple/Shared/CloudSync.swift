@@ -59,12 +59,15 @@ protocol SyncSource: AnyObject, Sendable {
     func applySync(saves: [SyncRecord], deletes: Set<String>) -> Bool
     /// Files that couldn't be read at launch; sync restores from iCloud when there are any.
     var unreadableFiles: [String] { get }
+    /// True while the files are locked away; sync waits until they can be read.
+    var isWaitingForFiles: Bool { get }
     /// Keys among these arrivals this store refused (not the partner's to change).
     func rejectedKeys(_ saves: [SyncRecord]) -> Set<String>
 }
 
 extension SyncSource {
     func rejectedKeys(_ saves: [SyncRecord]) -> Set<String> { [] }
+    var isWaitingForFiles: Bool { false }
 }
 
 /// Where this device stands in a shared household.
@@ -176,6 +179,8 @@ actor CloudSync: CKSyncEngineDelegate {
     /// Starts syncing: fetches what changed elsewhere, then sends local changes.
     func start() async {
         guard privateEngine == nil, let id = Self.containerID else { return }
+        // Locked files would look like no data: wait until the app can read them.
+        guard await MainActor.run(body: { !sources.contains { $0.isWaitingForFiles } }) else { return }
         let container = CKContainer(identifier: id)
         self.container = container
         let unreadable = await MainActor.run { sources.flatMap(\.unreadableFiles) }
@@ -187,12 +192,29 @@ actor CloudSync: CKSyncEngineDelegate {
         let saved = Self.load(CKSyncEngine.State.Serialization.self, stateFolder.appendingPathComponent("sync-engine.json"))
         let engine = CKSyncEngine(CKSyncEngine.Configuration(database: container.privateCloudDatabase, stateSerialization: saved, delegate: self))
         privateEngine = engine
-        var zones: [CKSyncEngine.PendingDatabaseChange] = Self.legacyZones.map { .deleteZone($0) } + [.saveZone(CKRecordZone(zoneID: Self.privateZone))]
+        var zones: [CKSyncEngine.PendingDatabaseChange] = [.saveZone(CKRecordZone(zoneID: Self.privateZone))]
         if household.role != .member { zones.append(.saveZone(CKRecordZone(zoneID: Self.householdZone))) }
         engine.state.add(pendingDatabaseChanges: zones)
         if household.role == .member { startSharedEngine() }
         await publishHousehold()
+        // Local items are queued first, so they go up even if fetching is slow or fails.
+        await localDataChanged()
         await fetch()
+        await removeLegacyZones(container.privateCloudDatabase)
+    }
+
+    /// Deletes the first version's plain-field zones if they exist (directly, so a zone that
+    /// is already gone can't hold up the sync engine).
+    private func removeLegacyZones(_ database: CKDatabase) async {
+        guard let zones = try? await database.allRecordZones() else { return }
+        let legacy = zones.map(\.zoneID).filter { Self.legacyZones.contains($0) }
+        guard !legacy.isEmpty else { return }
+        _ = try? await database.modifyRecordZones(saving: [], deleting: legacy)
+    }
+
+    /// Sends every item again from scratch: for when the person thinks something is missing.
+    func sendEverythingAgain() async {
+        resetLocalSyncState()
         await localDataChanged()
     }
 
@@ -242,8 +264,10 @@ actor CloudSync: CKSyncEngineDelegate {
     private func fetch() async {
         await reportSyncing()
         do {
-            try await privateEngine?.fetchChanges()
-            try await sharedEngine?.fetchChanges()
+            try await withTimeout(seconds: 60) { [privateEngine, sharedEngine] in
+                try await privateEngine?.fetchChanges()
+                try await sharedEngine?.fetchChanges()
+            }
             await report("Up to date")
         } catch let error as CKError where error.code == .notAuthenticated {
             await report("Sign in to iCloud on this device to sync")
@@ -252,9 +276,23 @@ actor CloudSync: CKSyncEngineDelegate {
         }
     }
 
+    /// Runs work, giving up after a while so a stuck fetch can't block everything after it.
+    private func withTimeout(seconds: Double, _ work: @escaping @Sendable () async throws -> Void) async throws {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { try await work() }
+            group.addTask {
+                try await Task.sleep(for: .seconds(seconds))
+                throw CKError(.networkFailure)
+            }
+            try await group.next()
+            group.cancelAll()
+        }
+    }
+
     /// Call after local data is saved. Queues whatever changed since the last sync.
     func localDataChanged() async {
         guard privateEngine != nil else { return }
+        guard await MainActor.run(body: { !sources.contains { $0.isWaitingForFiles } }) else { return }
         let current = await MainActor.run { sources.flatMap { $0.syncRecords() } }
         var changes = state.changes(to: current)
         // Many deletions at once usually mean something went wrong, not that the person meant it.
@@ -286,8 +324,10 @@ actor CloudSync: CKSyncEngineDelegate {
         saveState()
         await reportSyncing()
         do {
-            try await privateEngine?.sendChanges()
-            try await sharedEngine?.sendChanges()
+            try await withTimeout(seconds: 120) { [privateEngine, sharedEngine] in
+                try await privateEngine?.sendChanges()
+                try await sharedEngine?.sendChanges()
+            }
             await report("Sent \(changes.saves.count + changes.deletes.count) change\(changes.saves.count + changes.deletes.count == 1 ? "" : "s")")
         } catch {
             await report("Couldn't send changes: \(error.localizedDescription)")

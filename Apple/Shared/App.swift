@@ -47,7 +47,15 @@ struct BudgetReceiptsApp: App {
             .task(id: scenePhase) {
                 // Receipts shared from other apps while this one was closed.
                 if scenePhase == .active { await SharedReceiptReader.readDropped(into: store) }
-                if scenePhase == .active { await cloud?.refresh() }
+                if scenePhase == .active {
+                    // Launched while the phone was locked: read the files now, then sync.
+                    if store.isWaitingForFiles || subscriptions.isWaitingForFiles {
+                        let storeReady = store.reloadIfWaiting()
+                        let contractsReady = subscriptions.reloadIfWaiting()
+                        if storeReady && contractsReady { await startOrStopSync() }
+                    }
+                    await cloud?.refresh()
+                }
             }
             .task(id: settings.iCloudSyncEnabled) { await startOrStopSync() }
             #if os(macOS)
