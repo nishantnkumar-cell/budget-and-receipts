@@ -12,6 +12,11 @@ final class BudgetStore: ObservableObject {
     @Published var settlements: [Settlement] = []
     /// Scanned receipts whose card payment is not on a statement yet.
     @Published var pendingReceipts: [PendingReceipt] = []
+    @Published var accounts: [BankAccount] = []
+    /// Show one account's money only. Nil shows every account.
+    @Published var accountFilter: UUID?
+    /// Accounts found in the statement being previewed, added when it is imported.
+    private var proposedAccounts: [BankAccount] = []
     /// The Me / Partner / Together switch. Together shows everything, as before couples.
     @Published var householdView: HouseholdView = .together
 
@@ -28,6 +33,7 @@ final class BudgetStore: ObservableObject {
         couple = storage.load("couple.json") ?? CoupleSettings()
         settlements = storage.load("settlements.json") ?? []
         pendingReceipts = storage.load("pending-receipts.json") ?? []
+        accounts = storage.load("accounts.json") ?? []
     }
 
     func saveDraft(_ draft: SplitDraft, for transaction: BankTransaction) {
@@ -110,7 +116,8 @@ final class BudgetStore: ObservableObject {
 
     /// Transactions scaled to the selected side of the household.
     var viewTransactions: [BankTransaction] {
-        hasPartner ? ledger.transactions(transactions, for: householdView) : transactions
+        let inAccount = accountFilter.map { id in transactions.filter { $0.accountID == id } } ?? transactions
+        return hasPartner ? ledger.transactions(inAccount, for: householdView) : inAccount
     }
 
     /// Who owes whom across everything recorded so far.
@@ -149,7 +156,9 @@ final class BudgetStore: ObservableObject {
 
     /// Reads a statement file and works out what importing it would add, without changing anything.
     /// CSV files need a column mapping; pass nil to guess it from the header row.
-    func previewImport(text: String, fileName: String, mapping: CSVColumnMapping?) throws -> StatementImportResult {
+    /// - Parameter account: the account the statement is from, when the file doesn't say.
+    ///   Account numbers in the file win; unknown numbers become new accounts on import.
+    func previewImport(text: String, fileName: String, mapping: CSVColumnMapping?, account: UUID? = nil) throws -> StatementImportResult {
         let rows: [StatementRow]
         switch StatementFormat(fileName: fileName) {
         case .ofx:
@@ -161,7 +170,14 @@ final class BudgetStore: ObservableObject {
             guard let mapping = mapping ?? CSVColumnMapping.guess(header: header) else { throw StatementImportError.missingColumn("date, description or amount") }
             rows = try StatementImporter.parseCSV(text, mapping: mapping)
         }
-        var result = StatementImporter.prepare(rows, existing: transactions)
+        proposedAccounts = []
+        for number in Set(rows.compactMap(\.accountNumber)).sorted() where BankAccounts.account(forNumber: number, in: accounts) == nil {
+            if BankAccounts.account(forNumber: number, in: proposedAccounts) == nil, !BankAccount.lastFour(number).isEmpty {
+                proposedAccounts.append(BankAccount(name: "Account", number: number))
+            }
+        }
+        let known = accounts + proposedAccounts
+        var result = StatementImporter.prepare(rows, existing: transactions, account: account) { BankAccounts.account(forNumber: $0, in: known)?.id }
         // Fill in categories from your past choices and well-known shops; you can change any of them.
         result.newTransactions = categoriser.categorise(result.newTransactions)
         return result
@@ -172,6 +188,9 @@ final class BudgetStore: ObservableObject {
 
     /// Adds the new transactions from a previewed import and records it in the import history.
     func commitImport(_ result: StatementImportResult, fileName: String) {
+        let used = Set(result.newTransactions.compactMap(\.accountID))
+        accounts += proposedAccounts.filter { used.contains($0.id) }
+        proposedAccounts = []
         transactions.insert(contentsOf: result.newTransactions, at: 0)
         transactions.sort { $0.date > $1.date }
         let status = result.duplicates.isEmpty ? "Imported" : "Imported, \(result.duplicates.count) already present"
@@ -180,6 +199,41 @@ final class BudgetStore: ObservableObject {
         persist()
         self.status = "Imported \(result.newTransactions.count) transactions from \(fileName)."
             + (matched > 0 ? " Matched \(matched) waiting receipt\(matched == 1 ? "" : "s"); check them in the Inbox." : "")
+    }
+
+    // MARK: Accounts
+
+    @discardableResult
+    func addAccount(name: String, number: String = "") -> BankAccount {
+        let account = BankAccount(name: name, number: number)
+        accounts.append(account)
+        persist()
+        return account
+    }
+
+    func updateAccount(_ account: BankAccount) {
+        guard let index = accounts.firstIndex(where: { $0.id == account.id }) else { return }
+        accounts[index] = account
+        persist()
+    }
+
+    /// Removes an account. Its transactions stay, without an account.
+    func deleteAccount(_ account: BankAccount) {
+        accounts.removeAll { $0.id == account.id }
+        for index in transactions.indices where transactions[index].accountID == account.id {
+            transactions[index].accountID = nil
+        }
+        if accountFilter == account.id { accountFilter = nil }
+        persist()
+    }
+
+    func account(_ id: UUID?) -> BankAccount? { id.flatMap { id in accounts.first { $0.id == id } } }
+
+    /// This month's spending per account, largest first. Transactions without an account come last.
+    var spendingByAccount: [(account: BankAccount?, spent: Decimal)] {
+        BankAccounts.spendingByAccount(transactions, month: selectedMonth, calculator: calculator)
+            .map { (account: account($0.key), spent: $0.value) }
+            .sorted { ($0.account == nil ? 1 : 0, -$0.spent) < ($1.account == nil ? 1 : 0, -$1.spent) }
     }
 
     // MARK: Waiting receipts
@@ -205,7 +259,8 @@ final class BudgetStore: ObservableObject {
     /// Attaches waiting receipts to payments when the match is certain. Returns how many.
     @discardableResult
     func matchPendingReceipts() -> Int {
-        let pairs = ReceiptMatcher.autoMatch(pendingReceipts, in: transactions)
+        let accounts = accounts
+        let pairs = ReceiptMatcher.autoMatch(pendingReceipts, in: transactions) { BankAccounts.account(forReceiptText: $0.editor.rawText, in: accounts)?.id }
         for pair in pairs {
             guard let receipt = pendingReceipts.first(where: { $0.id == pair.receipt }),
                   let index = transactions.firstIndex(where: { $0.id == pair.transaction }) else { continue }
@@ -228,6 +283,7 @@ final class BudgetStore: ObservableObject {
         storage.save(couple, "couple.json")
         storage.save(settlements, "settlements.json")
         storage.save(pendingReceipts, "pending-receipts.json")
+        storage.save(accounts, "accounts.json")
     }
 }
 

@@ -11,13 +11,16 @@ public struct ReceiptMatch: Identifiable, Hashable, Sendable {
     /// Days from the receipt date to the statement date: positive when the payment posted later.
     public let dayGap: Int
     public let sameShop: Bool
+    /// The card on the receipt belongs to the account this payment is from.
+    public let sameAccount: Bool
 
-    public init(transaction: BankTransaction, score: Double, amountMatches: Bool, dayGap: Int = 0, sameShop: Bool = false) {
+    public init(transaction: BankTransaction, score: Double, amountMatches: Bool, dayGap: Int = 0, sameShop: Bool = false, sameAccount: Bool = false) {
         self.transaction = transaction
         self.score = score
         self.amountMatches = amountMatches
         self.dayGap = dayGap
         self.sameShop = sameShop
+        self.sameAccount = sameAccount
     }
 }
 
@@ -60,10 +63,11 @@ public enum ReceiptMatcher {
         in transactions: [BankTransaction],
         today: Date = Date(),
         limit: Int = 5,
+        account: UUID? = nil,
         calendar: Calendar = .current
     ) -> [ReceiptMatch] {
         let date = editor.purchaseDate ?? today
-        let ranked = transactions.filter(isOpenPayment).map { rank($0, for: editor, date: date, calendar: calendar) }
+        let ranked = transactions.filter(isOpenPayment).map { rank($0, for: editor, date: date, account: account, calendar: calendar) }
         let sorted = ranked.sorted { lhs, rhs in
             lhs.match.score != rhs.match.score ? lhs.match.score > rhs.match.score : lhs.distance < rhs.distance
         }
@@ -72,26 +76,33 @@ public enum ReceiptMatcher {
 
     /// Pairs waiting receipts with payments from a new statement. A receipt is matched only
     /// when exactly one open payment has its exact total inside the date window (or exactly
-    /// one of those is from the same shop), and no other waiting receipt wants that payment.
+    /// one of those is from the same shop or the card's account), and no other waiting receipt
+    /// wants that payment. When the receipt shows which account paid (`accountFor`), payments
+    /// from other accounts are never matched.
     /// Anything less certain stays waiting, with suggestions, for the person to choose.
     public static func autoMatch(
         _ pending: [PendingReceipt],
         in transactions: [BankTransaction],
         window: MatchWindow = MatchWindow(),
+        accountFor: (PendingReceipt) -> UUID? = { _ in nil },
         calendar: Calendar = .current
     ) -> [(receipt: PendingReceipt.ID, transaction: BankTransaction.ID)] {
         let open = transactions.filter(isOpenPayment)
         var wanted: [(PendingReceipt.ID, BankTransaction.ID)] = []
         for receipt in pending {
+            let account = accountFor(receipt)
             let exact = open
-                .map { rank($0, for: receipt.editor, date: receipt.purchaseDate, calendar: calendar).match }
+                .filter { account == nil || $0.accountID == nil || $0.accountID == account }
+                .map { rank($0, for: receipt.editor, date: receipt.purchaseDate, account: account, calendar: calendar).match }
                 .filter { $0.amountMatches && window.contains($0.dayGap) }
-            let pick: ReceiptMatch?
+            var pick: ReceiptMatch?
             if exact.count == 1 {
                 pick = exact[0]
             } else {
-                let sameShop = exact.filter(\.sameShop)
-                pick = sameShop.count == 1 ? sameShop[0] : nil
+                for clue in [\ReceiptMatch.sameAccount, \ReceiptMatch.sameShop] where pick == nil {
+                    let narrowed = exact.filter { $0[keyPath: clue] }
+                    if narrowed.count == 1 { pick = narrowed[0] }
+                }
             }
             if let pick { wanted.append((receipt.id, pick.transaction.id)) }
         }
@@ -105,7 +116,7 @@ public enum ReceiptMatcher {
         transaction.amount < 0 && transaction.splits.isEmpty && transaction.pendingSplitDraft == nil
     }
 
-    private static func rank(_ transaction: BankTransaction, for editor: ReceiptDraftEditor, date: Date, calendar: Calendar) -> (match: ReceiptMatch, distance: TimeInterval) {
+    private static func rank(_ transaction: BankTransaction, for editor: ReceiptDraftEditor, date: Date, account: UUID?, calendar: Calendar) -> (match: ReceiptMatch, distance: TimeInterval) {
         let total = editor.receiptTotal ?? editor.splitTotal
         let paid: Decimal = -transaction.amount
         let difference = abs(paid - total)
@@ -123,7 +134,9 @@ public enum ReceiptMatcher {
         let shop = Set(Categoriser.words(editor.merchant).filter { $0.count > 2 })
         let sameShop = !shop.isEmpty && !shop.isDisjoint(with: Set(Categoriser.words(transaction.merchant)))
         if sameShop { score += 0.15 }
-        let match = ReceiptMatch(transaction: transaction, score: score, amountMatches: exact, dayGap: dayGap, sameShop: sameShop)
+        let sameAccount = account != nil && transaction.accountID == account
+        if sameAccount { score += 0.1 }
+        let match = ReceiptMatch(transaction: transaction, score: score, amountMatches: exact, dayGap: dayGap, sameShop: sameShop, sameAccount: sameAccount)
         return (match, abs(transaction.date.timeIntervalSince(date)))
     }
 
