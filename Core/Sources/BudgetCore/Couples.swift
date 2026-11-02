@@ -54,6 +54,8 @@ public struct CoupleSettings: Codable, Hashable, Sendable {
     public var rules: [OwnerRule]
     /// The owner for transactions that no rule matches.
     public var defaultOwner: MoneyOwner
+    /// The household owner's own name, so the partner's app can say who "they" are.
+    public var ownerName: String?
 
     public init(partnerName: String = "", myShare: Decimal = Decimal(string: "0.5")!, rules: [OwnerRule] = [], defaultOwner: MoneyOwner = .mine) {
         self.partnerName = partnerName

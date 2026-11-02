@@ -77,7 +77,8 @@ public struct ReceiptDraftEditor: Codable, Hashable, Sendable {
 /// editable: the person checks it before anything is approved.
 public enum ReceiptParser {
     public static func parse(_ lines: [String], calendar: Calendar = .current) -> ReceiptDraftEditor {
-        let lines = lines.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        // Very long lines are cut short: no receipt line needs more, and it keeps matching fast.
+        let lines = lines.map { String($0.prefix(300)).trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         var items: [ReceiptLineItem] = []
         var total: Decimal?
         var subtotal: Decimal?

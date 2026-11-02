@@ -31,7 +31,8 @@ enum SharedReceiptReader {
         store.matchPendingReceipts()
         Task { await store.categoriseUnknownMerchants() }
         let lines = documents.map { "\($0.fileName): \($0.summary)." }
-        store.shareSummary = lines.joined(separator: "\n")
+        let ready = documents.contains { if case .statementReady = $0.outcome { true } else { false } }
+        store.shareSummary = lines.joined(separator: "\n") + (ready ? "\n\nOpen Inbox › Shared files to review and import." : "")
         store.status = documents.count == 1 ? lines[0] : "Read \(documents.count) shared files. See Inbox › Shared files."
     }
 
@@ -43,25 +44,35 @@ enum SharedReceiptReader {
         let name = url.lastPathComponent
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        if SharedReceiptDrop.isTooLarge(url) {
+            return recorded(SharedDocument(fileName: name, outcome: .failed(reason: "it's larger than 20 MB")), store)
+        }
         guard let data = try? Data(contentsOf: url) else {
             return recorded(SharedDocument(fileName: name, outcome: .failed(reason: "the file couldn't be opened")), store)
         }
         let stored = "\(UUID().uuidString).\(url.pathExtension.lowercased())"
-        try? data.write(to: store.sharedFilesFolder.appendingPathComponent(stored), options: .atomic)
+        // Kept so the file can be read again another way; full protection, removed after import
+        // or after 30 days.
+        try? data.write(to: store.sharedFilesFolder.appendingPathComponent(stored), options: ReceiptImageStore.writeOptions)
         var document = SharedDocument(fileName: name, outcome: .failed(reason: "unknown"), storedFile: stored)
         let ext = url.pathExtension.lowercased()
 
         if SharedReceiptDrop.isStatement(url) {
             let text = String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
             do {
-                document.outcome = importResult(try store.previewImport(text: text, fileName: name, mapping: nil), fileName: name, store: store)
+                // Nothing is imported until the person has seen the preview.
+                document.outcome = .statementReady(payments: try store.previewImport(text: text, fileName: name, mapping: nil).newTransactions.count)
             } catch {
                 document.outcome = .failed(reason: "its columns couldn't be worked out. Use Import Statement to choose them")
             }
             return recorded(document, store)
         }
         if ext == "pdf", let lines = pdfLines(data), PDFStatementParser.looksLikeStatement(lines) {
-            document.outcome = importPDF(lines, fileName: name, store: store)
+            if let preview = try? store.previewImport(pdfLines: lines) {
+                document.outcome = .statementReady(payments: preview.newTransactions.count)
+            } else {
+                document.outcome = .failed(reason: "no payments could be found in this statement. Try your bank's CSV or OFX download")
+            }
             return recorded(document, store)
         }
         do {

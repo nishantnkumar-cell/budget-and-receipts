@@ -117,3 +117,12 @@ final class StatementImportTests: XCTestCase {
         XCTAssertEqual(StatementFormat(fileName: "oct.csv"), .csv)
     }
 }
+
+final class AmountParserASCIITests: XCTestCase {
+    func testOnlyASCIIDigitsAreAmounts() {
+        XCTAssertEqual(AmountParser.parse("12.50", decimalComma: false), Decimal(string: "12.50"))
+        XCTAssertNil(AmountParser.parse("½", decimalComma: false))
+        XCTAssertNil(AmountParser.parse("1²", decimalComma: false))
+        XCTAssertNil(AmountParser.parse("١٢٫٥", decimalComma: false))
+    }
+}

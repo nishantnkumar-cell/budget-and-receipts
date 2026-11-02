@@ -351,7 +351,8 @@ public enum AmountParser {
         }
         if value.hasPrefix("+") { value.removeFirst() }
         if value.hasPrefix("-") { negative.toggle(); value.removeFirst() }
-        guard !value.isEmpty, value.allSatisfy({ $0.isNumber || $0 == "." }), value.filter({ $0 == "." }).count <= 1,
+        // ASCII digits only: "½", "²" or other scripts' digits are not amounts.
+        guard !value.isEmpty, value.allSatisfy({ ("0"..."9").contains($0) || $0 == "." }), value.filter({ $0 == "." }).count <= 1,
               let number = Decimal(string: value, locale: Locale(identifier: "en_US_POSIX")) else { return nil }
         return negative ? -number : number
     }
