@@ -272,13 +272,13 @@ actor CloudSync: CKSyncEngineDelegate {
             return
         }
         for delete in changes.deletes {
-            if let name = names[delete.key] {
+            if let name = recordName(for: delete.key) {
                 engineFor(isPrivate: delete.isPrivate)?.state.add(pendingRecordZoneChanges: [.deleteRecord(recordID(name, isPrivate: delete.isPrivate))])
             }
             state.recordDeleted(delete.key)
         }
         for record in changes.saves {
-            let name = names[record.key] ?? UUID().uuidString
+            let name = recordName(for: record.key) ?? UUID().uuidString
             names[record.key] = name
             outgoing[name] = record
             engineFor(isPrivate: record.isPrivate)?.state.add(pendingRecordZoneChanges: [.saveRecord(recordID(name, isPrivate: record.isPrivate))])
@@ -473,7 +473,7 @@ actor CloudSync: CKSyncEngineDelegate {
             let name = record.recordID.recordName
             // Two devices created the same item before syncing: keep the record with the smaller
             // name everywhere (both sides decide alike) and delete the other.
-            if let known = names[item.key], known != name {
+            if let known = recordName(for: item.key), known != name {
                 let keep = min(known, name)
                 let drop = keep == name ? known : name
                 duplicateDeletes.append(CKRecord.ID(recordName: drop, zoneID: record.recordID.zoneID))
@@ -490,7 +490,8 @@ actor CloudSync: CKSyncEngineDelegate {
         for deletion in changes.deletions {
             let name = deletion.recordID.recordName
             systemFields[name] = nil
-            guard let key = keysByName[name], names[key] == name else { continue }
+            let legacyKey = keysByName[name] == nil ? state.entries.keys.first { Self.legacyRecordName($0) == name } : nil
+            guard let key = keysByName[name] ?? legacyKey, (names[key] ?? Self.legacyRecordName(key)) == name else { continue }
             // Moving between zones deletes from one and saves in the other: keep the save.
             guard !saves.contains(where: { $0.key == key }) else { continue }
             deletes.insert(key)
@@ -533,6 +534,21 @@ actor CloudSync: CKSyncEngineDelegate {
     }
 
     // MARK: Records
+
+    /// The record name an item already has. Items first sent by the previous version were
+    /// named by a hash of their key; those keep that name, so they're updated and deleted
+    /// in place instead of being duplicated.
+    private func recordName(for key: String) -> String? {
+        if let name = names[key] { return name }
+        guard state.entries[key] != nil else { return nil }
+        let legacy = Self.legacyRecordName(key)
+        names[key] = legacy
+        return legacy
+    }
+
+    static func legacyRecordName(_ key: String) -> String {
+        SHA256.hash(data: Data(key.utf8)).prefix(16).map { String(format: "%02x", $0) }.joined()
+    }
 
     private func engineFor(isPrivate: Bool) -> CKSyncEngine? {
         (!isPrivate && household.role == .member) ? sharedEngine : privateEngine
