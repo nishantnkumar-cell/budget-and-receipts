@@ -27,6 +27,14 @@ cd Core && swift test
 cd ../Apple && xcodegen generate && open BudgetReceipts.xcodeproj
 ```
 
+To put the app on your iPhone, plug it in, unlock it and run:
+
+```bash
+Scripts/install-iphone.command
+```
+
+Builds are signed with the Apple Developer team set in `Apple/project.yml` (`DEVELOPMENT_TEAM`).
+
 Minimum OS: iOS 26 and macOS 26, so the on-device Apple Intelligence features can be added.
 
 ## Money rules
