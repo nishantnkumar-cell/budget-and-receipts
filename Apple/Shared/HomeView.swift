@@ -22,7 +22,7 @@ struct HomeView: View {
                         .buttonStyle(.plain)
                 }
                 topBudgets(report)
-                comingUp
+                ComingUpCard()
             }
             .padding()
             .frame(maxWidth: 720)
@@ -55,33 +55,6 @@ struct HomeView: View {
                     .foregroundStyle(.secondary)
             }
             ForEach(Array(lines)) { BudgetProgressRow(line: $0) }
-        }
-        .card()
-    }
-
-    @ViewBuilder private var comingUp: some View {
-        let due = SubscriptionTracker().dueSoon(subscriptions.contracts, from: Date(), days: 30).prefix(4)
-        VStack(alignment: .leading, spacing: 10) {
-            CardHeader(title: "Coming up") {
-                NavigationLink("Plan") { PlanView() }
-            }
-            if due.isEmpty {
-                Text("No bills or subscriptions due in the next 30 days.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            ForEach(Array(due)) { contract in
-                HStack {
-                    Text(contract.vendor)
-                    Text(contract.nextPaymentDueDate, format: .dateTime.day().month(.abbreviated))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text(contract.expectedAmount, format: .currency(code: contract.currency))
-                        .fontWeight(.semibold)
-                        .monospacedDigit()
-                }
-                .font(.subheadline)
-            }
         }
         .card()
     }
