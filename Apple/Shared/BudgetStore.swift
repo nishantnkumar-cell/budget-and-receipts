@@ -10,6 +10,8 @@ final class BudgetStore: ObservableObject {
     @Published var status = "Import statements or add a transaction."
     @Published var couple: CoupleSettings = CoupleSettings()
     @Published var settlements: [Settlement] = []
+    /// Scanned receipts whose card payment is not on a statement yet.
+    @Published var pendingReceipts: [PendingReceipt] = []
     /// The Me / Partner / Together switch. Together shows everything, as before couples.
     @Published var householdView: HouseholdView = .together
 
@@ -25,6 +27,7 @@ final class BudgetStore: ObservableObject {
         imports = storage.load("imports.json") ?? []
         couple = storage.load("couple.json") ?? CoupleSettings()
         settlements = storage.load("settlements.json") ?? []
+        pendingReceipts = storage.load("pending-receipts.json") ?? []
     }
 
     func saveDraft(_ draft: SplitDraft, for transaction: BankTransaction) {
@@ -173,8 +176,44 @@ final class BudgetStore: ObservableObject {
         transactions.sort { $0.date > $1.date }
         let status = result.duplicates.isEmpty ? "Imported" : "Imported, \(result.duplicates.count) already present"
         imports.insert(ImportRecord(fileName: fileName, transactionCount: result.newTransactions.count, status: status), at: 0)
+        let matched = matchPendingReceipts()
         persist()
         self.status = "Imported \(result.newTransactions.count) transactions from \(fileName)."
+            + (matched > 0 ? " Matched \(matched) waiting receipt\(matched == 1 ? "" : "s"); check them in the Inbox." : "")
+    }
+
+    // MARK: Waiting receipts
+
+    /// Keeps a scanned receipt until its card payment shows up on a statement.
+    func savePending(_ editor: ReceiptDraftEditor) {
+        pendingReceipts.append(PendingReceipt(editor: editor))
+        persist()
+        status = "Receipt saved. It will be matched when its payment is imported."
+    }
+
+    /// Attaches a waiting receipt to a payment. It still waits in the Inbox for approval.
+    func attachPending(_ receipt: PendingReceipt, to transaction: BankTransaction) {
+        pendingReceipts.removeAll { $0.id == receipt.id }
+        saveDraft(receipt.editor.makeDraft(reviewed: false), for: transaction)
+    }
+
+    func deletePending(_ receipt: PendingReceipt) {
+        pendingReceipts.removeAll { $0.id == receipt.id }
+        persist()
+    }
+
+    /// Attaches waiting receipts to payments when the match is certain. Returns how many.
+    @discardableResult
+    func matchPendingReceipts() -> Int {
+        let pairs = ReceiptMatcher.autoMatch(pendingReceipts, in: transactions)
+        for pair in pairs {
+            guard let receipt = pendingReceipts.first(where: { $0.id == pair.receipt }),
+                  let index = transactions.firstIndex(where: { $0.id == pair.transaction }) else { continue }
+            transactions[index].pendingSplitDraft = receipt.editor.makeDraft(reviewed: false)
+            pendingReceipts.removeAll { $0.id == receipt.id }
+        }
+        if !pairs.isEmpty { persist() }
+        return pairs.count
     }
 
     var needsReview: [BankTransaction] {
@@ -188,6 +227,7 @@ final class BudgetStore: ObservableObject {
         storage.save(imports, "imports.json")
         storage.save(couple, "couple.json")
         storage.save(settlements, "settlements.json")
+        storage.save(pendingReceipts, "pending-receipts.json")
     }
 }
 
