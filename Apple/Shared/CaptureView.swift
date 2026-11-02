@@ -129,7 +129,7 @@ struct CaptureView: View {
             CardHeader("Which payment is this?")
             let options = candidates(for: editor)
             if options.isEmpty {
-                Text("No card payments yet. Import a statement or add the payment first.")
+                Text("No payment for this receipt yet. Save it, and it will be matched when your statement arrives.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -148,8 +148,24 @@ struct CaptureView: View {
                 }
                 .buttonStyle(.plain)
             }
+            Button {
+                saveForLater(editor)
+            } label: {
+                Label("Not on my statement yet. Save for later", systemImage: "clock.arrow.circlepath")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
         }
         .card()
+    }
+
+    /// Card payments can reach the statement days later; the receipt waits until then.
+    private func saveForLater(_ editor: ReceiptDraftEditor) {
+        var draft = editor
+        draft.imagePath = imageName
+        store.savePending(draft)
+        saved = "Saved. It will be matched when the payment shows up on an imported statement."
+        self.editor = nil
     }
 
     private func attach(_ editor: ReceiptDraftEditor, to transaction: BankTransaction) {
