@@ -1,0 +1,107 @@
+import BudgetCore
+import SwiftUI
+
+/// Home's "Coming up": the next recurring payments, then contract renewals and deadlines.
+struct ComingUpCard: View {
+    @EnvironmentObject var subscriptions: SubscriptionStore
+    private let planner = ComingUpPlanner()
+
+    var body: some View {
+        let now = Date()
+        let payments = planner.payments(subscriptions.contracts, from: now)
+        let dates = planner.contractDates(subscriptions.contracts, from: now)
+        VStack(alignment: .leading, spacing: 12) {
+            CardHeader(title: "Coming up") {
+                NavigationLink("Plan") { PlanView() }
+            }
+            if payments.isEmpty && dates.isEmpty {
+                Text("Add your bills, subscriptions and contracts in Plan to see what's due next.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            if !payments.isEmpty {
+                section("Next payments", trailing: total(payments)) {
+                    ForEach(payments.prefix(5)) { UpcomingRow(item: $0, now: now) }
+                    if payments.count > 5 {
+                        Text("and \(payments.count - 5) more in the next 30 days").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            if !dates.isEmpty {
+                section("Renewals and contract dates", trailing: nil) {
+                    ForEach(dates.prefix(4)) { UpcomingRow(item: $0, now: now) }
+                }
+            }
+        }
+        .card()
+    }
+
+    private func section<Content: View>(_ title: String, trailing: String?, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title.uppercased()).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Spacer()
+                if let trailing { Text(trailing).font(.caption).foregroundStyle(.secondary) }
+            }
+            content()
+        }
+    }
+
+    private func total(_ payments: [UpcomingItem]) -> String {
+        let totals = planner.totalDue(payments).sorted { $0.key < $1.key }
+        return "30 days: " + totals.map { $0.value.formatted(.currency(code: $0.key)) }.joined(separator: " + ")
+    }
+}
+
+struct UpcomingRow: View {
+    let item: UpcomingItem
+    let now: Date
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol)
+                .foregroundStyle(item.kind == .cancellationDeadline ? Color.brandPink : Color.accentColor)
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.vendor).font(.subheadline.weight(.medium)).lineLimit(1)
+                Text("\(label) · \(when)").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            if let amount = item.amount {
+                Text(amount, format: .currency(code: item.currency)).font(.subheadline.weight(.semibold)).monospacedDigit()
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var symbol: String {
+        switch item.kind {
+        case .payment: "arrow.triangle.2.circlepath"
+        case .cancellationDeadline: "exclamationmark.circle"
+        case .renewal: "arrow.clockwise.circle"
+        case .fixedPriceEnds: "tag"
+        case .minimumTermEnds: "calendar.badge.checkmark"
+        }
+    }
+
+    private var label: String {
+        switch item.kind {
+        case .payment: item.billingPeriod.title
+        case .cancellationDeadline: "Last day to cancel"
+        case .renewal: "Renews"
+        case .fixedPriceEnds: "Fixed price ends"
+        case .minimumTermEnds: "Minimum term ends"
+        }
+    }
+
+    private var when: String {
+        let calendar = Calendar.current
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: item.date)).day ?? 0
+        switch days {
+        case 0: return "today"
+        case 1: return "tomorrow"
+        case 2...13: return "in \(days) days, \(item.date.formatted(.dateTime.weekday(.abbreviated).day()))"
+        default: return item.date.formatted(.dateTime.day().month(.abbreviated))
+        }
+    }
+}
