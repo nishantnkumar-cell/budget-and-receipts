@@ -20,12 +20,15 @@ public struct StatementRow: Hashable, Sendable {
     public var amount: Decimal
     /// The bank's own id for the line (OFX FITID), when the file has one.
     public var bankID: String?
+    /// The account number in the file (OFX ACCTID or a CSV account column), when there is one.
+    public var accountNumber: String?
 
-    public init(date: Date, description: String, amount: Decimal, bankID: String? = nil) {
+    public init(date: Date, description: String, amount: Decimal, bankID: String? = nil, accountNumber: String? = nil) {
         self.date = date
         self.description = description
         self.amount = amount
         self.bankID = bankID
+        self.accountNumber = accountNumber
     }
 }
 
@@ -56,6 +59,8 @@ public struct CSVColumnMapping: Hashable, Sendable {
     public var dateOrder: DateOrder
     /// True for amounts such as 12,50 (decimal comma).
     public var decimalComma: Bool
+    /// A column with the account number, in files that hold several accounts.
+    public var account: Int?
 
     public init(date: Int, description: Int, amount: Int? = nil, paidOut: Int? = nil, paidIn: Int? = nil, hasHeader: Bool = true, dateOrder: DateOrder = .dayMonthYear, decimalComma: Bool = false) {
         self.date = date
@@ -66,6 +71,7 @@ public struct CSVColumnMapping: Hashable, Sendable {
         self.hasHeader = hasHeader
         self.dateOrder = dateOrder
         self.decimalComma = decimalComma
+        self.account = nil
     }
 
     /// Guesses the mapping from a header row such as "Date,Description,Amount" or
@@ -87,7 +93,9 @@ public struct CSVColumnMapping: Hashable, Sendable {
         let paidOut = find(["paid out", "money out", "debit", "withdrawal", "out"])
         let paidIn = find(["paid in", "money in", "credit", "deposit", "in"])
         guard amount != nil || (paidOut != nil && paidIn != nil) else { return nil }
-        return CSVColumnMapping(date: date, description: description, amount: amount, paidOut: amount == nil ? paidOut : nil, paidIn: amount == nil ? paidIn : nil, dateOrder: dateOrder)
+        var mapping = CSVColumnMapping(date: date, description: description, amount: amount, paidOut: amount == nil ? paidOut : nil, paidIn: amount == nil ? paidIn : nil, dateOrder: dateOrder)
+        mapping.account = names.firstIndex { ["account", "account number", "account no", "acct", "card number"].contains($0) }
+        return mapping
     }
 }
 
@@ -132,7 +140,8 @@ public enum StatementImporter {
                 guard let paidIn else { throw StatementImportError.badAmount(line: line, value: inText) }
                 amount = paidIn - abs(paidOut)
             }
-            return StatementRow(date: date, description: cleanDescription(field(mapping.description)), amount: amount)
+            let account = field(mapping.account)
+            return StatementRow(date: date, description: cleanDescription(field(mapping.description)), amount: amount, accountNumber: account.isEmpty ? nil : account)
         }
     }
 
@@ -140,6 +149,7 @@ public enum StatementImporter {
     public static func parseOFX(_ text: String, timeZone: TimeZone = .current) throws -> [StatementRow] {
         let blocks = text.components(separatedBy: "<STMTTRN>").dropFirst()
         guard !blocks.isEmpty else { throw StatementImportError.empty }
+        let accountNumber = ofxValue("ACCTID", in: text)
         return try blocks.enumerated().map { index, raw in
             let block = raw.components(separatedBy: "</STMTTRN>")[0]
             func tag(_ name: String) -> String? {
@@ -154,8 +164,17 @@ public enum StatementImporter {
             let amountText = tag("TRNAMT") ?? ""
             guard let amount = AmountParser.parse(amountText, decimalComma: false) else { throw StatementImportError.badAmount(line: index + 1, value: amountText) }
             let description = [tag("NAME"), tag("MEMO")].compactMap { $0 }.first ?? ""
-            return StatementRow(date: date, description: cleanDescription(decodeEntities(description)), amount: amount, bankID: tag("FITID"))
+            return StatementRow(date: date, description: cleanDescription(decodeEntities(description)), amount: amount, bankID: tag("FITID"), accountNumber: accountNumber)
         }
+    }
+
+    /// The first value of an OFX tag anywhere in the file, e.g. the account number.
+    static func ofxValue(_ name: String, in text: String) -> String? {
+        guard let start = text.range(of: "<\(name)>") else { return nil }
+        let rest = text[start.upperBound...]
+        let end = rest.firstIndex(where: { $0 == "<" || $0 == "\n" || $0 == "\r" }) ?? rest.endIndex
+        let value = rest[..<end].trimmingCharacters(in: .whitespaces)
+        return value.isEmpty ? nil : value
     }
 
     /// Reads a QIF file: D (date), T or U (amount), P (payee), M (memo), ^ (end of entry).
@@ -192,24 +211,45 @@ public enum StatementImporter {
 
     /// Builds transactions from statement lines and checks them against what is already
     /// stored. Importing the same file twice adds nothing the second time.
-    public static func prepare(_ rows: [StatementRow], existing: [BankTransaction], calendar: Calendar = .current) -> StatementImportResult {
+    ///
+    /// Each line goes to the account whose number it carries (`accountForNumber`), else to
+    /// `account`. With an account the fingerprint includes it, so the same coffee on the same
+    /// day in two accounts is two payments; lines imported before accounts existed are still
+    /// recognised as duplicates.
+    public static func prepare(
+        _ rows: [StatementRow],
+        existing: [BankTransaction],
+        account: UUID? = nil,
+        accountForNumber: (String) -> UUID? = { _ in nil },
+        calendar: Calendar = .current
+    ) -> StatementImportResult {
         let existingIDs = Set(existing.map(\.fingerprint))
+        let legacyIDs = Set(existing.filter { $0.accountID == nil }.map(\.fingerprint))
         var seenInFile: [String: Int] = [:]
         var result = StatementImportResult(newTransactions: [], duplicates: [], possibleDuplicates: [])
 
         for row in rows {
+            let rowAccount = row.accountNumber.flatMap(accountForNumber) ?? account
             let base = baseFingerprint(row, calendar: calendar)
-            let occurrence = seenInFile[base, default: 0] + 1
-            seenInFile[base] = occurrence
+            let key = rowAccount.map { "\(base)|acct:\($0.uuidString)" } ?? base
+            let occurrence = seenInFile[key, default: 0] + 1
+            seenInFile[key] = occurrence
             // Two identical lines in one file (two coffees on the same day) are both real.
-            let fingerprint = row.bankID.map { "ofx:\($0)" } ?? "\(base)|\(occurrence)"
-            if existingIDs.contains(fingerprint) {
+            let legacy = row.bankID.map { "ofx:\($0)" } ?? "\(base)|\(occurrence)"
+            let fingerprint: String
+            if let rowAccount {
+                fingerprint = row.bankID.map { "ofx:\(rowAccount.uuidString):\($0)" } ?? "\(key)|\(occurrence)"
+            } else {
+                fingerprint = legacy
+            }
+            if existingIDs.contains(fingerprint) || legacyIDs.contains(legacy) {
                 result.duplicates.append(row)
                 continue
             }
-            let transaction = BankTransaction(date: row.date, merchant: row.description, description: row.description, amount: row.amount, fingerprint: fingerprint)
+            var transaction = BankTransaction(date: row.date, merchant: row.description, description: row.description, amount: row.amount, fingerprint: fingerprint)
+            transaction.accountID = rowAccount
             result.newTransactions.append(transaction)
-            if existing.contains(where: { $0.amount == row.amount && calendar.isDate($0.date, inSameDayAs: row.date) }) {
+            if existing.contains(where: { $0.amount == row.amount && calendar.isDate($0.date, inSameDayAs: row.date) && ($0.accountID == nil || $0.accountID == rowAccount) }) {
                 result.possibleDuplicates.append(transaction)
             }
         }
