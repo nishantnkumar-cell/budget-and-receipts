@@ -53,6 +53,23 @@ final class BudgetStore: ObservableObject {
     ///   the app uses Application Support.
     init(folder: URL = JSONFileStorage.defaultFolder) {
         storage = JSONFileStorage(folder: folder)
+        loadAll()
+    }
+
+    /// True when the files couldn't be opened yet (the device was locked). Nothing is saved
+    /// or synced until they're read, so locked files are never overwritten with nothing.
+    private(set) var isWaitingForFiles = false
+
+    /// Reads the files again once the device is unlocked. Returns true when that worked.
+    @discardableResult
+    func reloadIfWaiting() -> Bool {
+        guard isWaitingForFiles else { return true }
+        loadAll()
+        return !isWaitingForFiles
+    }
+
+    private func loadAll() {
+        isWaitingForFiles = false
         transactions = loadOrSetAside("transactions.json") ?? []
         changes = loadOrSetAside("changes.json") ?? []
         budgets = loadOrSetAside("budgets.json") ?? []
@@ -71,7 +88,7 @@ final class BudgetStore: ObservableObject {
         recentChanges = (loadOrSetAside("recent-changes.json") ?? []).filter { $0.date > Date().addingTimeInterval(-30 * 86_400) }
         wealthAccounts = loadOrSetAside("wealth.json") ?? []
         notes = loadOrSetAside("notes.json") ?? []
-        removeOldSharedCopies()
+        if !isWaitingForFiles { removeOldSharedCopies() }
     }
 
     func saveDraft(_ draft: SplitDraft, for transaction: BankTransaction) {
@@ -569,6 +586,7 @@ final class BudgetStore: ObservableObject {
     }
 
     private func persist() {
+        guard !isWaitingForFiles else { return }
         writeFiles()
         didPersist?()
     }
@@ -577,6 +595,9 @@ final class BudgetStore: ObservableObject {
     private func loadOrSetAside<T: Decodable>(_ name: String) -> T? {
         do {
             return try storage.loadChecked(name)
+        } catch JSONFileStorage.LoadError.locked {
+            isWaitingForFiles = true
+            return nil
         } catch {
             storage.setAside(name)
             unreadableFiles.append(name)
@@ -586,6 +607,7 @@ final class BudgetStore: ObservableObject {
 
     @discardableResult
     private func writeFiles() -> Bool {
+        guard !isWaitingForFiles else { return false }
         let results = [
             storage.save(transactions, "transactions.json"),
             storage.save(changes, "changes.json"),
@@ -666,16 +688,21 @@ struct JSONFileStorage {
         }
     }
 
-    enum LoadError: Error { case unreadable(String) }
+    enum LoadError: Error {
+        /// The file is there but damaged.
+        case unreadable(String)
+        /// The file is there but locked away (an iPhone still locked since it restarted, or the
+        /// app woken in the background while locked). Not damaged: it's read again later.
+        case locked(String)
+    }
 
     /// Nil when the file doesn't exist yet. Throws when it exists but can't be read or decoded:
     /// that must never be mistaken for "no data", or sync would delete everything.
     func loadChecked<T: Decodable>(_ name: String) throws -> T? {
         let url = folder.appendingPathComponent(name)
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        guard let data = try? Data(contentsOf: url), let value = try? JSONDecoder().decode(T.self, from: data) else {
-            throw LoadError.unreadable(name)
-        }
+        guard let data = try? Data(contentsOf: url) else { throw LoadError.locked(name) }
+        guard let value = try? JSONDecoder().decode(T.self, from: data) else { throw LoadError.unreadable(name) }
         return value
     }
 

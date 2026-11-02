@@ -169,6 +169,20 @@ struct RecentChangesView: View {
     }
 }
 
+/// Settings › iCloud: sends every item again, for when something seems missing elsewhere.
+struct SendEverythingAgainRow: View {
+    @EnvironmentObject var syncStatus: SyncStatus
+    @State private var sent = false
+
+    var body: some View {
+        Button(sent ? "Sending everything…" : "Send Everything Again") {
+            sent = true
+            Task { await syncStatus.sync?.sendEverythingAgain() }
+        }
+        .disabled(sent || syncStatus.sync == nil)
+    }
+}
+
 /// Settings › iCloud: deletions held back because there were suspiciously many.
 struct HeldDeletionsRow: View {
     @EnvironmentObject var syncStatus: SyncStatus
