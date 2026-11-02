@@ -22,6 +22,14 @@ struct BudgetReceiptsApp: App {
             .environmentObject(store)
             .environmentObject(subscriptions)
             .environmentObject(settings)
+            // A receipt or statement opened with the app ("Open in", or Open With on the Mac).
+            .onOpenURL { url in
+                Task { await SharedReceiptReader.open(url, into: store) }
+            }
+            .task(id: scenePhase) {
+                // Receipts shared from other apps while this one was closed.
+                if scenePhase == .active { await SharedReceiptReader.readDropped(into: store) }
+            }
             .task(id: subscriptions.contracts) {
                 await ReminderScheduler.reschedule(subscriptions.contracts, enabled: settings.remindersEnabled)
             }
