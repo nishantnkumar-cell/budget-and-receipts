@@ -27,7 +27,20 @@ Card payments are ranked by:
 - the date (same day is best, since a payment can post a day or two later);
 - the shop name.
 
-Income and payments that are already split are never offered.
+Income and payments that are already split or already have a receipt are never offered.
+
+### Receipts that arrive before the statement
+
+A receipt is often scanned before its payment reaches a statement. After scanning, "Not on my statement yet. Save for later" keeps it as a waiting receipt. Nothing is processed: no splits are made and nothing is approved. The Inbox shows a "receipts waiting for a payment" banner.
+
+When a statement is imported, each waiting receipt is matched automatically only when the match is certain:
+
+- the payment has exactly the receipt total;
+- it is dated between 2 days before and 7 days after the receipt date (`MatchWindow`). Card payments often post a few days later, longer over weekends. A receipt without a printed date uses the day it was scanned;
+- it is the only such payment, or the only one from the same shop;
+- no other waiting receipt wants the same payment.
+
+A matched receipt becomes a draft on that payment and still waits in the Inbox for the person to check and approve. Anything less certain, such as a tip or two equal payments, stays waiting, with the best payments suggested so the person can pick one or delete the receipt.
 
 ## Smart reading with Apple Intelligence (part 2)
 

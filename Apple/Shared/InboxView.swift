@@ -8,6 +8,15 @@ struct InboxView: View {
     @State private var selection: BankTransaction.ID?
 
     var body: some View {
+        VStack(spacing: 0) {
+            PendingReceiptsBanner()
+            inboxContent
+        }
+        .appBackground()
+        .navigationTitle("Inbox")
+    }
+
+    @ViewBuilder private var inboxContent: some View {
         Group {
             if store.needsReview.isEmpty {
                 ContentUnavailableView(
@@ -19,8 +28,6 @@ struct InboxView: View {
                 content
             }
         }
-        .appBackground()
-        .navigationTitle("Inbox")
     }
 
     #if os(iOS)
