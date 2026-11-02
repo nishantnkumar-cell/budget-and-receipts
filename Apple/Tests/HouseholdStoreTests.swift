@@ -95,3 +95,41 @@ final class ReceiptPhotoPrivacyTests: XCTestCase {
         XCTAssertNil(ReceiptImageStore.withoutMetadata(Data("%PDF-1.4".utf8)), "Not an image: kept as it is")
     }
 }
+
+@MainActor
+final class NetWorthStoreTests: XCTestCase {
+    func testAccountsBalancesNotesAndSync() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = BudgetStore(folder: folder)
+        let pension = WealthAccount(name: "Workplace pension", kind: .pension)
+        let card = WealthAccount(name: "Credit card", kind: .creditCard)
+        store.saveWealthAccount(pension)
+        store.saveWealthAccount(card)
+        store.recordBalance(80_000, for: pension.id)
+        store.recordBalance(1_000, for: card.id)
+        XCTAssertEqual(store.netWorth, 79_000)
+        XCTAssertTrue(store.staleWealthAccounts.isEmpty)
+
+        let coffee = BankTransaction(date: Date(), merchant: "COSTA", amount: -3, fingerprint: "c")
+        store.add(coffee)
+        store.addNote(to: coffee, text: "Was this the meeting?")
+        store.addNote(to: coffee, reaction: "👍")
+        XCTAssertEqual(store.notes(for: coffee).count, 2)
+
+        let reopened = BudgetStore(folder: folder)
+        XCTAssertEqual(reopened.wealthAccounts.count, 2)
+        XCTAssertEqual(reopened.notes.count, 2)
+        XCTAssertTrue(reopened.syncRecords().contains { $0.collection == "wealth" })
+        XCTAssertTrue(reopened.syncRecords().contains { $0.collection == "notes" })
+    }
+
+    func testCorrectionAppliesToSimilarPayments() {
+        let store = BudgetStore(folder: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        let first = BankTransaction(date: Date(), merchant: "BIKANERVALA HOUNSLOW", amount: -16, fingerprint: "a")
+        store.add(first)
+        store.add(BankTransaction(date: Date(), merchant: "BIKANERVALA HOUNSLOW", amount: -18, fingerprint: "b"))
+        XCTAssertEqual(store.similarUncategorised(to: first).count, 1)
+        XCTAssertEqual(store.applyCategory("Eating out", toSimilar: first), 1)
+    }
+}

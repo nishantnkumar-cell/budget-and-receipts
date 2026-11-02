@@ -13,6 +13,16 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section {
+                Picker("Budget month starts on", selection: $settings.monthStartDay) {
+                    Text("The 1st").tag(1)
+                    ForEach(2...28, id: \.self) { Text("The \($0.formatted(.number))").tag($0) }
+                }
+            } header: {
+                Text("Payday")
+            } footer: {
+                Text("Choose your payday to budget from one pay to the next instead of by calendar month.")
+            }
             Section("Money") {
                 Picker("Currency", selection: $settings.currencyCode) {
                     ForEach(AppSettings.supportedCurrencies, id: \.self) { code in

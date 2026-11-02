@@ -131,8 +131,32 @@ public struct CoupleLedger: Sendable {
     /// The owner set on the transaction, else the first merchant rule that matches,
     /// else the first category rule, else the default. Merchant rules win because they
     /// are more specific ("Netflix is mine" beats "Subscriptions are shared").
+    /// Whose each bank account is (a partner's or joint account), so its payments follow it.
+    public var accountOwners: [UUID: MoneyOwner] = [:]
+
+    /// Set by hand first, then the account's owner (a joint or partner's account), then the rules.
     public func owner(of transaction: BankTransaction) -> MoneyOwner {
-        transaction.owner ?? ruleOwner(of: transaction)
+        if let owner = transaction.owner { return owner }
+        if let account = transaction.accountID, let owner = accountOwners[account], owner != .mine { return owner }
+        return ruleOwner(of: transaction)
+    }
+
+    /// Why a transaction counts as whoever's it is, for explaining it in the app.
+    public enum OwnerSource: Hashable, Sendable {
+        case manual
+        /// A joint or partner's account.
+        case account(UUID)
+        case merchantRule
+        case categoryRule
+        case `default`
+    }
+
+    public func ownerSource(of transaction: BankTransaction) -> OwnerSource {
+        if transaction.owner != nil { return .manual }
+        if let account = transaction.accountID, let owner = accountOwners[account], owner != .mine { return .account(account) }
+        if let rule = settings.rules.first(where: { if case .merchant = $0.match { $0.matches(transaction) } else { false } }), rule.matches(transaction) { return .merchantRule }
+        if settings.rules.contains(where: { if case .category = $0.match { $0.matches(transaction) } else { false } }) { return .categoryRule }
+        return .default
     }
 
     /// The owner the rules give, ignoring any owner set by hand.
