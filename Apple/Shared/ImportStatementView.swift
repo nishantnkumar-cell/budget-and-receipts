@@ -111,6 +111,7 @@ struct ImportStatementView: View {
                 Section {
                     Button("Import \(preview.newTransactions.count) Transactions") {
                         store.commitImport(preview, fileName: fileName)
+                        Task { await store.categoriseUnknownMerchants() }
                         dismiss()
                     }
                     .disabled(preview.newTransactions.isEmpty)

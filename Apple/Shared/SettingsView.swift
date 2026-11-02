@@ -44,6 +44,14 @@ struct SettingsView: View {
                 Text("Asks for \(AppLock().methodName) when the app opens or comes back from the background.")
             }
             Section {
+                Toggle("Suggest categories with Apple Intelligence", isOn: $settings.aiCategoriesEnabled)
+                Toggle("Look up unknown shops online", isOn: $settings.onlineCategoriesEnabled)
+            } header: {
+                Text("Categories")
+            } footer: {
+                Text("For shops the app doesn't know yet. Apple Intelligence works on this device and sends nothing. The online lookup asks Apple Maps what kind of business it is, sending only the shop's name and town, never amounts or dates. Your own category choices always win.")
+            }
+            Section {
                 Toggle("Smart receipt reading", isOn: $settings.smartReceiptsEnabled)
             } header: {
                 Text("Receipts")

@@ -7,6 +7,8 @@ public struct CategorySuggestion: Hashable, Sendable {
         case learned
         /// A built-in list of well-known shops and items.
         case keyword
+        /// Apple Intelligence on the device, or an Apple Maps lookup, for an unknown merchant.
+        case lookedUp
     }
 
     public let category: String
@@ -27,9 +29,12 @@ public struct CategorySuggestion: Hashable, Sendable {
 public struct Categoriser: Sendable {
     private var merchantVotes: [String: [String: Int]] = [:]
     private var itemVotes: [String: [String: Int]] = [:]
+    private var lookedUp: [String: MerchantCategory] = [:]
 
     /// Learns from transactions you have already categorised, including approved receipt splits.
-    public init(history: [BankTransaction] = []) {
+    /// `lookedUp` holds categories found for unknown merchants; your own choices still win.
+    public init(history: [BankTransaction] = [], lookedUp: [String: MerchantCategory] = [:]) {
+        self.lookedUp = lookedUp
         for transaction in history {
             if transaction.splits.isEmpty {
                 guard transaction.category != "Uncategorised" else { continue }
@@ -52,7 +57,10 @@ public struct Categoriser: Sendable {
         if transaction.amount > 0 {
             return Self.match(words, Self.incomeKeywords).map { CategorySuggestion(category: $0, confidence: 0.6, source: .keyword) }
         }
-        return Self.match(words, Self.merchantKeywords).map { CategorySuggestion(category: $0, confidence: 0.6, source: .keyword) }
+        if let keyword = Self.match(words, Self.merchantKeywords) {
+            return CategorySuggestion(category: keyword, confidence: 0.6, source: .keyword)
+        }
+        return lookedUp[Self.merchantKey(transaction.merchant)].map { CategorySuggestion(category: $0.category, confidence: 0.5, source: .lookedUp) }
     }
 
     /// Item suggestions use what you called similar items before, then common grocery and

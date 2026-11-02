@@ -13,6 +13,8 @@ final class BudgetStore: ObservableObject {
     /// Scanned receipts whose card payment is not on a statement yet.
     @Published var pendingReceipts: [PendingReceipt] = []
     @Published var accounts: [BankAccount] = []
+    /// Categories found for merchants the app didn't know, by merchant key.
+    @Published var merchantCategories: [String: MerchantCategory] = [:]
     /// Every file shared or opened with the app, and what became of it.
     @Published var sharedDocuments: [SharedDocument] = []
     /// What the app just did with shared files, shown once as a confirmation.
@@ -41,6 +43,7 @@ final class BudgetStore: ObservableObject {
         pendingReceipts = storage.load("pending-receipts.json") ?? []
         accounts = storage.load("accounts.json") ?? []
         sharedDocuments = storage.load("shared-documents.json") ?? []
+        merchantCategories = storage.load("merchant-categories.json") ?? [:]
     }
 
     func saveDraft(_ draft: SplitDraft, for transaction: BankTransaction) {
@@ -200,7 +203,32 @@ final class BudgetStore: ObservableObject {
     }
 
     /// Suggests categories on the device, learning from the ones you already chose.
-    var categoriser: Categoriser { Categoriser(history: transactions) }
+    var categoriser: Categoriser { Categoriser(history: transactions, lookedUp: merchantCategories) }
+
+    /// Finds categories for merchants nobody has categorised yet (Apple Intelligence, then
+    /// Apple Maps if allowed) and fills them in. Each merchant is looked up once.
+    /// Returns how many transactions got a category.
+    @discardableResult
+    func categoriseUnknownMerchants(useAI: Bool = AppSettings.aiCategories, useMaps: Bool = AppSettings.onlineCategories,
+                                    lookup: (String) async -> MerchantCategory? = { _ in nil }) async -> Int {
+        guard useAI || useMaps else { return 0 }
+        let merchants = MerchantCategories.unknownMerchants(transactions, known: merchantCategories, categoriser: categoriser).prefix(60)
+        guard !merchants.isEmpty else { return 0 }
+        for merchant in merchants {
+            let found: MerchantCategory?
+            if let result = await lookup(merchant) {
+                found = result
+            } else {
+                found = await MerchantCategoryService.category(for: merchant, useAI: useAI, useMaps: useMaps)
+            }
+            if let found { merchantCategories[Categoriser.merchantKey(merchant)] = found }
+        }
+        let before = transactions.filter { $0.category == "Uncategorised" }.count
+        transactions = categoriser.categorise(transactions)
+        let filled = before - transactions.filter { $0.category == "Uncategorised" }.count
+        persist()
+        return filled
+    }
 
     /// Adds the new transactions from a previewed import and records it in the import history.
     func commitImport(_ result: StatementImportResult, fileName: String) {
@@ -365,6 +393,7 @@ final class BudgetStore: ObservableObject {
         storage.save(pendingReceipts, "pending-receipts.json")
         storage.save(accounts, "accounts.json")
         storage.save(sharedDocuments, "shared-documents.json")
+        storage.save(merchantCategories, "merchant-categories.json")
     }
 }
 
