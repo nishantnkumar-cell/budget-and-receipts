@@ -114,6 +114,7 @@ struct ApprovalView: View {
             do {
                 let imagePath = try ReceiptImageStore().save(data, fileExtension: fileExtension.isEmpty ? "jpg" : fileExtension)
                 var result = try await vision.recognise(data: data)
+                store.categoriser.categorise(&result)
                 result.imagePath = imagePath
                 if result.purchaseDate == nil { result.purchaseDate = transaction.date }
                 editor = result

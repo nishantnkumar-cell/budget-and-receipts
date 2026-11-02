@@ -158,8 +158,14 @@ final class BudgetStore: ObservableObject {
             guard let mapping = mapping ?? CSVColumnMapping.guess(header: header) else { throw StatementImportError.missingColumn("date, description or amount") }
             rows = try StatementImporter.parseCSV(text, mapping: mapping)
         }
-        return StatementImporter.prepare(rows, existing: transactions)
+        var result = StatementImporter.prepare(rows, existing: transactions)
+        // Fill in categories from your past choices and well-known shops; you can change any of them.
+        result.newTransactions = categoriser.categorise(result.newTransactions)
+        return result
     }
+
+    /// Suggests categories on the device, learning from the ones you already chose.
+    var categoriser: Categoriser { Categoriser(history: transactions) }
 
     /// Adds the new transactions from a previewed import and records it in the import history.
     func commitImport(_ result: StatementImportResult, fileName: String) {
