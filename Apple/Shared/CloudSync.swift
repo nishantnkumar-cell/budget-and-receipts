@@ -608,6 +608,15 @@ actor CloudSync: CKSyncEngineDelegate {
             pending.removeAll { orphans.contains($0) }
             log("Dropped \(orphans.count) queued saves with nothing to send.")
         }
+        // A receipt photo that can't be read right now (the phone locked since it was saved)
+        // waits for the next send, rather than going up without its picture.
+        let waiting = pending.filter { change in
+            guard case .saveRecord(let id) = change, let name = outgoing[id.recordName]?.fileName else { return false }
+            return Self.imageForUpload(imagesFolder.appendingPathComponent(name)) == nil
+                && FileManager.default.fileExists(atPath: imagesFolder.appendingPathComponent(name).path)
+        }
+        pending.removeAll { waiting.contains($0) }
+        if !waiting.isEmpty { log("\(waiting.count) receipt photos wait until they can be read.") }
         log("Sending a batch of \(pending.count) (reason: \(context.reason)).")
         guard !pending.isEmpty else { return nil }
         return await CKSyncEngine.RecordZoneChangeBatch(pendingChanges: pending) { recordID in

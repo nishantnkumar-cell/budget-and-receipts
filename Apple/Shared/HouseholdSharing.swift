@@ -4,6 +4,7 @@ import CoreTransferable
 import LocalAuthentication
 import SwiftUI
 #if os(iOS)
+import BackgroundTasks
 import UIKit
 #else
 import AppKit
@@ -41,6 +42,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         application.registerForRemoteNotifications()
         return true
+    }
+
+    /// A silent push from iCloud: something changed on another device. Fetch it now.
+    func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any]) async -> UIBackgroundFetchResult {
+        await AppModel.syncInBackground()
+        return .newData
     }
 
     func application(_ application: UIApplication, configurationForConnecting session: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {
@@ -316,6 +323,20 @@ final class MacLockWatcher {
         observers.append(DistributedNotificationCenter.default().addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { _ in
             Task { @MainActor in lock.lock() }
         })
+    }
+}
+#endif
+
+#if os(iOS)
+/// Asks iOS for a background refresh every few hours, so changes go up and come down even
+/// when the app hasn't been opened. iOS decides the exact time.
+enum BackgroundSync {
+    static let identifier = "com.nishantkumar.budgetreceipts.sync"
+
+    static func schedule() {
+        let request = BGAppRefreshTaskRequest(identifier: identifier)
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 2 * 60 * 60)
+        try? BGTaskScheduler.shared.submit(request)
     }
 }
 #endif
