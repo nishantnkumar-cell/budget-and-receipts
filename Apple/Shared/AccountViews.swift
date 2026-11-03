@@ -117,7 +117,7 @@ struct AccountEditor: View {
             TextField("Name", text: $account.name, prompt: Text("e.g. Joint current account"))
             TextField("Account number (last 4 digits are enough)", text: $account.number)
             Section {
-                Picker("Whose account", selection: Binding(get: { account.owner ?? .mine }, set: { account.owner = $0 == .mine ? nil : $0 })) {
+                Picker("Whose account", selection: Binding(get: { account.owner ?? .mine }, set: { account.owner = $0 })) {
                     Text("Mine").tag(MoneyOwner.mine)
                     Text(store.couple.partnerName.isEmpty ? "Partner's" : "\(store.couple.partnerName)'s").tag(MoneyOwner.partner)
                     Text("Joint").tag(MoneyOwner.shared)
