@@ -42,6 +42,51 @@ final class AccountStoreTests: XCTestCase {
         XCTAssertEqual(store.spendingByAccount.first?.account?.id, card.id)
     }
 
+    /// A statement in the partner's name, as PDFKit reads it.
+    private let partnersStatement = [
+        "Your Current Account statement",
+        "Mrs Sara Patel",
+        "Account number 87654321   Sort code 12-34-56",
+        "Date Description Paid out Paid in Balance",
+        "01 Oct BALANCE BROUGHT FORWARD 1,200.00",
+        "03 Oct CARD PAYMENT TO TESCO STORES 3297 12.40 1,187.60",
+    ]
+
+    func testStatementInThePartnersNameIsTheirs() throws {
+        let store = BudgetStore(folder: folder)
+        var couple = CoupleSettings(partnerName: "Sara")
+        couple.ownerName = "Nishant"
+        store.updateCouple(couple)
+        let preview = try store.previewImport(pdfLines: partnersStatement)
+        XCTAssertEqual(preview.holderOwner, .partner)
+        XCTAssertEqual(preview.newTransactions.first?.owner, .partner)
+        XCTAssertEqual(preview.newTransactions.first?.paidBy, .partner)
+        store.commitImport(preview, fileName: "sara.pdf")
+        XCTAssertEqual(store.accounts.first?.owner, .partner)
+        XCTAssertEqual(store.ledger.owner(of: store.transactions[0]), .partner)
+    }
+
+    func testOwnerYouChoseStays() throws {
+        let store = BudgetStore(folder: folder)
+        store.updateCouple(CoupleSettings(partnerName: "Sara"))
+        var account = store.addAccount(name: "Current", number: "87654321")
+        account.owner = .mine
+        store.updateAccount(account)
+        let preview = try store.previewImport(pdfLines: partnersStatement)
+        XCTAssertNil(preview.newTransactions.first?.owner)
+        store.commitImport(preview, fileName: "sara.pdf")
+        XCTAssertEqual(store.accounts.first?.owner, .mine)
+    }
+
+    func testAccountsImportedBeforeThePartnerWasSetAreAssignedLater() throws {
+        let store = BudgetStore(folder: folder)
+        store.commitImport(try store.previewImport(pdfLines: partnersStatement), fileName: "sara.pdf")
+        XCTAssertNil(store.accounts.first?.owner, "With no partner set, nothing is decided")
+        store.updateCouple(CoupleSettings(partnerName: "Sara"))
+        XCTAssertEqual(store.accounts.first?.owner, .partner)
+        XCTAssertEqual(store.transactions.first?.paidBy, .partner)
+    }
+
     func testDeletingAnAccountKeepsItsTransactions() throws {
         let store = BudgetStore(folder: folder)
         store.commitImport(try store.previewImport(text: ofx, fileName: "current.ofx", mapping: nil), fileName: "current.ofx")

@@ -96,6 +96,7 @@ final class BudgetStore: ObservableObject {
         if !isWaitingForFiles {
             removeOldSharedCopies()
             recheckBillPayments()
+            assignOwnersFromHolders()
             markTransfers()
         }
     }
@@ -301,6 +302,7 @@ final class BudgetStore: ObservableObject {
         guard householdRole != .member else { return }
         couple = settings
         if !hasPartner { householdView = .together }
+        assignOwnersFromHolders()
         persist()
     }
 
@@ -353,29 +355,83 @@ final class BudgetStore: ObservableObject {
         let year = Calendar.current.component(.year, from: Date())
         let rows = try PDFStatementParser.parse(lines, fallbackYear: year)
         let bank = PDFStatementParser.accountName(in: lines)
-        var result = preview(rows, account: account, bankName: bank)
+        let holders = PDFStatementParser.holderNames(in: lines)
+        var result = preview(rows, account: account, bankName: bank, holders: holders)
         result.summaryDifference = PDFStatementParser.summaryDifference(lines, rows: rows)
         result.bankName = bank
-        result.holderNames = PDFStatementParser.holderNames(in: lines)
+        result.holderNames = holders
         return result
     }
 
-    private func preview(_ rows: [StatementRow], account: UUID?, bankName: String? = nil) -> StatementImportResult {
+    /// Whose account a statement is from, by its holders' names against the names in Settings > Couple.
+    /// Nil without a partner: with one person every account is theirs, and nothing is decided
+    /// until the partner's name is set.
+    func owner(ofHolders holders: [String]) -> MoneyOwner? {
+        guard hasPartner, !holders.isEmpty else { return nil }
+        return AccountHolders.owner(holders: holders, myName: couple.ownerName, partnerName: couple.partnerName)
+    }
+
+    /// Gives accounts with no owner chosen the one their statements' holders show, e.g. after the
+    /// partner's name is set, or for statements imported before this was read. Payments already
+    /// imported from a partner's account are marked as paid by them. Owners you chose stay.
+    @discardableResult
+    func assignOwnersFromHolders() -> Int {
+        var changed = 0
+        for index in accounts.indices where accounts[index].owner == nil {
+            guard let owner = owner(ofHolders: accounts[index].holderNames ?? []) else { continue }
+            accounts[index].owner = owner
+            changed += 1
+            guard owner == .partner else { continue }
+            let id = accounts[index].id
+            for t in transactions.indices where transactions[t].accountID == id && transactions[t].owner == nil && transactions[t].paidBy == nil {
+                transactions[t].paidBy = .partner
+            }
+        }
+        if changed > 0 { persist() }
+        return changed
+    }
+
+    private func preview(_ rows: [StatementRow], account: UUID?, bankName: String? = nil, holders: [String] = []) -> StatementImportResult {
+        // The statement's holders say whose account it is, e.g. a statement in your partner's name is theirs.
+        let holderOwner = owner(ofHolders: holders)
         proposedAccounts = []
         for number in Set(rows.compactMap(\.accountNumber)).sorted() where BankAccounts.account(forNumber: number, in: accounts) == nil {
             if BankAccounts.account(forNumber: number, in: proposedAccounts) == nil, !BankAccount.lastFour(number).isEmpty {
                 // Only the last four digits are kept: enough to recognise the account.
                 // Named after the bank on the statement, e.g. "first direct", so it reads well at once.
-                proposedAccounts.append(BankAccount(name: bankName ?? "Account", number: BankAccount.lastFour(number)))
+                var proposed = BankAccount(name: bankName ?? "Account", number: BankAccount.lastFour(number))
+                proposed.owner = holderOwner
+                proposedAccounts.append(proposed)
             }
         }
-        let known = accounts + proposedAccounts
+        // An account of yours with no owner chosen yet takes the statement's; one you set stays.
+        let touched = statementAccounts(rows, account: account)
+        let known = (accounts + proposedAccounts).map { candidate in
+            var candidate = candidate
+            if candidate.owner == nil, touched.contains(candidate.id) { candidate.owner = holderOwner }
+            return candidate
+        }
         var result = StatementImporter.prepare(rows, existing: transactions, account: account) { BankAccounts.account(forNumber: $0, in: known)?.id }
         // Fill in categories from your past choices and well-known shops; you can change any of them.
         result.newTransactions = categoriser.categorise(result.newTransactions)
         // A partner's or joint account makes its spending theirs or shared.
         result.newTransactions = BankAccounts.applyOwners(result.newTransactions, accounts: known)
+        // Lines with no account still follow the statement's holders.
+        if let holderOwner, holderOwner != .mine {
+            for index in result.newTransactions.indices where result.newTransactions[index].accountID == nil && result.newTransactions[index].owner == nil {
+                result.newTransactions[index].owner = holderOwner
+                if holderOwner == .partner { result.newTransactions[index].paidBy = .partner }
+            }
+        }
+        result.holderOwner = holderOwner
         return result
+    }
+
+    /// The saved accounts a statement is from: those its account numbers match, else the one chosen.
+    private func statementAccounts(_ rows: [StatementRow], account: UUID?) -> Set<UUID> {
+        var ids = Set(rows.compactMap(\.accountNumber).compactMap { BankAccounts.account(forNumber: $0, in: accounts)?.id })
+        if ids.isEmpty, let account { ids.insert(account) }
+        return ids
     }
 
     /// Suggests categories on the device, learning from the ones you already chose.
@@ -520,6 +576,8 @@ final class BudgetStore: ObservableObject {
             let numbers = Set(result.duplicates.compactMap(\.accountNumber).map(BankAccount.lastFour))
             for index in accounts.indices where used.contains(accounts[index].id) || numbers.contains(BankAccount.lastFour(accounts[index].number)) {
                 accounts[index].holderNames = Array(Set((accounts[index].holderNames ?? []) + result.holderNames)).sorted()
+                // Whose account it is, unless you already chose.
+                if accounts[index].owner == nil { accounts[index].owner = result.holderOwner }
             }
         }
         // Payments imported before the account was known now get it.

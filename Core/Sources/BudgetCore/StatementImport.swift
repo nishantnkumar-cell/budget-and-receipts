@@ -116,6 +116,9 @@ public struct StatementImportResult: Hashable, Sendable {
     public var bankName: String? = nil
     /// The account holders named on the statement, for recognising payments to yourselves.
     public var holderNames: [String] = []
+    /// Whose account the holders show it is (yours, your partner's or joint), matched against the
+    /// names in Settings. Nil when the statement doesn't say or the names aren't set.
+    public var holderOwner: MoneyOwner? = nil
 }
 
 public enum StatementImporter {
