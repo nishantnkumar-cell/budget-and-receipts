@@ -344,6 +344,24 @@ public enum PDFStatementParser {
             .contains(where: lower.contains)
     }
 
+    /// The account holders on a statement, from the line that shows the name next to the sort
+    /// code ("MR NEIL PATEL & MRS SARA PATEL 11-22-33 11112222"), titles removed.
+    public static func holderNames(in lines: [String]) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: "^(.+?)\\s+\\d{2}-\\d{2}-\\d{2}\\s+\\d{8}\\b") else { return [] }
+        let titles: Set<String> = ["MR", "MRS", "MS", "MISS", "DR", "MX"]
+        for line in lines.prefix(80) {
+            guard let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+                  let range = Range(match.range(at: 1), in: line) else { continue }
+            let people = line[range].uppercased()
+                .replacingOccurrences(of: " AND ", with: "&")
+                .split(separator: "&")
+                .map { $0.split(separator: " ").filter { !titles.contains(String($0)) }.joined(separator: " ") }
+                .filter { $0.split(separator: " ").count >= 2 && !$0.contains(where: \.isNumber) }
+            if !people.isEmpty { return people }
+        }
+        return []
+    }
+
     /// The bank or card company named on a statement, e.g. "first direct" or "Capital One".
     /// first direct statements also mention HSBC (its parent), so it's checked first.
     public static func bankName(in lines: [String]) -> String? {

@@ -97,6 +97,6 @@ final class ManualEntryAndResetTests: XCTestCase {
         let reopened = BudgetStore(folder: folder)
         XCTAssertTrue(reopened.transactions.isEmpty && reopened.accounts.isEmpty && reopened.budgets.isEmpty && reopened.pendingReceipts.isEmpty)
         XCTAssertGreaterThan(changed, 4, "iCloud sync hears about the reset")
-        XCTAssertTrue(store.syncRecords().allSatisfy { $0.collection == "couple" }, "Only the default couple settings are left to sync")
+        XCTAssertTrue(store.syncRecords().allSatisfy { $0.collection == "couple" || $0.collection == "rules" }, "Only the default couple settings and starter rules are left to sync")
     }
 }

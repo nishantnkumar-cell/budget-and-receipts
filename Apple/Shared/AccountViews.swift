@@ -41,7 +41,7 @@ struct AccountSpendingCard: View {
 
     var body: some View {
         let rows = store.spendingByAccount
-        if rows.filter({ $0.account != nil }).count > 1 {
+        if !store.selectedMonthIsEmpty, rows.filter({ $0.account != nil }).count > 1 {
             VStack(alignment: .leading, spacing: 10) {
                 CardHeader("Spending by account")
                 ForEach(rows, id: \.account?.id) { row in
