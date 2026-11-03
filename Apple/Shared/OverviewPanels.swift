@@ -89,7 +89,7 @@ struct OverviewKeyNumbers: View {
         let spentInBudgets = report.lines.filter { $0.limit != nil }.reduce(0) { $0 + $1.spent }
         let safe = store.safeToSpend(contracts: subscriptions.contracts)
         let pace = SpendingPacePanel.cumulative(store.viewTransactions, month: store.selectedMonth, calculator: store.calculator)
-        let due = SubscriptionTracker().dueSoon(subscriptions.contracts, from: Date(), days: 30)
+        let due = SubscriptionTracker().dueSoon(store.bills(subscriptions.contracts), from: Date(), days: 30)
         let dueTotal = due.filter { $0.currency == AppSettings.currency }.reduce(0) { $0 + $1.expectedAmount }
         if budgeted > 0 {
             KeyNumberTile(title: "Left to spend", symbol: "banknote", value: (budgeted - spentInBudgets).money,
@@ -415,7 +415,7 @@ struct NextDaysPanel: View {
     @EnvironmentObject var subscriptions: SubscriptionStore
 
     var body: some View {
-        let due = SubscriptionTracker().dueSoon(subscriptions.contracts, from: Date(), days: 7)
+        let due = SubscriptionTracker().dueSoon(store.bills(subscriptions.contracts), from: Date(), days: 7)
             .sorted { $0.nextPaymentDueDate < $1.nextPaymentDueDate }
         let rises = subscriptions.priceRises(transactions: store.transactions)
         OverviewPanel(title: "Next 7 days", symbol: "calendar") {
