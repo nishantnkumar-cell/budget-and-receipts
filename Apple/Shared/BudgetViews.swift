@@ -19,6 +19,7 @@ struct BudgetsView: View {
         ScrollView {
             VStack(spacing: Theme.spacing) {
                 HouseholdSwitcher()
+                EmptyMonthNotice()
                 HStack {
                     Spacer()
                     MonthSwitcher()
@@ -121,6 +122,7 @@ struct BudgetLimitSheet: View {
                 } footer: {
                     Text("Applies from \(store.selectedMonth.formatted(.dateTime.month(.wide).year())) until you change it. With roll over on, money you don't spend is added to next month's limit.")
                 }
+                SubcategoryBreakdown(category: line.category)
             }
             .formStyle(.grouped)
             .navigationTitle(line.category)
@@ -142,7 +144,7 @@ struct BudgetLimitSheet: View {
             limitText = line.limit.map { "\($0)" } ?? ""
             rollover = currentRollover
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
         #if os(macOS)
         .frame(minWidth: 380, minHeight: 240)
         #endif

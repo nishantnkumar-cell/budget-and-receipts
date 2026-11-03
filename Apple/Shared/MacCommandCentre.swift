@@ -96,7 +96,7 @@ struct MacSidebar: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .help(store.accountFilter == account.id ? "Show all accounts" : "Show only this account")
+                        .help("Spent in \(store.selectedMonth.formatted(.dateTime.month(.wide))). Click to \(store.accountFilter == account.id ? "show all accounts" : "show only this account").")
                     }
                 }
             }
@@ -174,7 +174,11 @@ struct MacOverview: View {
     var body: some View {
         let report = store.monthReport
         VStack(spacing: 16) {
-            MacKeyNumbers(report: report)
+            if store.selectedMonthIsEmpty {
+                EmptyMonthNotice()
+            } else {
+                MacKeyNumbers(report: report)
+            }
             HStack(alignment: .top, spacing: 16) {
                 MacSpendingPace(report: report)
                 VStack(spacing: 16) {
@@ -274,7 +278,8 @@ struct MacKeyNumbers: View {
                 }
                 MacKeyNumber(title: "Safe to spend today", symbol: "gauge.with.dots.needle.33percent",
                              value: safe?.today.money ?? "–",
-                             caption: safe.map { "\($0.daysLeft) days to go" } ?? "Set a budget to see this",
+                             caption: safe.map { "\($0.daysLeft) days to go" }
+                                ?? (Calendar.current.isDate(store.selectedMonth, equalTo: Date(), toGranularity: .month) ? "Set a budget to see this" : "Only for the current month"),
                              tint: .brandPink)
                 if store.hasPartner {
                     let balance = store.coupleBalance
@@ -287,7 +292,7 @@ struct MacKeyNumbers: View {
                                  caption: "this month", tint: .green)
                 }
                 MacKeyNumber(title: "Bills, next 30 days", symbol: "calendar", value: dueTotal.money,
-                             caption: due.count == 1 ? "1 payment" : "\(due.count) payments", tint: .brandAmber)
+                             caption: subscriptions.contracts.isEmpty ? "Add your bills in Plan" : (due.count == 1 ? "1 payment" : "\(due.count) payments"), tint: .brandAmber)
                 if !store.wealthAccounts.isEmpty {
                     MacKeyNumber(title: "Net worth", symbol: "chart.line.uptrend.xyaxis", value: store.netWorth.wholeMoney,
                                  caption: netWorthCaption, tint: .brandTeal)
@@ -559,8 +564,10 @@ struct MacRecentActivity: View {
     @State private var selected: BankTransaction.ID?
     @State private var editing: BankTransaction?
 
+    /// The month on screen, like everything else on the Overview (all months are in Activity).
     private var rows: [BankTransaction] {
         store.transactions
+            .filter { store.calculator.isInMonth($0.date, store.selectedMonth) }
             .filter { store.accountFilter == nil || $0.accountID == store.accountFilter }
             .filter { !store.hasPartner || store.householdView.includes(store.ledger.owner(of: $0)) }
             .filter { query.isEmpty || $0.merchant.localizedCaseInsensitiveContains(query) || $0.category.localizedCaseInsensitiveContains(query)
@@ -569,7 +576,7 @@ struct MacRecentActivity: View {
     }
 
     var body: some View {
-        MacPanel(title: "Recent activity", symbol: "list.bullet.rectangle") {
+        MacPanel(title: "\(store.selectedMonth.formatted(.dateTime.month(.wide))) activity", symbol: "list.bullet.rectangle") {
             Button("See All") { selection = .activity }.buttonStyle(.borderless)
         } content: {
             Table(rows, selection: $selected) {
@@ -593,7 +600,7 @@ struct MacRecentActivity: View {
                 TableColumn("Category") { transaction in
                     HStack(spacing: 6) {
                         Circle().fill(MacPalette.category(transaction.category)).frame(width: 7, height: 7)
-                        Text(transaction.category).lineLimit(1)
+                        Text(FinanceCategories.label(transaction.category, transaction.subcategory)).lineLimit(1)
                     }
                 }
                 .width(min: 110, ideal: 150)
@@ -627,9 +634,9 @@ struct MacRecentActivity: View {
             .frame(minHeight: 220, maxHeight: .infinity)
             .overlay {
                 if rows.isEmpty {
-                    ContentUnavailableView(query.isEmpty ? "No transactions yet" : "No results",
+                    ContentUnavailableView(query.isEmpty ? "No payments this month" : "No results",
                                            systemImage: query.isEmpty ? "list.bullet.rectangle" : "magnifyingglass",
-                                           description: Text(query.isEmpty ? "Import a statement or add a receipt." : "Try another shop or category."))
+                                           description: Text(query.isEmpty ? "Import a statement for this month, or see every month in Activity." : "Try another shop or category."))
                 }
             }
         }

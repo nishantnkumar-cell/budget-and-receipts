@@ -88,6 +88,19 @@ struct SettingsView: View {
             } footer: {
                 Text("Asks for Face ID or your passcode, then for the word ERASE, before deleting anything.")
             }
+            Section {
+                NavigationLink { RulesView() } label: {
+                    LabeledContent {
+                        Text("\(store.rules.filter(\.isEnabled).count) on").foregroundStyle(.secondary)
+                    } label: {
+                        Label("Category Rules", systemImage: "list.bullet.rectangle.portrait")
+                    }
+                }
+            } header: {
+                Text("Categories")
+            } footer: {
+                Text("Rules sort payments into categories and sub-categories automatically, e.g. Tesco → Groceries › Supermarket.")
+            }
             Section("Export") {
                 NavigationLink { ExpenseReportView() } label: { Label("Expense Report", systemImage: "doc.text.below.ecg") }
                 Button("Export All Transactions (CSV)") { exportingCSV = true }

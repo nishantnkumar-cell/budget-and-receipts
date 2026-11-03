@@ -16,9 +16,15 @@ struct HomeView: View {
                     Spacer()
                     MonthSwitcher()
                 }
-                LeftToSpendCard(report: report, month: store.selectedMonth,
-                                safeToSpend: store.safeToSpend(contracts: subscriptions.contracts))
-                BalanceForecastLine()
+                if store.selectedMonthIsEmpty {
+                    // Budgets and averages alone aren't what happened: say there's nothing yet.
+                    EmptyMonthNotice()
+                } else {
+                    LeftToSpendCard(report: report, month: store.selectedMonth,
+                                    safeToSpend: store.safeToSpend(contracts: subscriptions.contracts),
+                                    coverageNote: store.coverageNote)
+                    BalanceForecastLine()
+                }
                 CoupleBalanceCard()
                 AccountSpendingCard()
                 if !store.needsReview.isEmpty {
@@ -27,7 +33,7 @@ struct HomeView: View {
                 }
                 // Shared statements wait here to be reviewed, even when the Inbox has nothing else.
                 SharedDocumentsBanner(onHome: true)
-                topBudgets(report)
+                if !store.selectedMonthIsEmpty { topBudgets(report) }
                 ComingUpCard()
                 NetWorthCard()
             }
@@ -75,6 +81,8 @@ struct LeftToSpendCard: View {
     let report: MonthlyBudgetReport
     let month: Date
     var safeToSpend: SafeToSpend?
+    /// "Payments up to 22 Oct" while the month's statements are incomplete.
+    var coverageNote: String?
 
     private var budgeted: Decimal { report.lines.compactMap(\.limit).reduce(0, +) }
     private var spentInBudgets: Decimal { report.lines.filter { $0.limit != nil }.reduce(0) { $0 + $1.spent } }
@@ -98,6 +106,9 @@ struct LeftToSpendCard: View {
                     Text((budgeted - spentInBudgets).money)
                         .font(.system(size: 36, weight: .bold, design: .rounded))
                     Text(subtitle).font(.subheadline).opacity(0.8)
+                    if let coverageNote {
+                        Label(coverageNote, systemImage: "calendar").font(.caption).opacity(0.7)
+                    }
                     if let safeToSpend {
                         Text("\(safeToSpend.today.money) safe to spend today")
                             .font(.subheadline.weight(.semibold))
@@ -109,6 +120,9 @@ struct LeftToSpendCard: View {
                     Text(report.spending.money)
                         .font(.system(size: 36, weight: .bold, design: .rounded))
                     Text("Income \(report.income.money)").font(.subheadline).opacity(0.8)
+                    if let coverageNote {
+                        Label(coverageNote, systemImage: "calendar").font(.caption).opacity(0.7)
+                    }
                 }
             }
             .minimumScaleFactor(0.6)

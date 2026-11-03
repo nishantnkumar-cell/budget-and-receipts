@@ -96,6 +96,9 @@ struct MonthReviewView: View {
     var body: some View {
         let review = store.monthReview
         List {
+            if store.selectedMonthIsEmpty {
+                Section { EmptyMonthNotice().listRowInsets(EdgeInsets()) }
+            }
             Section {
                 LabeledContent("Money in") { Text(review.income.money).monospacedDigit().foregroundStyle(.green) }
                 LabeledContent("Spent") { Text(review.spending.money).monospacedDigit().fontWeight(.semibold) }
@@ -235,6 +238,31 @@ struct BalanceForecastLine: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 4)
             .accessibilityElement(children: .combine)
+        }
+    }
+}
+
+/// Shown instead of a month's figures when it has no payments: "No payments for November yet".
+struct EmptyMonthNotice: View {
+    @EnvironmentObject var store: BudgetStore
+
+    var body: some View {
+        if store.selectedMonthIsEmpty {
+            let month = store.selectedMonth.formatted(.dateTime.month(.wide))
+            let latest = store.latestPaymentDate
+            VStack(alignment: .leading, spacing: 10) {
+                Label("No payments for \(month)", systemImage: "calendar.badge.exclamationmark")
+                    .font(.headline)
+                Text(latest.map { "Your statements go up to \($0.formatted(.dateTime.day().month(.wide).year())). Import a newer statement to see \(month), or look at the latest month you have." }
+                     ?? "Import a statement to see this month.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                if let latest {
+                    Button("Show \(latest.formatted(.dateTime.month(.wide)))") { store.showLatestMonthWithPayments() }
+                        .buttonStyle(.borderedProminent)
+                }
+            }
+            .card()
         }
     }
 }

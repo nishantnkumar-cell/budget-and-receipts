@@ -115,9 +115,7 @@ struct TransactionEditor: View {
             TextField("Merchant", text: $transaction.merchant)
             TextField("Description", text: $transaction.description)
             SignedAmountField(amount: $transaction.amount)
-            Picker("Category", selection: $transaction.category) {
-                ForEach(FinanceCategories.all, id: \.self) { Text($0).tag($0) }
-            }
+            CategoryPickers(category: $transaction.category, subcategory: $transaction.subcategory)
             if !store.accounts.isEmpty {
                 AccountPicker(selection: $transaction.accountID)
             }
@@ -126,6 +124,7 @@ struct TransactionEditor: View {
             Section("Receipt") {
                 NavigationLink("Scan or review receipt") { ReceiptView(transaction: transaction) }
             }
+            Section { MakeRuleButton(transaction: transaction) }
             TransactionTagsSection(tags: Binding(get: { transaction.tags ?? [] }, set: { transaction.tags = $0.isEmpty ? nil : $0 }))
             TransactionNotesSection(transaction: transaction)
             Section {
