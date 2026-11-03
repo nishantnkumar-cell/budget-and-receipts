@@ -43,7 +43,9 @@ public enum MerchantCategories {
     /// A category from an AI answer, only if it is one of ours and a real choice.
     public static func validated(_ answer: String?) -> String? {
         guard let answer = answer?.trimmingCharacters(in: .whitespacesAndNewlines) else { return nil }
-        let match = FinanceCategories.all.first { $0.caseInsensitiveCompare(answer) == .orderedSame }
+        let named = FinanceCategories.all.first { $0.caseInsensitiveCompare(answer) == .orderedSame }
+            ?? CategoryCatalog.builtIn.first { $0.id.caseInsensitiveCompare(answer) == .orderedSame }.map { FinanceCategories.resolve($0.id) }
+        let match = named.flatMap { FinanceCategories.all.contains($0) ? $0 : nil }
         guard let match, match != "Uncategorised", !BudgetCalculator.transferCategories.contains(match) else { return nil }
         return match
     }

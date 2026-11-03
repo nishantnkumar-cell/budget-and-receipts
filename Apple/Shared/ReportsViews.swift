@@ -355,32 +355,20 @@ struct Sparkline: View {
 
 struct CategoryIcon: View {
     let category: String
+    var size: CGFloat = 32
 
     var body: some View {
-        IconBadge(systemImage: Self.symbol(for: category), size: 32)
+        IconBadge(systemImage: Self.symbol(for: category), tint: Self.tint(for: category), size: size)
     }
 
+    /// The icon chosen in Settings › Categories.
     static func symbol(for category: String) -> String {
-        switch category {
-        case "Housing": "house"
-        case "Bills & utilities": "bolt"
-        case "Groceries": "cart"
-        case "Eating out": "fork.knife"
-        case "Transport": "car"
-        case "Shopping": "bag"
-        case "Health": "cross.case"
-        case "Personal care": "comb"
-        case "Family": "figure.2.and.child.holdinghands"
-        case "Entertainment": "ticket"
-        case "Subscriptions": "repeat"
-        case "Travel": "airplane"
-        case "Education": "graduationcap"
-        case "Gifts & charity": "gift"
-        case "Cash": "banknote"
-        case "Fees & charges": "percent"
-        case "Savings & investments": "building.columns"
-        default: "questionmark.circle"
-        }
+        FinanceCategories.catalog.definition(named: category)?.symbol ?? "questionmark.circle"
+    }
+
+    /// The colour chosen in Settings › Categories.
+    static func tint(for category: String) -> Color {
+        FinanceCategories.catalog.definition(named: category)?.color.swatch ?? .gray
     }
 }
 

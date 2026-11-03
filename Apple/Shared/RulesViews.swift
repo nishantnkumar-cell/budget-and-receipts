@@ -52,7 +52,7 @@ struct RulesView: View {
         .navigationTitle("Rules")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button { editing = CategoryRule(name: "", conditions: [.init(.description, .contains)], category: "Groceries") } label: {
+                Button { editing = CategoryRule(name: "", conditions: [.init(.description, .contains)], category: FinanceCategories.resolve("Groceries")) } label: {
                     Label("Add Rule", systemImage: "plus")
                 }
             }
@@ -239,7 +239,7 @@ struct MakeRuleButton: View {
 
     var body: some View {
         Button {
-            draft = RulesEngine.rule(from: transaction, category: transaction.category == "Uncategorised" ? "Groceries" : transaction.category, subcategory: transaction.subcategory)
+            draft = RulesEngine.rule(from: transaction, category: transaction.category == "Uncategorised" ? FinanceCategories.resolve("Groceries") : transaction.category, subcategory: transaction.subcategory)
         } label: {
             Label("Make a Rule for Payments Like This", systemImage: "wand.and.stars")
         }
