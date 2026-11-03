@@ -246,13 +246,36 @@ public enum RulesEngine {
         return CategoryRule(id: id, name: name, conditions: conditions, category: category, subcategory: subcategory, isStarter: true)
     }
 
+    static let cardRepaymentWords = "PAYMENT THANK YOU, PAYMENT THANKYOU, PAYMENT RECEIVED THANK YOU, DIRECT DEBIT PAYMENT"
+    static let ownAccountWords = "REVOLUT, MONZO, STARLING"
+
+    /// Starter rules as earlier versions shipped them, which counted real money as transfers.
+    static let retiredStarterRules: [CategoryRule] = [
+        starter("Credit card repayments", "PAYMENT THANK YOU, PAYMENT RECEIVED, DIRECT DEBIT PAYMENT, PAYMENT THANKYOU", "Card payment", "Credit card repayment", money: .isMoneyIn),
+        starter("Moving money to your own accounts", "REVOLUT, MONZO, STARLING, WISE", "Internal transfer", "Between accounts", money: .isMoneyOut),
+    ]
+
+    /// Saved starter rules brought up to date when they are exactly as an earlier version
+    /// shipped them. A starter rule you changed, or turned off, keeps your version.
+    public static func refreshingStarterRules(_ saved: [CategoryRule]) -> [CategoryRule] {
+        saved.map { rule in
+            guard rule.isStarter,
+                  let retired = retiredStarterRules.first(where: { $0.id == rule.id }), retired.conditions == rule.conditions,
+                  let current = starterRules.first(where: { $0.id == rule.id }) else { return rule }
+            var updated = rule
+            updated.conditions = current.conditions
+            return updated
+        }
+    }
+
     /// The rules a new household starts with: common UK banks' codes and well-known shops.
     public static let starterRules: [CategoryRule] = [
         // Cash first: "ATM CASH ... TESCO" is a cash machine at Tesco, not a grocery shop.
         starter("Cash machines", "ATM, CASH WITHDRAWAL, CASHPOINT, CASH MACHINE, LNK, ATM CASH, CSH", "Cash", "ATM withdrawal", money: .isMoneyOut),
         starter("Cashback", "CASHBACK, CASH BACK", "Cash", "Cashback", money: .isMoneyOut),
         // Money moving between your own accounts and cards is neither spending nor income.
-        starter("Credit card repayments", "PAYMENT THANK YOU, PAYMENT RECEIVED, DIRECT DEBIT PAYMENT, PAYMENT THANKYOU", "Card payment", "Credit card repayment", money: .isMoneyIn),
+        // Not "PAYMENT RECEIVED" alone: on a current account that is money from someone else.
+        starter("Credit card repayments", cardRepaymentWords, "Card payment", "Credit card repayment", money: .isMoneyIn),
         starter("Card bills paid from the bank", "BARCLAYCARD, AMEX, AMERICAN EXPRESS, CAPITAL ONE, HSBC CARD PYMT, MBNA, CARD PYMT", "Card payment", "Credit card repayment", money: .isMoneyOut),
         starter("Pay", "SALARY, PAYROLL, WAGES", "Income", "Salary", money: .isMoneyIn),
         starter("Interest", "INTEREST, GROSS INTEREST", "Income", "Interest", money: .isMoneyIn),
@@ -305,7 +328,8 @@ public enum RulesEngine {
         starter("Bank charges", "CHARGES, OVERDRAFT FEE, ACCOUNT FEE, MONTHLY FEE", "Fees & charges", "Bank charges", money: .isMoneyOut),
         starter("Foreign transaction fees", "NON STERLING, NON STG, FOREIGN TRANSACTION FEE, FX FEE", "Fees & charges", "Foreign transaction fees", money: .isMoneyOut),
         starter("Interest charged", "INTEREST CHARGED, PURCHASE INTEREST, CASH INTEREST", "Fees & charges", "Interest charged", money: .isMoneyOut),
-        starter("Moving money to your own accounts", "REVOLUT, MONZO, STARLING, WISE", "Internal transfer", "Between accounts", money: .isMoneyOut),
+        // Not Wise: it is mostly used to pay other people abroad.
+        starter("Moving money to your own accounts", ownAccountWords, "Internal transfer", "Between accounts", money: .isMoneyOut),
         starter("Games", "PLAYSTATION, XBOX, STEAM, NINTENDO", "Subscriptions", "Apps and games", money: .isMoneyOut),
         starter("Software and AI", "ANTHROPIC, OPENAI, CHATGPT, MICROSOFT, ADOBE, CANVA", "Subscriptions", "Apps and games", money: .isMoneyOut),
         starter("Memberships", "PATREON, NATIONAL TRUST, ENGLISH HERITAGE", "Subscriptions", "Memberships", money: .isMoneyOut),

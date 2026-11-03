@@ -1,0 +1,19 @@
+name: BudgetCore tests
+
+# The money rules in Core/ are Foundation-only, so their tests run on Linux on every pull request.
+on:
+  pull_request:
+    paths: ["Core/**", ".github/workflows/core-tests.yml"]
+  push:
+    branches: [main]
+    paths: ["Core/**"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container: swift:6.2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tests
+        working-directory: Core
+        run: swift test
