@@ -174,3 +174,25 @@ struct MonthSwitcher: View {
         .controlSize(.small)
     }
 }
+
+extension CategoryColor {
+    /// Category colours on the Graphite and violet theme: the brand colours first, then
+    /// system colours that read well on light and dark.
+    var swatch: Color {
+        switch self {
+        case .violet: .brandPlum
+        case .magenta: .brandPartner
+        case .teal: .brandTeal
+        case .amber: .brandAmber
+        case .pink: .brandPink
+        case .green: .green
+        case .blue: .blue
+        case .orange: .orange
+        case .red: .red
+        case .indigo: .indigo
+        case .mint: .mint
+        case .brown: .brown
+        case .graphite: .gray
+        }
+    }
+}

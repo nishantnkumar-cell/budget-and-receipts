@@ -58,7 +58,22 @@ public struct Categoriser: Sendable {
 
     // MARK: Suggestions
 
+    /// Suggestions use the household's category names: a built-in name a rule, look-up or the
+    /// keyword list still uses follows a rename or deletion in Settings › Categories.
+    static func resolved(_ suggestion: CategorySuggestion?) -> CategorySuggestion? {
+        guard let suggestion else { return nil }
+        let now = FinanceCategories.catalog.resolve(category: suggestion.category, subcategory: suggestion.subcategory)
+        guard now.category != suggestion.category || now.subcategory != suggestion.subcategory else { return suggestion }
+        var result = CategorySuggestion(category: now.category, confidence: suggestion.confidence, source: suggestion.source)
+        result.subcategory = now.subcategory
+        return result
+    }
+
     public func suggest(for transaction: BankTransaction) -> CategorySuggestion? {
+        Self.resolved(unresolvedSuggestion(for: transaction))
+    }
+
+    private func unresolvedSuggestion(for transaction: BankTransaction) -> CategorySuggestion? {
         // Your own rules decide first, then what you chose for this shop before, then the
         // starter rules: a choice you made yourself always beats a built-in guess.
         let accountName = transaction.accountID.flatMap { accountNames[$0] }
@@ -116,12 +131,16 @@ public struct Categoriser: Sendable {
         })
         candidates.append(Self.match(Self.matchWords(purchase.merchant + " " + purchase.description), Self.merchantKeywords).map { CategorySuggestion(category: $0, confidence: 0.5, source: .keyword) })
         candidates.append(lookedUp[Self.merchantKey(purchase.merchant)].map { CategorySuggestion(category: $0.category, confidence: 0.4, source: .lookedUp) })
-        return candidates.compactMap { $0 }.first { spending.contains($0.category) }
+        return candidates.compactMap(Self.resolved).first { spending.contains($0.category) }
     }
 
     /// Item suggestions use what you called similar items before, then common grocery and
     /// chemist words, then the shop: an item from a supermarket is most likely groceries.
     public func suggest(forItem description: String, merchant: String = "") -> CategorySuggestion? {
+        Self.resolved(unresolvedItemSuggestion(forItem: description, merchant: merchant))
+    }
+
+    private func unresolvedItemSuggestion(forItem description: String, merchant: String) -> CategorySuggestion? {
         if let learned = Self.best(itemVotes[Self.itemKey(description)]) { return learned }
         if let keyword = Self.match(Self.words(description), Self.itemKeywords) {
             return CategorySuggestion(category: keyword, confidence: 0.6, source: .keyword)

@@ -3,9 +3,9 @@ import Foundation
 // MARK: Sub-categories
 
 public extension FinanceCategories {
-    /// The sub-categories of each category. Budgets stay at the category level; sub-categories
+    /// The built-in sub-categories of each category. Budgets stay at the category level; sub-categories
     /// show where the money inside a category went.
-    static let subcategories: [String: [String]] = [
+    static let defaultSubcategories: [String: [String]] = [
         "Housing": ["Rent", "Mortgage", "Repairs", "Furniture", "Service charge"],
         "Bills & utilities": ["Energy", "Water", "Phone", "Broadband", "Council tax", "Insurance", "TV licence", "Other bills"],
         "Groceries": ["Supermarket", "Convenience store", "Specialist", "Online grocery"],
@@ -29,7 +29,7 @@ public extension FinanceCategories {
     ]
 
     /// The sub-categories for a category, or none.
-    static func subcategories(of category: String) -> [String] { subcategories[category] ?? [] }
+    static func subcategories(of category: String) -> [String] { catalog.subcategories(of: category) }
 
     /// "Groceries › Supermarket", or just the category.
     static func label(_ category: String, _ subcategory: String?) -> String {
