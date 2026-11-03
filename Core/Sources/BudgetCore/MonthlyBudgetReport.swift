@@ -158,10 +158,13 @@ public struct BudgetCalculator: Sendable {
         return current.limit + (previousLimit - previousSpent)
     }
 
+    /// Money earned: credits that aren't transfers or refunds. A refund the app couldn't put
+    /// back in its shop's category (Income › Refund) is money back, not earnings.
     private func isIncome(_ transaction: BankTransaction) -> Bool {
         transaction.amount > 0
             && !Self.transferCategories.contains(transaction.category)
             && !FinanceCategories.budgetable.contains(transaction.category)
+            && !(transaction.category == "Income" && transaction.subcategory == "Refund")
     }
 
     /// Signed spending per category: positive for a purchase, negative for a refund.
