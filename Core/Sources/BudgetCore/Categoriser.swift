@@ -55,7 +55,12 @@ public struct Categoriser: Sendable {
         if let learned = Self.best(merchantVotes[Self.merchantKey(transaction.merchant)]) { return learned }
         let words = Self.words(transaction.merchant + " " + transaction.description)
         if transaction.amount > 0 {
-            return Self.match(words, Self.incomeKeywords).map { CategorySuggestion(category: $0, confidence: 0.6, source: .keyword) }
+            if let income = Self.match(words, Self.incomeKeywords) { return CategorySuggestion(category: income, confidence: 0.6, source: .keyword) }
+            // A credit card's statement thanks you for the payment from your bank account.
+            if Self.match(words, Self.cardRepaymentKeywords) != nil { return CategorySuggestion(category: "Card payment", confidence: 0.7, source: .keyword) }
+            // "CR" marks money in on bank statements; a sizeable one from a company is pay.
+            if words.first == "CR", transaction.amount >= 200 { return CategorySuggestion(category: "Income", confidence: 0.5, source: .keyword) }
+            return nil
         }
         if let keyword = Self.match(words, Self.merchantKeywords) {
             return CategorySuggestion(category: keyword, confidence: 0.6, source: .keyword)
@@ -139,17 +144,21 @@ public struct Categoriser: Sendable {
         ("Income", ["SALARY", "PAYROLL", "WAGES", "HMRC", "DIVIDEND", "INTEREST", "PENSION"])
     ]
 
+    static let cardRepaymentKeywords: [(String, [String])] = [
+        ("Card payment", ["PAYMENT THANK YOU", "PAYMENT RECEIVED", "DIRECT DEBIT PAYMENT", "PAYMENT THANKYOU"])
+    ]
+
     static let merchantKeywords: [(String, [String])] = [
         ("Groceries", ["TESCO", "SAINSBURYS", "ASDA", "ALDI", "LIDL", "WAITROSE", "MORRISONS", "CO OP", "COOP", "OCADO", "ICELAND", "M S SIMPLY FOOD", "SPAR"]),
         ("Eating out", ["PRET", "COSTA", "STARBUCKS", "MCDONALDS", "GREGGS", "NANDOS", "DELIVEROO", "JUST EAT", "UBER EATS", "WAGAMAMA", "KFC", "PIZZA", "CAFE", "RESTAURANT"]),
         ("Subscriptions", ["NETFLIX", "SPOTIFY", "DISNEY", "APPLE COM BILL", "PRIME VIDEO", "YOUTUBE", "AUDIBLE", "ICLOUD"]),
         ("Transport", ["UBER", "TFL", "TRAINLINE", "LNER", "GWR", "SHELL", "BP", "ESSO", "TEXACO", "PARKING", "RINGGO", "BOLT"]),
-        ("Bills & utilities", ["BRITISH GAS", "OCTOPUS", "EDF", "EON", "OVO", "THAMES WATER", "COUNCIL TAX", "VODAFONE", "EE", "O2", "THREE", "VIRGIN MEDIA", "SKY", "BT", "TV LICENCE"]),
+        ("Bills & utilities", ["BRITISH GAS", "OCTOPUS", "EDF", "EON", "OVO", "THAMES WATER", "COUNCIL TAX", "VODAFONE", "EE", "O2", "THREE", "VIRGIN MEDIA", "SKY", "BT", "TV LICENCE", "TV LICENSING", "ID MOBILE", "GIFFGAFF", "SMARTY", "TALKTALK", "PLUSNET", "LEBARA", "LYCAMOBILE", "TESCO MOBILE", "HYPEROPTIC", "COMMUNITYFIBRE"]),
         ("Housing", ["RENT", "MORTGAGE", "LETTINGS"]),
         ("Health", ["BOOTS", "SUPERDRUG", "PHARMACY", "DENTAL", "DENTIST", "OPTICIANS", "SPECSAVERS", "GYM", "PUREGYM"]),
-        ("Shopping", ["AMAZON", "AMZN", "ARGOS", "IKEA", "JOHN LEWIS", "PRIMARK", "NEXT", "EBAY", "CURRYS", "ZARA", "H M"]),
+        ("Shopping", ["AMAZON", "AMZN", "ARGOS", "IKEA", "JOHN LEWIS", "PRIMARK", "NEXT", "EBAY", "CURRYS", "ZARA", "H M", "TK MAXX", "TKMAXX", "TJ MAXX", "HOMESENSE", "DUNELM", "B Q", "HOMEBASE", "WILKO", "POUNDLAND", "HOME BARGAINS", "SPORTS DIRECT", "DECATHLON", "GARDEN CENTRE", "PLANT CENTR", "PLANT CENTRE", "VINTED", "ETSY", "SHEIN", "TEMU"]),
         ("Travel", ["AIRBNB", "BOOKING COM", "EASYJET", "RYANAIR", "BRITISH AIRWAYS", "JET2", "PREMIER INN", "HOTEL", "EXPEDIA"]),
-        ("Savings & investments", ["VANGUARD", "TRADING 212", "MONEYBOX", "ISA", "NUTMEG", "FREETRADE"])
+        ("Savings & investments", ["VANGUARD", "TRADING 212", "MONEYBOX", "ISA", "NUTMEG", "FREETRADE", "NS I", "NSI", "PREMIUM BONDS", "HARGREAVES LANSDOWN", "AJ BELL"])
     ]
 
     static let itemKeywords: [(String, [String])] = [
