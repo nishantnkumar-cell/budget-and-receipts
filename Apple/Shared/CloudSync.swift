@@ -3,6 +3,7 @@ import CloudKit
 import CryptoKit
 import Foundation
 import ImageIO
+import OSLog
 import UniformTypeIdentifiers
 
 /// What iCloud sync last did, for Settings.
@@ -208,6 +209,13 @@ actor CloudSync: CKSyncEngineDelegate {
         let account = (try? await container.accountStatus()).map(Self.describe) ?? "unknown"
         log("Start. iCloud account: \(account). Waiting to send: \(pendingCount).")
         // A direct request, outside the sync engine, to tell "iCloud unreachable" from "engine stuck".
+        #if DEBUG
+        Task { [stateFolder] in
+            // If iCloud hasn't answered in 40 seconds, keep CloudKit's own messages for diagnosis.
+            try? await Task.sleep(for: .seconds(40))
+            Self.dumpCloudKitLog(to: stateFolder.appendingPathComponent("cloudkit-log.txt"))
+        }
+        #endif
         Task { [container] in
             let started = Date()
             do {
@@ -846,6 +854,23 @@ actor CloudSync: CKSyncEngineDelegate {
         if lines.count > 300 { lines.removeFirst(lines.count - 300) }
         try? (lines.joined(separator: "\n") + "\n").write(to: url, atomically: true, encoding: .utf8)
     }
+
+    #if DEBUG
+    /// Testing only: CloudKit's own log messages from this run of the app, to a file.
+    nonisolated static func dumpCloudKitLog(to url: URL) {
+        guard let store = try? OSLogStore(scope: .currentProcessIdentifier) else { return }
+        let start = store.position(date: Date().addingTimeInterval(-180))
+        let entries = (try? store.getEntries(at: start)) ?? AnySequence([])
+        var lines: [String] = []
+        for case let entry as OSLogEntryLog in entries {
+            let subsystem = entry.subsystem.lowercased()
+            guard subsystem.contains("cloudkit") || subsystem.contains("ckks") || subsystem.contains("apsd") || entry.category.lowercased().contains("network") else { continue }
+            lines.append("\(entry.date.formatted(.iso8601)) [\(entry.subsystem)/\(entry.category)] \(entry.composedMessage)")
+        }
+        let text = lines.suffix(400).joined(separator: "\n")
+        try? (text.isEmpty ? "No CloudKit messages found." : text).write(to: url, atomically: true, encoding: .utf8)
+    }
+    #endif
 
     static func describe(_ error: Error) -> String {
         guard let error = error as? CKError else { return error.localizedDescription }
