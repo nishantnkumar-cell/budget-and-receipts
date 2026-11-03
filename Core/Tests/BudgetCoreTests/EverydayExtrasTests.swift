@@ -87,4 +87,13 @@ final class PaydayTagsForecastTests: XCTestCase {
         XCTAssertEqual(forecast?.endOfMonth, 1_500 - 1_000 - 200 + 2_000)
         XCTAssertEqual(forecast?.goesOverdrawn, false)
     }
+    func testForecastDoesntCountBillsTwiceOrAssume90Days() {
+        // 30 days of statements: £10 a day of shopping, plus rent paid last month.
+        var history = (1...30).map { BankTransaction(date: calendar.date(byAdding: .day, value: -$0, to: day(11, 11))!, merchant: "SHOP", amount: -10, category: "Groceries", fingerprint: "\($0)") }
+        history.append(BankTransaction(date: day(10, 25), merchant: "RENT LANDLORD", amount: -1_000, category: "Housing", fingerprint: "rent"))
+        let rent = UpcomingItem(contractID: UUID(), vendor: "Rent", kind: .payment, date: day(11, 25), amount: 1_000, currency: "GBP", billingPeriod: .monthly)
+        let forecast = BalanceForecast.make(balance: 1_500, transactions: history, upcomingBills: [rent], isBill: { $0.merchant.contains("RENT") }, now: day(11, 11), calendar: calendar)
+        XCTAssertEqual(forecast?.everydaySpending, 200, "£10 a day over the 30 days held, for the 20 days left; rent only once")
+        XCTAssertEqual(forecast?.endOfMonth, 1_500 - 1_000 - 200)
+    }
 }

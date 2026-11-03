@@ -151,17 +151,24 @@ public struct BalanceForecast: Hashable, Sendable {
     /// Below zero at month end: worth a warning.
     public var goesOverdrawn: Bool { endOfMonth < 0 }
 
+    /// - Parameter isBill: payments that are one of the bills, which `upcomingBills` already
+    ///   counts, so they're left out of the everyday rate rather than counted twice.
     public static func make(balance: Decimal, transactions: [BankTransaction], upcomingBills: [UpcomingItem], expectedIncome: [(date: Date, amount: Decimal)] = [],
+                            isBill: (BankTransaction) -> Bool = { _ in false },
                             now: Date = Date(), calendar: Calendar = .current) -> BalanceForecast? {
         guard let monthEnd = calendar.dateInterval(of: .month, for: now)?.end,
               let since = calendar.date(byAdding: .day, value: -90, to: now) else { return nil }
         let start = calendar.startOfDay(for: now)
         let bills = upcomingBills.filter { $0.kind == .payment && $0.date >= start && $0.date < monthEnd }.reduce(Decimal(0)) { $0 + ($1.amount ?? 0) }
-        // Everyday spending: the last 90 days' purchases, not counting transfers.
-        let spent = transactions.filter { $0.date >= since && $0.date < start && $0.amount < 0 && !BudgetCalculator.transferCategories.contains($0.category) }
+        // Everyday spending: the last 90 days' purchases, not counting transfers or bills.
+        let recent = transactions.filter { $0.date >= since && $0.date < start }
+        let spent = recent.filter { $0.amount < 0 && !BudgetCalculator.transferCategories.contains($0.category) && !isBill($0) }
             .reduce(Decimal(0)) { $0 - $1.amount }
+        // A daily rate over the days there are statements for, not always 90.
+        let firstDay = recent.map(\.date).min().map { calendar.startOfDay(for: $0) } ?? start
+        let days = min(90, max(1, calendar.dateComponents([.day], from: firstDay, to: start).day ?? 90))
         let daysLeft = max(0, calendar.dateComponents([.day], from: start, to: monthEnd).day ?? 0)
-        var everyday = spent / 90 * Decimal(daysLeft)
+        var everyday = spent / Decimal(days) * Decimal(daysLeft)
         var rounded = Decimal()
         NSDecimalRound(&rounded, &everyday, 2, .plain)
         let income = expectedIncome.filter { $0.date >= start && $0.date < monthEnd }.reduce(Decimal(0)) { $0 + $1.amount }
