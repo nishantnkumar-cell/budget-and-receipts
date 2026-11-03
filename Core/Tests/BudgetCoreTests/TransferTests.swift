@@ -149,4 +149,33 @@ final class TransferTests: XCTestCase {
         XCTAssertNotEqual(categoriser.suggest(for: tx(1, "FASTER PAYMENT RECEIVED FROM A SMITH", "50", "Uncategorised", current))?.category, "Card payment")
         XCTAssertEqual(categoriser.suggest(for: tx(1, "PAYMENT RECEIVED - THANK YOU", "50", "Uncategorised", amex))?.category, "Card payment")
     }
+    // MARK: Between the two of you, and cards not imported
+
+    func testTransferToYourPartnersAccountIsBetweenYou() {
+        var hers = BankAccount(name: "Shweta first direct")
+        hers.owner = .partner
+        var joint = BankAccount(name: "Joint")
+        joint.owner = .shared
+        let toHer = tx(1, "OBP SHWETA KUMAR", "-200", "Uncategorised", current)
+        var arrived = tx(1, "CR KUMAR N", "200", "Uncategorised", nil)
+        arrived.accountID = hers.id
+        let toJoint = tx(5, "SO JOINT ACCOUNT", "-500", "Uncategorised", current)
+        var intoJoint = tx(5, "CR KUMAR N", "500", "Uncategorised", nil)
+        intoJoint.accountID = joint.id
+        let found = TransferDetector.detect([toHer, arrived, toJoint, intoJoint], accounts: [current, hers, joint], names: ["NISHANT KUMAR", "SHWETA KUMAR"], calendar: calendar)
+        XCTAssertEqual(found[toHer.id]?.subcategory, "Between you")
+        XCTAssertEqual(found[arrived.id]?.subcategory, "Between you")
+        XCTAssertEqual(found[toJoint.id]?.subcategory, "Between accounts", "Paying into the joint account isn't settling up")
+    }
+
+    func testCardBillWithNoCardStatementIsFlagged() {
+        let bill = tx(3, "DD AMERICAN EXPRESS", "-640", "Card payment", current)
+        let paid = tx(4, "DD MBNA", "-100", "Card payment", current)
+        let mbnaAccount = BankAccount(name: "MBNA card")
+        var arrived = tx(5, "PAYMENT RECEIVED", "100", "Card payment", nil)
+        arrived.accountID = mbnaAccount.id
+        let missing = TransferDetector.untrackedCardBills([bill, paid, arrived], accounts: [current, mbnaAccount], since: day(1), calendar: calendar)
+        XCTAssertEqual(missing.map(\.id), [bill.id], "The MBNA statement is imported; the Amex one isn't")
+        XCTAssertTrue(TransferDetector.untrackedCardBills([bill], accounts: [current], since: day(10), calendar: calendar).isEmpty, "Older bills are left alone")
+    }
 }
