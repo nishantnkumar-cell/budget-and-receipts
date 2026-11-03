@@ -109,6 +109,11 @@ public struct StatementImportResult: Hashable, Sendable {
     public var possibleDuplicates: [BankTransaction]
     /// For a PDF statement: how far what was read is from the statement's own totals. Nil when they agree.
     public var summaryDifference: Decimal? = nil
+    /// Payments imported before their account was known, by fingerprint, with the account this
+    /// statement shows they belong to. Importing gives them that account.
+    public var accountForExisting: [String: UUID] = [:]
+    /// The bank or card company named on the statement, for naming a new account.
+    public var bankName: String? = nil
 }
 
 public enum StatementImporter {
@@ -226,7 +231,9 @@ public enum StatementImporter {
         calendar: Calendar = .current
     ) -> StatementImportResult {
         let existingIDs = Set(existing.map(\.fingerprint))
-        let legacyIDs = Set(existing.filter { $0.accountID == nil }.map(\.fingerprint))
+        // Lines imported before accounts were known keep their account-free fingerprint, even
+        // after they're given an account: they still count, for that account (or no account).
+        let legacyAccounts = Dictionary(existing.filter { !$0.fingerprint.contains("|acct:") }.map { ($0.fingerprint, $0.accountID) }, uniquingKeysWith: { first, _ in first })
         var seenInFile: [String: Int] = [:]
         var result = StatementImportResult(newTransactions: [], duplicates: [], possibleDuplicates: [])
 
@@ -244,8 +251,10 @@ public enum StatementImporter {
             } else {
                 fingerprint = legacy
             }
-            if existingIDs.contains(fingerprint) || legacyIDs.contains(legacy) {
+            let legacyMatch = legacyAccounts[legacy].map { $0 == nil || $0 == rowAccount } ?? false
+            if existingIDs.contains(fingerprint) || legacyMatch {
                 result.duplicates.append(row)
+                if let rowAccount, legacyMatch, legacyAccounts[legacy] == .some(nil) { result.accountForExisting[legacy] = rowAccount }
                 continue
             }
             var transaction = BankTransaction(date: row.date, merchant: row.description, description: row.description, amount: row.amount, fingerprint: fingerprint)

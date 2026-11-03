@@ -344,16 +344,47 @@ public enum PDFStatementParser {
             .contains(where: lower.contains)
     }
 
+    /// The bank or card company named on a statement, e.g. "first direct" or "Capital One".
+    /// first direct statements also mention HSBC (its parent), so it's checked first.
+    public static func bankName(in lines: [String]) -> String? {
+        let text = lines.prefix(80).joined(separator: " ").lowercased()
+        let banks: [(match: String, name: String)] = [
+            ("first direct", "first direct"), ("firstdirect", "first direct"),
+            ("capital one", "Capital One"), ("american express", "Amex"), ("amex", "Amex"),
+            ("natwest", "NatWest"), ("barclaycard", "Barclaycard"), ("barclays", "Barclays"), ("lloyds", "Lloyds"),
+            ("halifax", "Halifax"), ("santander", "Santander"), ("nationwide", "Nationwide"), ("monzo", "Monzo"),
+            ("starling", "Starling"), ("revolut", "Revolut"), ("metro bank", "Metro Bank"), ("tsb", "TSB"),
+            ("virgin money", "Virgin Money"), ("co-operative bank", "Co-op Bank"), ("chase", "Chase"),
+            ("hsbc", "HSBC"),
+        ]
+        return banks.first { text.contains($0.match) }?.name
+    }
+
+    /// A name for a new account from its statement: the bank, plus "credit card" for a bank's
+    /// card statement (e.g. "HSBC credit card"). Card-only companies keep their own name.
+    public static func accountName(in lines: [String]) -> String? {
+        guard let bank = bankName(in: lines) else { return nil }
+        let cardOnly: Set<String> = ["Capital One", "Amex", "Barclaycard"]
+        let text = lines.prefix(40).joined(separator: " ").lowercased()
+        return !cardOnly.contains(bank) && text.contains("credit card") ? "\(bank) credit card" : bank
+    }
+
     /// "Account number 12345678", "Account No: 1234 5678" or a masked card "**** **** **** 1234".
     static func accountNumber(in lines: [String]) -> String? {
         let patterns = [
             "(?i)account\\s*(?:number|no\\.?)\\s*:?\\s*([0-9][0-9 ]{3,})",
             // UK sort code then account number, e.g. "40-25-02 12345678", or the other way round.
-            "^\\d{2}-\\d{2}-\\d{2}\\s+(\\d{8})\\b",
+            "(?:^|\\s)\\d{2}-\\d{2}-\\d{2}\\s+(\\d{8})\\b",
             "\\b(\\d{8})\\s+\\d{2}-\\d{2}-\\d{2}\\b",
             "(?:[*xX•]{4}[ -]?){2,}(\\d{4})\\b",
+            // Amex membership numbers, masked like "xxxx-xxxxxx-83007".
+            "[*xX•]{4}-[*xX•]{6}-(\\d{5})\\b",
             // A full card number: only its last four digits are kept.
             "(?i)card number\\s*\\d{4} \\d{4} \\d{4} (\\d{4})\\b",
+            // A card number with its middle masked, e.g. "Card number 5434 58** **** 9801", also
+            // when it sits on a line of its own.
+            "(?i)card number\\s*\\d{4}\\s?[\\d*xX•]{4}\\s?[\\d*xX•]{4}\\s?(\\d{4})\\b",
+            "^\\d{4}\\s?[\\d*xX•]{4}\\s?[\\d*xX•]{4}\\s?(\\d{4})$",
         ]
         for pattern in patterns {
             guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }

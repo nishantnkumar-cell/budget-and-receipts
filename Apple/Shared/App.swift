@@ -42,7 +42,10 @@ struct BudgetReceiptsApp: App {
             }
             .task(id: scenePhase) {
                 // Receipts shared from other apps while this one was closed.
-                if scenePhase == .active { await SharedReceiptReader.readDropped(into: store) }
+                if scenePhase == .active {
+                    await SharedReceiptReader.readDropped(into: store)
+                    SharedReceiptReader.importWaitingStatements(into: store)
+                }
                 if scenePhase == .active {
                     // Launched while the phone was locked: read the files now, then sync.
                     if store.isWaitingForFiles || subscriptions.isWaitingForFiles {
