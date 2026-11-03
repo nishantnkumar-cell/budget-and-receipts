@@ -1,4 +1,5 @@
 import SwiftUI
+import CloudKit
 
 @main
 struct BudgetReceiptsApp: App {
