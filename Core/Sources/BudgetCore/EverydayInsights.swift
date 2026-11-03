@@ -40,11 +40,12 @@ public struct SafeToSpend: Hashable, Sendable {
     public let billsStillToCome: Decimal
     public let daysLeft: Int
 
-    public static func calculate(report: MonthlyBudgetReport, upcomingBills: [UpcomingItem], today: Date, calendar: Calendar = .current) -> SafeToSpend? {
+    /// - Parameter period: the budget month's dates, when it starts on payday rather than the 1st.
+    public static func calculate(report: MonthlyBudgetReport, upcomingBills: [UpcomingItem], today: Date, period: DateInterval? = nil, calendar: Calendar = .current) -> SafeToSpend? {
         let limits = report.lines.compactMap(\.limit)
-        guard !limits.isEmpty,
-              let monthEnd = calendar.dateInterval(of: .month, for: report.month)?.end,
-              calendar.isDate(today, equalTo: report.month, toGranularity: .month) else { return nil }
+        guard !limits.isEmpty, let interval = period ?? calendar.dateInterval(of: .month, for: report.month),
+              interval.contains(today) else { return nil }
+        let monthEnd = interval.end
         let spent = report.lines.filter { $0.limit != nil }.reduce(Decimal(0)) { $0 + $1.spent }
         let left = limits.reduce(0, +) - spent
         let bills = upcomingBills
