@@ -11,9 +11,15 @@ public extension FinanceCategories {
         "Groceries": ["Supermarket", "Convenience store", "Specialist", "Online grocery"],
         "Eating out": ["Restaurant", "Takeaway", "Coffee", "Fast food", "Pub and bar", "Sweets and bakery"],
         "Transport": ["Fuel", "Parking", "Public transport", "Taxi", "Car costs", "Car insurance"],
-        "Shopping": ["Clothes and shoes", "Electronics", "Home and garden", "Online marketplace", "Gifts", "Lottery"],
-        "Health": ["Pharmacy", "Fitness", "Medical", "Dental", "Optician", "Hair and beauty"],
+        "Shopping": ["Clothes and shoes", "Electronics", "Home and garden", "Online marketplace", "Books"],
+        "Health": ["Pharmacy", "Fitness", "Medical", "Dental", "Optician"],
+        "Personal care": ["Hair and beauty", "Toiletries", "Spa"],
         "Family": ["Childcare", "School", "Kids", "Pets", "Days out"],
+        "Entertainment": ["Cinema and theatre", "Events and tickets", "Hobbies", "Lottery and betting", "Pub and nights out"],
+        "Education": ["Courses", "Tuition", "Books and supplies"],
+        "Gifts & charity": ["Gifts", "Charity"],
+        "Cash": ["ATM withdrawal", "Cashback"],
+        "Fees & charges": ["Bank charges", "Interest charged", "Late fees", "Foreign transaction fees"],
         "Subscriptions": ["Streaming", "Music", "Apps and games", "Cloud storage", "News", "Memberships"],
         "Travel": ["Flights", "Hotels", "Holidays", "Trains"],
         "Savings & investments": ["Savings", "Investments", "Pension"],
@@ -217,6 +223,18 @@ public enum RulesEngine {
                             category: category, subcategory: subcategory)
     }
 
+    /// Payments between the account holders' own accounts: a bank transfer code (OBP online
+    /// banking payment, FPO faster payment out, TFR, STO, BP) with one of your names. Built from
+    /// the names on your statements, so it isn't a stored rule.
+    public static func selfTransferRule(names: [String]) -> CategoryRule? {
+        let cleaned = Array(Set(names.map { $0.uppercased().trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })).sorted()
+        guard !cleaned.isEmpty else { return nil }
+        return CategoryRule(id: UUID(uuidString: "00000000-0000-4000-8000-5e1f7a45f3e0")!, name: "Payments to yourselves",
+                            conditions: [.init(.description, .containsAny, "OBP, FPO, FPI, TFR, TRANSFER, STO, BP, BGC, MOB"),
+                                         .init(.description, .containsAny, cleaned.joined(separator: ", "))],
+                            category: "Internal transfer", subcategory: "Between accounts", isStarter: true)
+    }
+
     // MARK: Starter rules
 
     private static func starter(_ name: String, _ words: String, _ category: String, _ subcategory: String?, money: CategoryRule.Operator? = nil, over: String? = nil) -> CategoryRule {
@@ -230,6 +248,9 @@ public enum RulesEngine {
 
     /// The rules a new household starts with: common UK banks' codes and well-known shops.
     public static let starterRules: [CategoryRule] = [
+        // Cash first: "ATM CASH ... TESCO" is a cash machine at Tesco, not a grocery shop.
+        starter("Cash machines", "ATM, CASH WITHDRAWAL, CASHPOINT, CASH MACHINE, LNK, ATM CASH, CSH", "Cash", "ATM withdrawal", money: .isMoneyOut),
+        starter("Cashback", "CASHBACK, CASH BACK", "Cash", "Cashback", money: .isMoneyOut),
         // Money moving between your own accounts and cards is neither spending nor income.
         starter("Credit card repayments", "PAYMENT THANK YOU, PAYMENT RECEIVED, DIRECT DEBIT PAYMENT, PAYMENT THANKYOU", "Card payment", "Credit card repayment", money: .isMoneyIn),
         starter("Card bills paid from the bank", "BARCLAYCARD, AMEX, AMERICAN EXPRESS, CAPITAL ONE, HSBC CARD PYMT, MBNA, CARD PYMT", "Card payment", "Credit card repayment", money: .isMoneyOut),
@@ -266,7 +287,14 @@ public enum RulesEngine {
         starter("Electronics", "CURRYS, APPLE STORE, ARGOS", "Shopping", "Electronics", money: .isMoneyOut),
         starter("Home and garden", "IKEA, DUNELM, HOMEBASE, B Q, WICKES, SCREWFIX, HOMESENSE, PLANT CENTR, PLANT CENTRE, GARDEN CENTRE", "Shopping", "Home and garden", money: .isMoneyOut),
         starter("Online marketplaces", "AMAZON, AMZN, EBAY, VINTED, ETSY, SHEIN, TEMU", "Shopping", "Online marketplace", money: .isMoneyOut),
-        starter("Lottery", "NATIONAL LOTTERY, LOTTO, POSTCODE LOTTERY", "Shopping", "Lottery", money: .isMoneyOut),
+        starter("Lottery and betting", "NATIONAL LOTTERY, LOTTO, POSTCODE LOTTERY, BET365, PADDY POWER, WILLIAM HILL, LADBROKES, SKY BET", "Entertainment", "Lottery and betting", money: .isMoneyOut),
+        starter("Cinema and theatre", "ODEON, VUE, CINEWORLD, EVERYMAN, PICTUREHOUSE, THEATRE", "Entertainment", "Cinema and theatre", money: .isMoneyOut),
+        starter("Tickets", "TICKETMASTER, SEE TICKETS, EVENTBRITE, AXS, DICE", "Entertainment", "Events and tickets", money: .isMoneyOut),
+        starter("Hair and beauty", "BARBER, BARBERS, SALON, HAIR, NAILS, BEAUTY", "Personal care", "Hair and beauty", money: .isMoneyOut),
+        starter("Charity", "JUSTGIVING, GOFUNDME, OXFAM, BRITISH RED CROSS, CANCER RESEARCH, UNICEF, CHARITY, DONATION", "Gifts & charity", "Charity", money: .isMoneyOut),
+        starter("Gifts", "MOONPIG, FUNKY PIGEON, CARD FACTORY, INTERFLORA", "Gifts & charity", "Gifts", money: .isMoneyOut),
+        starter("Courses", "UDEMY, COURSERA, LINKEDIN LEARNING, OPEN UNIVERSITY", "Education", "Courses", money: .isMoneyOut),
+        starter("Books", "WATERSTONES, WH SMITH, WHSMITH, BLACKWELLS", "Shopping", "Books", money: .isMoneyOut),
         starter("Flights", "EASYJET, RYANAIR, BRITISH AIRWAYS, JET2, WIZZ, EMIRATES", "Travel", "Flights", money: .isMoneyOut),
         starter("Hotels", "AIRBNB, BOOKING COM, PREMIER INN, TRAVELODGE, HOTEL, EXPEDIA", "Travel", "Hotels", money: .isMoneyOut),
         starter("Savings", "NS I, NSI, NS AND I, PREMIUM BONDS, MONEYBOX", "Savings & investments", "Savings", money: .isMoneyOut),
@@ -274,7 +302,9 @@ public enum RulesEngine {
         starter("Rent and mortgage", "RENT, MORTGAGE, LETTINGS", "Housing", nil, money: .isMoneyOut),
         starter("Mortgage lenders", "BIRMINGHAM MIDSHIRES, BHAM MIDSHIRES, HALIFAX MORTGAGE, NATIONWIDE MORTGAGE", "Housing", "Mortgage", money: .isMoneyOut),
         starter("Refunds", "REFUND, REFUNDED", "Income", "Refund", money: .isMoneyIn),
-        starter("Bank charges", "CHARGES, NON STERLING, OVERDRAFT FEE", "Bills & utilities", "Other bills", money: .isMoneyOut),
+        starter("Bank charges", "CHARGES, OVERDRAFT FEE, ACCOUNT FEE, MONTHLY FEE", "Fees & charges", "Bank charges", money: .isMoneyOut),
+        starter("Foreign transaction fees", "NON STERLING, NON STG, FOREIGN TRANSACTION FEE, FX FEE", "Fees & charges", "Foreign transaction fees", money: .isMoneyOut),
+        starter("Interest charged", "INTEREST CHARGED, PURCHASE INTEREST, CASH INTEREST", "Fees & charges", "Interest charged", money: .isMoneyOut),
         starter("Moving money to your own accounts", "REVOLUT, MONZO, STARLING, WISE", "Internal transfer", "Between accounts", money: .isMoneyOut),
         starter("Games", "PLAYSTATION, XBOX, STEAM, NINTENDO", "Subscriptions", "Apps and games", money: .isMoneyOut),
         starter("Software and AI", "ANTHROPIC, OPENAI, CHATGPT, MICROSOFT, ADOBE, CANVA", "Subscriptions", "Apps and games", money: .isMoneyOut),

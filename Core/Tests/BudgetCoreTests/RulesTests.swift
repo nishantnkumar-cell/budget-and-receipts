@@ -16,7 +16,10 @@ final class RulesTests: XCTestCase {
         XCTAssertEqual(result("DD ID MOBILE LIMITED", -12), "Bills & utilities › Phone")
         XCTAssertEqual(result("DIRECT DEBIT PAYMENT - THANK YOU", 1180.13), "Card payment › Credit card repayment")
         XCTAssertEqual(result("DD HSBC CARD PYMT", -1078.72), "Card payment › Credit card repayment")
-        XCTAssertEqual(result("VIS NATIONAL LOTTERY WWW.NATIONAL", -5), "Shopping › Lottery")
+        XCTAssertEqual(result("VIS NATIONAL LOTTERY WWW.NATIONAL", -5), "Entertainment › Lottery and betting")
+        XCTAssertEqual(result("ATM CASH TPF AUG28 TESCO HSL HN", -150), "Cash › ATM withdrawal", "Cash beats the shop it's in")
+        XCTAssertEqual(result("SUNBURY X HAIR & BEAUTY", -20), "Personal care › Hair and beauty")
+        XCTAssertEqual(result("NON-STERLING TRANSACTION FEE", -1.5), "Fees & charges › Foreign transaction fees")
         XCTAssertEqual(result("IAP RINGO ECOM 03456000650", -2), "Subscriptions › Apps and games")
         XCTAssertEqual(result("TFL TRAVEL CHARGE TFL.GOV.UK/CP", -3.5), "Transport › Public transport")
         // Whole words only: "EE" isn't found inside "COFFEE".
@@ -73,6 +76,18 @@ final class RulesTests: XCTestCase {
             XCTAssertTrue(FinanceCategories.all.contains(rule.category), rule.name)
             if let sub = rule.subcategory { XCTAssertTrue(FinanceCategories.subcategories(of: rule.category).contains(sub), rule.name) }
         }
+    }
+
+    func testPaymentsBetweenAccountHoldersAreTransfers() {
+        let names = PDFStatementParser.holderNames(in: ["Account Name Sortcode Account Number Sheet Number",
+                                                        "MR NEIL PATEL & MRS SARA PATEL 11-22-33 11112222 488"])
+        XCTAssertEqual(names, ["NEIL PATEL", "SARA PATEL"])
+        XCTAssertEqual(PDFStatementParser.holderNames(in: ["Mrs Sara Patel 44-55-66 33334444 540"]), ["SARA PATEL"])
+        let rule = RulesEngine.selfTransferRule(names: names)!
+        XCTAssertTrue(rule.matches(payment("OBP Nishant Kumar OBA3X5K8PQ21", -50)))
+        XCTAssertFalse(rule.matches(payment("OBP John Smith", -50)), "Paying someone else is spending")
+        XCTAssertFalse(rule.matches(payment("NEIL PATEL BOOKS", -5)), "A name alone isn't a transfer")
+        XCTAssertNil(RulesEngine.selfTransferRule(names: []))
     }
 
     func testRuleFromAPayment() {
