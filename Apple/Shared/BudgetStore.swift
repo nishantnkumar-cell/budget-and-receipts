@@ -93,7 +93,59 @@ final class BudgetStore: ObservableObject {
         rules = Self.withNewStarterRules(loadOrSetAside("rules.json") ?? [])
         // Open on a month that has payments: statements usually end before today.
         if selectedMonthIsEmpty, let latest = latestPaymentDate { selectedMonth = latest }
-        if !isWaitingForFiles { removeOldSharedCopies() }
+        if !isWaitingForFiles {
+            removeOldSharedCopies()
+            recheckBillPayments()
+            markTransfers()
+        }
+    }
+
+    // MARK: Transfers
+
+    /// Your names as statements write them, for spotting payments between your own accounts.
+    var holderNames: [String] {
+        var names = accounts.flatMap { $0.holderNames ?? [] }
+        if let me = couple.ownerName, me.contains(" ") { names.append(me) }
+        if couple.partnerName.contains(" ") { names.append(couple.partnerName) }
+        return names
+    }
+
+    /// Moves transfers between your own accounts, card bills, top-ups and savings out of
+    /// spending and income. Categories you chose yourself stay as they are.
+    @discardableResult
+    func markTransfers() -> Int {
+        let found = TransferDetector.detect(transactions, accounts: accounts, names: holderNames, calendar: calculator.calendar)
+        guard !found.isEmpty else { return 0 }
+        for index in transactions.indices {
+            guard let change = found[transactions[index].id] else { continue }
+            transactions[index].category = change.category
+            transactions[index].subcategory = change.subcategory
+        }
+        persist()
+        return found.count
+    }
+
+    /// Once: payments starting "BP" were read as BP petrol, but on first direct statements
+    /// "BP" means a bill payment ("BP ANDERSON CDA" is rent coming in). They're sorted again.
+    private func recheckBillPayments() {
+        let key = "bill-payment-recheck-1"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        UserDefaults.standard.set(true, forKey: key)
+        let misread = transactions.indices.filter { index in
+            let transaction = transactions[index]
+            return transaction.categoryChosen != true && transaction.splits.isEmpty && transaction.category == "Transport"
+                && Categoriser.matchWords(transaction.merchant).first == "BILLPAY"
+        }
+        guard !misread.isEmpty else { return }
+        for index in misread {
+            transactions[index].category = "Uncategorised"
+            transactions[index].subcategory = nil
+        }
+        let ids = Set(misread.map { transactions[$0].id })
+        // Re-sort them without learning from their own wrong categories.
+        let sorter = Categoriser(history: transactions.filter { !ids.contains($0.id) }, lookedUp: merchantCategories, rules: activeRules, accountNames: accountNames)
+        transactions = sorter.categorise(transactions)
+        persist()
     }
 
     func saveDraft(_ draft: SplitDraft, for transaction: BankTransaction) {
@@ -454,6 +506,7 @@ final class BudgetStore: ObservableObject {
         imports.insert(ImportRecord(fileName: fileName, transactionCount: result.newTransactions.count, status: status), at: 0)
         let matched = matchPendingReceipts()
         persist()
+        markTransfers()
         self.status = "Imported \(result.newTransactions.count) transactions from \(fileName)."
             + (matched > 0 ? " Matched \(matched) waiting receipt\(matched == 1 ? "" : "s"); check them in the Inbox." : "")
     }
@@ -559,6 +612,7 @@ final class BudgetStore: ObservableObject {
         let ids = Set(similarUncategorised(to: transaction).map(\.id))
         for index in transactions.indices where ids.contains(transactions[index].id) {
             transactions[index].category = category
+            transactions[index].categoryChosen = true
         }
         if !ids.isEmpty { persist() }
         return ids.count
@@ -966,7 +1020,10 @@ extension BudgetStore: SyncSource {
             saves.removeAll { lastRejected.contains($0.key) }
         }
         keepRecentChanges(saves: saves, deletes: deletes)
-        return merge(saves: saves, deletes: deletes)
+        let merged = merge(saves: saves, deletes: deletes)
+        // The other side of a transfer may have just arrived from another device.
+        if saves.contains(where: { $0.collection == "transactions" || $0.collection == "accounts" }) { markTransfers() }
+        return merged
     }
 
     func rejectedKeys(_ saves: [SyncRecord]) -> Set<String> { lastRejected }
