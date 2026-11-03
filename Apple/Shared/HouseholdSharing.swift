@@ -19,10 +19,20 @@ final class ShareAcceptor {
     private var handler: ((CKShare.Metadata) async -> Void)?
 
     func receive(_ metadata: CKShare.Metadata) {
+        print("[sync] Household invitation opened")
         if let handler {
+            AppModel.syncStatus.invite = .joining
             Task { await handler(metadata) }
         } else {
+            // Sync starts a moment after launch; say so if it can't start at all.
             pending = metadata
+            if !AppModel.settings.iCloudSyncEnabled {
+                AppModel.syncStatus.invite = .waitingForSync("Turn on Settings › Sync with iCloud in Duo Budget, then open the invitation again.")
+            } else if CloudSync.containerID == nil {
+                AppModel.syncStatus.invite = .waitingForSync("This copy of Duo Budget isn't signed for iCloud, so it can't join a household. Reinstall it from the Mac or TestFlight.")
+            } else {
+                AppModel.syncStatus.invite = .joining
+            }
         }
     }
 
@@ -30,6 +40,7 @@ final class ShareAcceptor {
         self.handler = handler
         if let pending {
             self.pending = nil
+            AppModel.syncStatus.invite = .joining
             Task { await handler(pending) }
         }
     }
