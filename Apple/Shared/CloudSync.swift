@@ -189,11 +189,31 @@ actor CloudSync: CKSyncEngineDelegate {
         self.container = container
         let account = (try? await container.accountStatus()).map(Self.describe) ?? "unknown"
         log("Start. iCloud account: \(account). Waiting to send: \(pendingCount).")
+        // A direct request, outside the sync engine, to tell "iCloud unreachable" from "engine stuck".
+        Task { [container] in
+            let started = Date()
+            do {
+                let zones = try await container.privateCloudDatabase.allRecordZones()
+                await self.log("Reached iCloud in \(Int(Date().timeIntervalSince(started)))s: \(zones.count) folders (\(zones.map(\.zoneID.zoneName).joined(separator: ", "))).")
+            } catch {
+                await self.log("Couldn't reach iCloud directly after \(Int(Date().timeIntervalSince(started)))s: \(Self.describe(error))")
+            }
+        }
         let unreadable = await MainActor.run { sources.flatMap(\.unreadableFiles) }
         if !unreadable.isEmpty {
             // A local file couldn't be read: rebuild from iCloud rather than treat it as deleted.
             forgetEngineState()
             resetLocalSyncState()
+        }
+        // Once, on moving to sealed records: every earlier send was refused, so the sync engine's
+        // saved state only holds a stuck queue (on one iPhone it made every fetch hang). Start
+        // it afresh; the data on this device is untouched and record names are kept.
+        let sealedFlag = stateFolder.appendingPathComponent("sync-sealed-reset")
+        if !FileManager.default.fileExists(atPath: sealedFlag.path) {
+            forgetEngineState()
+            resetLocalSyncState()
+            FileManager.default.createFile(atPath: sealedFlag.path, contents: Data())
+            log("Started the sync engine afresh for sealed records.")
         }
         let saved = Self.load(CKSyncEngine.State.Serialization.self, stateFolder.appendingPathComponent("sync-engine.json"))
         let engine = CKSyncEngine(CKSyncEngine.Configuration(database: container.privateCloudDatabase, stateSerialization: saved, delegate: self))
