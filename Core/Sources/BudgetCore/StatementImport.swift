@@ -22,13 +22,16 @@ public struct StatementRow: Hashable, Sendable {
     public var bankID: String?
     /// The account number in the file (OFX ACCTID or a CSV account column), when there is one.
     public var accountNumber: String?
+    /// The running balance after this line, when the file has a balance column.
+    public var balance: Decimal?
 
-    public init(date: Date, description: String, amount: Decimal, bankID: String? = nil, accountNumber: String? = nil) {
+    public init(date: Date, description: String, amount: Decimal, bankID: String? = nil, accountNumber: String? = nil, balance: Decimal? = nil) {
         self.date = date
         self.description = description
         self.amount = amount
         self.bankID = bankID
         self.accountNumber = accountNumber
+        self.balance = balance
     }
 }
 
@@ -61,6 +64,8 @@ public struct CSVColumnMapping: Hashable, Sendable {
     public var decimalComma: Bool
     /// A column with the account number, in files that hold several accounts.
     public var account: Int?
+    /// A running balance column, for checking that no line was missed.
+    public var balance: Int?
 
     public init(date: Int, description: Int, amount: Int? = nil, paidOut: Int? = nil, paidIn: Int? = nil, hasHeader: Bool = true, dateOrder: DateOrder = .dayMonthYear, decimalComma: Bool = false) {
         self.date = date
@@ -72,6 +77,7 @@ public struct CSVColumnMapping: Hashable, Sendable {
         self.dateOrder = dateOrder
         self.decimalComma = decimalComma
         self.account = nil
+        self.balance = nil
     }
 
     /// Guesses the mapping from a header row such as "Date,Description,Amount" or
@@ -95,6 +101,7 @@ public struct CSVColumnMapping: Hashable, Sendable {
         guard amount != nil || (paidOut != nil && paidIn != nil) else { return nil }
         var mapping = CSVColumnMapping(date: date, description: description, amount: amount, paidOut: amount == nil ? paidOut : nil, paidIn: amount == nil ? paidIn : nil, dateOrder: dateOrder)
         mapping.account = names.firstIndex { ["account", "account number", "account no", "acct", "card number"].contains($0) }
+        mapping.balance = names.firstIndex { ["balance", "running balance", "account balance"].contains($0) }
         return mapping
     }
 }
@@ -113,6 +120,12 @@ public struct StatementImportResult: Hashable, Sendable {
     public var fromAnotherFile: [StatementRow] = []
     /// For a PDF statement: how far what was read is from the statement's own totals. Nil when they agree.
     public var summaryDifference: Decimal? = nil
+    /// For a file with a running balance: how far the payments are from the change in balance,
+    /// which means a line is missing or misread. Nil when they agree or there's no balance.
+    public var balanceDifference: Decimal? = nil
+    /// True when a card statement listed purchases as positive amounts (as American Express
+    /// does) and the signs were turned round.
+    public var signsFlipped = false
     /// Payments imported before their account was known, by fingerprint, with the account this
     /// statement shows they belong to. Importing gives them that account.
     public var accountForExisting: [String: UUID] = [:]
@@ -157,7 +170,9 @@ public enum StatementImporter {
                 amount = paidIn - abs(paidOut)
             }
             let account = field(mapping.account)
-            return StatementRow(date: date, description: cleanDescription(field(mapping.description)), amount: amount, accountNumber: account.isEmpty ? nil : account)
+            let balance = field(mapping.balance)
+            return StatementRow(date: date, description: cleanDescription(field(mapping.description)), amount: amount, accountNumber: account.isEmpty ? nil : account,
+                                balance: balance.isEmpty ? nil : AmountParser.parse(balance, decimalComma: mapping.decimalComma))
         }
     }
 
@@ -299,6 +314,45 @@ public enum StatementImporter {
             }
         }
         return result
+    }
+
+    /// Card statements that list purchases as positive and payments as negative (American
+    /// Express does) turned round, so purchases are money out. Recognised by the bill payment
+    /// lines: when every one is negative and most other lines are positive.
+    public static func fixingCardSigns(_ rows: [StatementRow]) -> (rows: [StatementRow], flipped: Bool) {
+        let paymentWords = ["PAYMENT RECEIVED", "PAYMENT THANK YOU", "PAYMENT THANKYOU", "DIRECT DEBIT PAYMENT"]
+        func isPayment(_ row: StatementRow) -> Bool {
+            let text = " " + Categoriser.words(row.description).joined(separator: " ") + " "
+            return paymentWords.contains { text.contains(" \($0) ") }
+        }
+        let payments = rows.filter(isPayment)
+        let others = rows.filter { !isPayment($0) && $0.amount != 0 }
+        guard !payments.isEmpty, payments.allSatisfy({ $0.amount < 0 }),
+              others.filter({ $0.amount > 0 }).count * 2 > others.count else { return (rows, false) }
+        return (rows.map { row in
+            var flipped = row
+            flipped.amount = -row.amount
+            return flipped
+        }, true)
+    }
+
+    /// How far the payments are from the change in the running balance, or nil when they
+    /// agree (or the file has no balance). Files list lines oldest or newest first: the dates say
+    /// which, and a file of one day tries both.
+    public static func balanceDifference(_ rows: [StatementRow]) -> Decimal? {
+        let withBalance = rows.filter { $0.balance != nil }
+        guard withBalance.count >= 2, withBalance.count == rows.count else { return nil }
+        func difference(_ ordered: [StatementRow]) -> Decimal {
+            guard let first = ordered.first?.balance, let last = ordered.last?.balance else { return 0 }
+            let moved = ordered.dropFirst().reduce(Decimal(0)) { $0 + $1.amount }
+            return (last - first) - moved
+        }
+        let ascending = difference(rows), descending = difference(Array(rows.reversed()))
+        let result: Decimal
+        if rows.first!.date < rows.last!.date { result = ascending }
+        else if rows.first!.date > rows.last!.date { result = descending }
+        else { result = ascending.magnitude <= descending.magnitude ? ascending : descending }
+        return result == 0 ? nil : result
     }
 
     /// A readable, stable key for a statement line: date, amount and description.
