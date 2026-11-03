@@ -125,9 +125,11 @@ struct SharedDocumentDetail: View {
 struct SharedDocumentsBanner: View {
     @EnvironmentObject var store: BudgetStore
     @State private var showing = false
+    /// On Home it shows only when something needs a look, and sits flush with the other cards.
+    var onHome = false
 
     var body: some View {
-        if !store.sharedDocuments.isEmpty {
+        if onHome ? store.sharedDocuments.contains(where: \.needsAttention) : !store.sharedDocuments.isEmpty {
             let attention = store.sharedDocuments.filter(\.needsAttention).count
             Button { showing = true } label: {
                 HStack(spacing: 12) {
@@ -135,7 +137,7 @@ struct SharedDocumentsBanner: View {
                               tint: attention > 0 ? .brandPink : .brandPlum, size: 32)
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Shared files").font(.subheadline.weight(.semibold))
-                        Text(attention > 0 ? "\(attention) need\(attention == 1 ? "s" : "") a look" : "\(store.sharedDocuments.count) received")
+                        Text(attention > 0 ? readyText(attention) : "\(store.sharedDocuments.count) received")
                             .font(.caption)
                             .foregroundStyle(attention > 0 ? Color.brandPink : .secondary)
                     }
@@ -146,8 +148,8 @@ struct SharedDocumentsBanner: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.horizontal)
-            .padding(.top, 8)
+            .padding(.horizontal, onHome ? 0 : 16)
+            .padding(.top, onHome ? 0 : 8)
             .sheet(isPresented: $showing) {
                 NavigationStack { SharedDocumentsView() }
                     #if os(macOS)
@@ -155,5 +157,12 @@ struct SharedDocumentsBanner: View {
                     #endif
             }
         }
+    }
+
+    /// "2 statements ready to import", or "1 needs a look" when something went wrong.
+    private func readyText(_ attention: Int) -> String {
+        let ready = store.sharedDocuments.filter { if case .statementReady = $0.outcome { true } else { false } }.count
+        if ready == attention { return ready == 1 ? "1 statement ready to import" : "\(ready) statements ready to import" }
+        return "\(attention) need\(attention == 1 ? "s" : "") a look"
     }
 }
