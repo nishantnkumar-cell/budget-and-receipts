@@ -15,6 +15,8 @@ public enum TransferDetector {
     static let betweenAccounts = Change(category: "Internal transfer", subcategory: "Between accounts")
     static let cardRepayment = Change(category: "Card payment", subcategory: "Credit card repayment")
     static let savings = Change(category: "Savings & investments", subcategory: "Savings")
+    /// Money one of you sent to the other's own account: it settles up who owes whom.
+    public static let betweenYou = Change(category: "Internal transfer", subcategory: "Between you")
 
     /// Words on a bank statement for paying a credit card bill. Not "CARD PAYMENT": banks such as
     /// Santander write ordinary debit card shopping as "CARD PAYMENT TO TESCO STORES".
@@ -67,7 +69,10 @@ public enum TransferDetector {
             guard let credit = match?.credit,
                   looksLikeTransfer(debit, credit, people: people, cardAccounts: cardAccounts) else { continue }
             usedCredits.insert(credit.id)
-            let change = cardAccounts.contains(credit.accountID!) || mentions(cardBillWords, in: debit) ? cardRepayment : betweenAccounts
+            let change: Change
+            if cardAccounts.contains(credit.accountID!) || mentions(cardBillWords, in: debit) { change = cardRepayment }
+            else if let sender = person(of: from, accounts), let receiver = person(of: credit.accountID!, accounts), sender != receiver { change = betweenYou }
+            else { change = betweenAccounts }
             found[debit.id] = change
             found[credit.id] = change
         }
@@ -80,6 +85,34 @@ public enum TransferDetector {
             guard let transaction = transactions.first(where: { $0.id == id }) else { return false }
             return transaction.category != change.category || transaction.subcategory != change.subcategory
         }
+    }
+
+    /// Whose own account this is: yours, your partner's, or nil for a joint account.
+    static func person(of account: UUID, _ accounts: [BankAccount]) -> BudgetCore.Person? {
+        switch accounts.first(where: { $0.id == account })?.owner {
+        case .partner: .partner
+        case .shared: nil
+        case .mine, nil: .me
+        }
+    }
+
+    /// Card bills paid from the bank with no card statement to show what was bought: that
+    /// spending is missing until the card's statements are imported. Bills with a matching
+    /// payment on a card account are left out, as are those before `since`.
+    public static func untrackedCardBills(_ transactions: [BankTransaction], accounts: [BankAccount], since: Date, calendar: Calendar = .current) -> [BankTransaction] {
+        let cardAccounts = Set(accounts.filter { account in
+            let words = " " + Categoriser.words(account.name).joined(separator: " ") + " "
+            return cardAccountWords.contains { words.contains(" \($0) ") }
+        }.map(\.id))
+        let cardCredits = transactions.filter { $0.amount > 0 && $0.accountID.map(cardAccounts.contains) == true }
+        return transactions.filter { bill in
+            guard bill.date >= since, bill.amount < 0, bill.category == cardRepayment.category,
+                  bill.accountID.map(cardAccounts.contains) != true else { return false }
+            return !cardCredits.contains { credit in
+                credit.amount == -bill.amount
+                    && abs(calendar.dateComponents([.day], from: calendar.startOfDay(for: bill.date), to: calendar.startOfDay(for: credit.date)).day ?? 99) <= pairWindow
+            }
+        }.sorted { $0.date > $1.date }
     }
 
     static func change(for transaction: BankTransaction, people: [Person], cardAccounts: Set<UUID>) -> Change? {

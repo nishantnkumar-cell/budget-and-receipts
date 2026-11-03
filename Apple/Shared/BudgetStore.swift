@@ -911,6 +911,13 @@ final class BudgetStore: ObservableObject {
 
     /// Payments entered by hand that a statement has since brought in too: same day, amount
     /// and shop. Each pair is listed once, by the hand-entered one.
+    /// Card bills from the last two months of statements whose card isn't imported, so what
+    /// was bought on the card is missing from spending.
+    var untrackedCardBills: [BankTransaction] {
+        guard let latest = latestPaymentDate, let since = calculator.calendar.date(byAdding: .day, value: -60, to: latest) else { return [] }
+        return TransferDetector.untrackedCardBills(transactions, accounts: accounts, since: since, calendar: calculator.calendar)
+    }
+
     var likelyDuplicates: [BankTransaction] {
         let imported = transactions.filter { !$0.fingerprint.hasPrefix("manual") }
         return transactions.filter { manual in

@@ -52,4 +52,11 @@ final class RecurringTests: XCTestCase {
         XCTAssertNotEqual(found[0].id, found[1].id)
         XCTAssertEqual(RecurringDetector.detect(rows, calendar: calendar).map(\.id), found.map(\.id), "Ids stay the same")
     }
+    func testOneSkippedMonthDoesntEndASeries() {
+        let rows = [tx(day(6, 1), "DD GYM GROUP", "-30"), tx(day(7, 1), "DD GYM GROUP", "-30"), tx(day(9, 1), "DD GYM GROUP", "-30"), tx(day(10, 1), "DD GYM GROUP", "-30")]
+        let found = RecurringDetector.detect(rows, calendar: calendar)
+        XCTAssertEqual(found.first?.period, .monthly, "August was skipped")
+        let twoSkips = [tx(day(4, 1), "DD GYM GROUP", "-30"), tx(day(6, 1), "DD GYM GROUP", "-30"), tx(day(8, 1), "DD GYM GROUP", "-30"), tx(day(10, 1), "DD GYM GROUP", "-30")]
+        XCTAssertNotEqual(RecurringDetector.detect(twoSkips, calendar: calendar).first?.period, .monthly)
+    }
 }

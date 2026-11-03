@@ -81,7 +81,13 @@ public enum RecurringDetector {
         let scheduled = words.first.map(scheduledCodes.contains) == true || ["DIRECT DEBIT", "STANDING ORDER"].contains(words.prefix(2).joined(separator: " "))
         guard sorted.count >= 3 || scheduled else { return nil }
         let gaps = zip(sorted, sorted.dropFirst()).map { calendar.dateComponents([.day], from: calendar.startOfDay(for: $0.date), to: calendar.startOfDay(for: $1.date)).day ?? 0 }
-        guard let cadence = cadences.first(where: { cadence in gaps.allSatisfy { cadence.days.contains($0) } }) else { return nil }
+        // One skipped payment (a month off, or a payment that didn't reach the statements)
+        // doesn't end a series of three or more: that gap is twice the usual.
+        guard let cadence = cadences.first(where: { cadence in
+            let skipped = (cadence.days.lowerBound * 2)...(cadence.days.upperBound * 2)
+            let odd = gaps.filter { !cadence.days.contains($0) }
+            return odd.isEmpty || (sorted.count >= 3 && odd.count == 1 && skipped.contains(odd[0]) && gaps.count > 1)
+        }) else { return nil }
         // Steady amounts: each within half of the median (energy and phone bills move a little).
         let amounts = sorted.map { -$0.amount }.sorted()
         let median = amounts[amounts.count / 2]
