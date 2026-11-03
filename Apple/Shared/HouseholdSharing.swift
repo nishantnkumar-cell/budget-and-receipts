@@ -1,5 +1,7 @@
 import BudgetCore
 import CloudKit
+import CoreImage
+import CoreImage.CIFilterBuiltins
 import CoreTransferable
 import LocalAuthentication
 import SwiftUI
@@ -120,6 +122,7 @@ struct HouseholdSharingSection: View {
                     ShareLink(item: HouseholdInvite(sync: sync), preview: SharePreview("Join my Duo Budget household")) {
                         Label("Invite your partner", systemImage: "person.badge.plus")
                     }
+                    inviteByCodeLink
                 } else {
                     Text("Turn on iCloud sync to share your household.").foregroundStyle(.secondary)
                 }
@@ -129,6 +132,7 @@ struct HouseholdSharingSection: View {
                     ShareLink(item: HouseholdInvite(sync: sync), preview: SharePreview("Join my Duo Budget household")) {
                         Label("Invite again", systemImage: "person.badge.plus")
                     }
+                    inviteByCodeLink
                 }
                 Button("Stop Sharing", role: .destructive) { confirmingLeave = true }
             case .member:
@@ -159,12 +163,114 @@ struct HouseholdSharingSection: View {
         }
     }
 
+    private var inviteByCodeLink: some View {
+        NavigationLink { InviteCodeView() } label: {
+            Label("Invite with a QR code or link", systemImage: "qrcode")
+        }
+    }
+
     private var footer: String {
         switch syncStatus.household.role {
         case .solo: "Your partner gets a link to join. Everything is shared unless you mark it Private, and it stays end-to-end encrypted: only the two of you can read it."
         case .owner: "Only you can change the couple settings and your own accounts. Anything your partner changes or deletes can be put back from Recently changed for 30 days. Marking an item Private hides it from now on; copies already shared stay with them."
         case .member: "Only the household owner can change the couple settings and their accounts. Your private items stay on your own devices."
         }
+    }
+}
+
+/// Invite by QR code, AirDrop or a copied link. The link names the partner's Apple ID, so
+/// only they can open it; anyone else who scans it is turned away by iCloud.
+struct InviteCodeView: View {
+    @EnvironmentObject var syncStatus: SyncStatus
+    @State private var contact = ""
+    @State private var link: URL?
+    @State private var working = false
+    @State private var error: String?
+
+    var body: some View {
+        Form {
+            Section {
+                TextField("Email or phone number", text: $contact)
+                    .autocorrectionDisabled()
+                    #if os(iOS)
+                    .textContentType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    .keyboardType(.emailAddress)
+                    #endif
+                Button {
+                    Task { await makeLink() }
+                } label: {
+                    if working { ProgressView() } else { Text(link == nil ? "Make Invitation" : "Make a New Invitation") }
+                }
+                .disabled(contact.trimmingCharacters(in: .whitespaces).isEmpty || working)
+            } header: {
+                Text("Your partner's Apple ID")
+            } footer: {
+                Text("The email address or phone number (with country code, like +44) they sign in to iCloud with. Only that Apple ID can open the invitation.")
+            }
+            if let error {
+                Section { Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.brandPink) }
+            }
+            if let link {
+                Section {
+                    if let code = QRCode.image(for: link.absoluteString) {
+                        Image(decorative: code, scale: 1)
+                            .interpolation(.none)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: 240)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .accessibilityLabel("QR code for the household invitation")
+                    }
+                    ShareLink(item: link, subject: Text("Join my Duo Budget household")) {
+                        Label("AirDrop or Send Link…", systemImage: "square.and.arrow.up")
+                    }
+                    Button { copy(link) } label: { Label("Copy Link", systemImage: "doc.on.doc") }
+                } footer: {
+                    Text("On their iPhone: open the Camera, point it at the code and tap the link. Duo Budget opens and joins the household.")
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Invite with a Code")
+    }
+
+    private func makeLink() async {
+        guard let sync = syncStatus.sync else {
+            error = "Turn on Sync with iCloud first."
+            return
+        }
+        working = true
+        error = nil
+        defer { working = false }
+        do {
+            link = try await sync.inviteLink(for: contact)
+        } catch let failure as CKError where failure.code == .unknownItem {
+            error = "No Apple ID was found for \(contact). Check the email or phone number they use for iCloud."
+        } catch {
+            self.error = CloudSync.describe(error)
+        }
+    }
+
+    private func copy(_ url: URL) {
+        #if os(iOS)
+        UIPasteboard.general.url = url
+        #else
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+        #endif
+    }
+}
+
+/// A QR code for a piece of text, drawn by Core Image on the device.
+enum QRCode {
+    static func image(for text: String) -> CGImage? {
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(text.utf8)
+        filter.correctionLevel = "M"
+        guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 10, y: 10)) else { return nil }
+        return CIContext().createCGImage(output, from: output.extent)
     }
 }
 

@@ -489,6 +489,31 @@ actor CloudSync: CKSyncEngineDelegate {
         return saved
     }
 
+    /// A link to the household that only this person's Apple ID can open, for a QR code,
+    /// AirDrop or copying. `contact` is the email address or phone number of their Apple ID.
+    func inviteLink(for contact: String) async throws -> URL {
+        guard let container else { throw CKError(.notAuthenticated) }
+        let contact = contact.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lookup = contact.contains("@")
+            ? CKUserIdentity.LookupInfo(emailAddress: contact)
+            : CKUserIdentity.LookupInfo(phoneNumber: contact.filter { $0.isNumber || $0 == "+" })
+        let share = try await prepareShare()
+        guard let result = try await container.shareParticipants(forUserIdentityLookupInfos: [lookup]).first?.value else {
+            throw CKError(.unknownItem)
+        }
+        let participant = try result.get()
+        let already = share.participants.contains { $0.userIdentity.userRecordID != nil && $0.userIdentity.userRecordID == participant.userIdentity.userRecordID }
+        if !already {
+            participant.permission = .readWrite
+            share.addParticipant(participant)
+        }
+        let saved = try await container.privateCloudDatabase.save(share)
+        log("Made an invitation link for a partner (added: \(!already))")
+        guard let url = (saved as? CKShare)?.url ?? share.url else { throw CKError(.internalError) }
+        await refreshParticipants()
+        return url
+    }
+
     /// Joins a partner's household from their invitation. Shared items on this device move into it.
     func accept(_ metadata: CKShare.Metadata) async throws {
         guard let container else { throw CKError(.notAuthenticated) }
