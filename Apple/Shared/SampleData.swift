@@ -47,6 +47,46 @@ enum SampleData {
             store.add(transaction)
         }
         func months(_ n: Int) -> Date { calendar.date(byAdding: .month, value: -n, to: Date()) ?? Date() }
+        // A year of everyday history, so Reports has trends to show.
+        let history: [(String, Decimal, String, String?, UUID, MoneyOwner?, Int)] = [
+            ("Salary", 2850, "Income", "Salary", joint.id, .mine, 1),
+            ("Priya salary", 2400, "Income", "Salary", firstDirect.id, .partner, 1),
+            ("Tesco Extra", -88.40, "Groceries", "Supermarket", joint.id, .shared, 3),
+            ("Waitrose", -46.10, "Groceries", "Supermarket", joint.id, .shared, 9),
+            ("Tesco Extra", -71.25, "Groceries", "Supermarket", joint.id, .shared, 17),
+            ("Octopus Energy", -92, "Bills & utilities", "Energy", joint.id, .shared, 2),
+            ("Thames Water", -38.50, "Bills & utilities", "Water", joint.id, .shared, 5),
+            ("Pret A Manger", -7.80, "Eating out", "Coffee", amex.id, .mine, 6),
+            ("Dishoom", -64.00, "Eating out", "Restaurant", joint.id, .shared, 13),
+            ("Deliveroo", -27.40, "Eating out", "Takeaway", joint.id, .shared, 20),
+            ("TfL", -42.60, "Transport", "Public transport", amex.id, .mine, 11),
+            ("Shell", -58.00, "Transport", "Fuel", firstDirect.id, .partner, 15),
+            ("Amazon", -31.99, "Shopping", "Online marketplace", amex.id, .mine, 19),
+            ("Netflix", -10.99, "Subscriptions", "Streaming", amex.id, .mine, 8),
+            ("Spotify", -12.99, "Subscriptions", "Music", joint.id, .shared, 8),
+            ("PureGym", -24.99, "Health", "Fitness", firstDirect.id, .partner, 4),
+        ]
+        var sampleIndex = 1000
+        for back in 2...12 {
+            let wobble = Decimal((back * 37) % 23) / 100   // up to ±23% month to month, always the same
+            for row in history {
+                guard let month = calendar.date(byAdding: .month, value: -back, to: Date()),
+                      let date = calendar.date(bySetting: .day, value: row.6, of: month) else { continue }
+                let scale: Decimal = row.2 == "Income" || row.2 == "Subscriptions" || row.3 == "Energy" ? 1 : 0.88 + wobble
+                var transaction = BankTransaction(date: date, merchant: row.0, amount: row.1 * scale, category: row.2,
+                                                  fingerprint: "sample-\(sampleIndex)", owner: row.5)
+                transaction.subcategory = row.3
+                transaction.accountID = row.4
+                store.add(transaction)
+                sampleIndex += 1
+            }
+        }
+        if let summer = calendar.date(byAdding: .month, value: -4, to: Date()) {
+            var flights = BankTransaction(date: summer, merchant: "British Airways", amount: -684, category: "Travel", fingerprint: "sample-flights", owner: .shared)
+            flights.subcategory = "Flights"
+            flights.accountID = amex.id
+            store.add(flights)
+        }
         let wealth: [(String, WealthAccount.Kind, MoneyOwner, [Decimal])] = [
             ("Our home", .property, .shared, [395_000, 398_000, 400_000]),
             ("Mortgage", .mortgage, .shared, [231_400, 230_200, 229_000]),
