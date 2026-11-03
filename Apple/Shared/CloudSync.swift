@@ -183,6 +183,8 @@ actor CloudSync: CKSyncEngineDelegate {
         guard await MainActor.run(body: { !sources.contains { $0.isWaitingForFiles } }) else { return }
         let container = CKContainer(identifier: id)
         self.container = container
+        let account = (try? await container.accountStatus()).map(Self.describe) ?? "unknown"
+        log("Start. iCloud account: \(account). Waiting to send: \(pendingCount).")
         let unreadable = await MainActor.run { sources.flatMap(\.unreadableFiles) }
         if !unreadable.isEmpty {
             // A local file couldn't be read: rebuild from iCloud rather than treat it as deleted.
@@ -270,8 +272,10 @@ actor CloudSync: CKSyncEngineDelegate {
             }
             await report("Up to date")
         } catch let error as CKError where error.code == .notAuthenticated {
+            log("Fetch: not signed in to iCloud.")
             await report("Sign in to iCloud on this device to sync")
         } catch {
+            log("Fetch failed: \(Self.describe(error))")
             await report("Couldn't reach iCloud: \(error.localizedDescription)")
         }
     }
@@ -328,8 +332,13 @@ actor CloudSync: CKSyncEngineDelegate {
                 try await privateEngine?.sendChanges()
                 try await sharedEngine?.sendChanges()
             }
-            await report("Sent \(changes.saves.count + changes.deletes.count) change\(changes.saves.count + changes.deletes.count == 1 ? "" : "s")")
+            if let refusal = lastRefusal {
+                await report("Couldn't send \(refusal.count) item\(refusal.count == 1 ? "" : "s"): \(refusal.reason)")
+            } else {
+                await report("Sent \(changes.saves.count + changes.deletes.count) change\(changes.saves.count + changes.deletes.count == 1 ? "" : "s")")
+            }
         } catch {
+            log("Send failed: \(Self.describe(error))")
             await report("Couldn't send changes: \(error.localizedDescription)")
         }
     }
@@ -445,6 +454,7 @@ actor CloudSync: CKSyncEngineDelegate {
             Self.save(update.stateSerialization, stateFolder.appendingPathComponent(isShared ? "sync-engine-shared.json" : "sync-engine.json"))
 
         case .accountChange(let change):
+            log("Account change: \(change.changeType).")
             if case .signOut = change.changeType { await report("Signed out of iCloud") }
             if case .switchAccounts = change.changeType { resetLocalSyncState() }
             if case .signOut = change.changeType { resetLocalSyncState() }
@@ -453,6 +463,12 @@ actor CloudSync: CKSyncEngineDelegate {
             await applyFetched(changes, syncEngine: syncEngine)
 
         case .sentRecordZoneChanges(let sent):
+            log("Sent: \(sent.savedRecords.count) saved, \(sent.deletedRecordIDs.count) deleted, \(sent.failedRecordSaves.count) refused, \(sent.failedRecordDeletes.count) deletes refused.")
+            var refused: [String: Int] = [:]
+            for failure in sent.failedRecordSaves { refused[Self.describe(failure.error), default: 0] += 1 }
+            for (reason, count) in refused { log("  \(count) refused: \(reason)") }
+            let lasting = sent.failedRecordSaves.filter { ![.serverRecordChanged, .zoneNotFound, .unknownItem, .networkFailure, .networkUnavailable, .serviceUnavailable, .requestRateLimited, .zoneBusy].contains($0.error.code) }
+            lastRefusal = lasting.isEmpty ? nil : (lasting.count, lasting[0].error.localizedDescription)
             for record in sent.savedRecords {
                 let name = record.recordID.recordName
                 systemFields[name] = encodeSystemFields(record)
@@ -482,6 +498,14 @@ actor CloudSync: CKSyncEngineDelegate {
             for id in sent.deletedRecordIDs { systemFields[id.recordName] = nil }
             if !retry.isEmpty { syncEngine.state.add(pendingRecordZoneChanges: retry) }
             saveState()
+
+        case .sentDatabaseChanges(let sent):
+            if !sent.failedZoneSaves.isEmpty || !sent.failedZoneDeletes.isEmpty {
+                for failure in sent.failedZoneSaves { log("Zone \(failure.zone.zoneID.zoneName) couldn't be created: \(Self.describe(failure.error))") }
+                for (zone, error) in sent.failedZoneDeletes { log("Zone \(zone.zoneName) couldn't be deleted: \(Self.describe(error))") }
+            } else if !sent.savedZones.isEmpty {
+                log("Zones ready: \(sent.savedZones.map(\.zoneID.zoneName).joined(separator: ", ")).")
+            }
 
         case .fetchedDatabaseChanges(let changes):
             if isShared, changes.deletions.contains(where: { $0.zoneID == householdZoneID }) {
@@ -673,6 +697,38 @@ actor CloudSync: CKSyncEngineDelegate {
         coder.requiresSecureCoding = true
         defer { coder.finishDecoding() }
         return CKRecord(coder: coder)
+    }
+
+    // MARK: Sync log
+
+    /// The last refusals from iCloud that retrying won't fix, for the status line.
+    private var lastRefusal: (count: Int, reason: String)?
+
+    /// A short, plain log of what sync did, kept on this device only (sync-log.txt, last 300
+    /// lines), so a sync that silently stalls can be diagnosed. It holds no item contents.
+    private func log(_ line: String) {
+        let url = stateFolder.appendingPathComponent("sync-log.txt")
+        let stamp = Date().formatted(.iso8601)
+        var lines = (try? String(contentsOf: url, encoding: .utf8))?.split(separator: "\n", omittingEmptySubsequences: true).map(String.init) ?? []
+        lines.append("\(stamp) \(line)")
+        if lines.count > 300 { lines.removeFirst(lines.count - 300) }
+        try? (lines.joined(separator: "\n") + "\n").write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    static func describe(_ error: Error) -> String {
+        guard let error = error as? CKError else { return error.localizedDescription }
+        return "CKError \(error.code.rawValue) (\(error.code)) \(error.localizedDescription)"
+    }
+
+    static func describe(_ status: CKAccountStatus) -> String {
+        switch status {
+        case .available: "available"
+        case .noAccount: "no account"
+        case .restricted: "restricted"
+        case .couldNotDetermine: "could not determine"
+        case .temporarilyUnavailable: "temporarily unavailable"
+        @unknown default: "unknown"
+        }
     }
 
     // MARK: Saved state
