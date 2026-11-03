@@ -36,6 +36,13 @@ final class ShareAcceptor {
 
 #if os(iOS)
 final class AppDelegate: NSObject, UIApplicationDelegate {
+    /// iCloud tells the app about changes from other devices with silent pushes, which wake it
+    /// in the background (even when the phone is locked) so the sync engine can fetch them.
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        application.registerForRemoteNotifications()
+        return true
+    }
+
     func application(_ application: UIApplication, configurationForConnecting session: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {
         let configuration = UISceneConfiguration(name: nil, sessionRole: session.role)
         configuration.delegateClass = SceneDelegate.self
@@ -56,6 +63,10 @@ final class SceneDelegate: NSObject, UIWindowSceneDelegate {
 }
 #else
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApplication.shared.registerForRemoteNotifications()
+    }
+
     func application(_ application: NSApplication, userDidAcceptCloudKitShareWith metadata: CKShare.Metadata) {
         Task { @MainActor in ShareAcceptor.shared.receive(metadata) }
     }

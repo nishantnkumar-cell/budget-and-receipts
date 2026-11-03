@@ -107,6 +107,10 @@ actor CloudSync: CKSyncEngineDelegate {
     /// Zones from the first version, which kept data in plain fields. Deleted on every launch,
     /// in case a device still on the old version re-created them.
     static let legacyZones = [CKRecordZone.ID(zoneName: "Household"), CKRecordZone.ID(zoneName: "Private")]
+    /// The record type for items. The first version's "Item" type has plain (unencrypted) fields
+    /// in the iCloud schema, and a field's type can never change, so encrypted items need a
+    /// type of their own: saving encrypted values into "Item" is refused.
+    static let recordType = "SealedItem"
     /// Receipt photos are shrunk to stay inside CloudKit's 1 MB record limit.
     static let maxImageBytes = 700_000
     /// More deletions than this at once (or more than a fifth of everything) wait for the person.
@@ -194,6 +198,8 @@ actor CloudSync: CKSyncEngineDelegate {
         let saved = Self.load(CKSyncEngine.State.Serialization.self, stateFolder.appendingPathComponent("sync-engine.json"))
         let engine = CKSyncEngine(CKSyncEngine.Configuration(database: container.privateCloudDatabase, stateSerialization: saved, delegate: self))
         privateEngine = engine
+        dropLegacyPending(engine)
+        log("Engine ready. Waiting to send: \(engine.state.pendingRecordZoneChanges.count) items, \(engine.state.pendingDatabaseChanges.count) folder changes.")
         var zones: [CKSyncEngine.PendingDatabaseChange] = [.saveZone(CKRecordZone(zoneID: Self.privateZone))]
         if household.role != .member { zones.append(.saveZone(CKRecordZone(zoneID: Self.householdZone))) }
         engine.state.add(pendingDatabaseChanges: zones)
@@ -359,9 +365,10 @@ actor CloudSync: CKSyncEngineDelegate {
         await start()
     }
 
-    /// Fetches changes now, e.g. when the app comes to the front.
+    /// Fetches changes now, e.g. when the app comes to the front. Runs on its own, so the
+    /// screen going away (the phone locking) doesn't cancel it halfway.
     func refresh() async {
-        await fetch()
+        await Task { await self.fetch() }.value
     }
 
     // MARK: Household sharing
@@ -449,6 +456,7 @@ actor CloudSync: CKSyncEngineDelegate {
 
     func handleEvent(_ event: CKSyncEngine.Event, syncEngine: CKSyncEngine) async {
         let isShared = syncEngine === sharedEngine
+        if case .stateUpdate = event {} else { log("Event: \(Self.name(of: event))\(isShared ? " (shared)" : "")") }
         switch event {
         case .stateUpdate(let update):
             Self.save(update.stateSerialization, stateFolder.appendingPathComponent(isShared ? "sync-engine-shared.json" : "sync-engine.json"))
@@ -591,7 +599,17 @@ actor CloudSync: CKSyncEngineDelegate {
     }
 
     func nextRecordZoneChangeBatch(_ context: CKSyncEngine.SendChangesContext, syncEngine: CKSyncEngine) async -> CKSyncEngine.RecordZoneChangeBatch? {
-        let pending = syncEngine.state.pendingRecordZoneChanges.filter { context.options.scope.contains($0) }
+        var pending = syncEngine.state.pendingRecordZoneChanges.filter { context.options.scope.contains($0) }
+        // A save this device can no longer build (its item is gone, or it's left over from an
+        // older version) would sit in the queue for ever: drop it instead.
+        let orphans = pending.filter { if case .saveRecord(let id) = $0 { outgoing[id.recordName] == nil } else { false } }
+        if !orphans.isEmpty {
+            syncEngine.state.remove(pendingRecordZoneChanges: orphans)
+            pending.removeAll { orphans.contains($0) }
+            log("Dropped \(orphans.count) queued saves with nothing to send.")
+        }
+        log("Sending a batch of \(pending.count) (reason: \(context.reason)).")
+        guard !pending.isEmpty else { return nil }
         return await CKSyncEngine.RecordZoneChangeBatch(pendingChanges: pending) { recordID in
             await self.ckRecord(for: recordID)
         }
@@ -624,7 +642,7 @@ actor CloudSync: CKSyncEngineDelegate {
 
     private func ckRecord(for id: CKRecord.ID) -> CKRecord? {
         guard let item = outgoing[id.recordName] else { return nil }
-        var record = CKRecord(recordType: "Item", recordID: id)
+        var record = CKRecord(recordType: Self.recordType, recordID: id)
         if let fields = systemFields[id.recordName], let saved = decodeSystemFields(fields), saved.recordID.zoneID == id.zoneID {
             record = saved
         }
@@ -699,6 +717,48 @@ actor CloudSync: CKSyncEngineDelegate {
         return CKRecord(coder: coder)
     }
 
+    /// The first version named records after their keys, in zones that no longer exist. Any of
+    /// those still queued (and the queued deletion of those zones, done directly instead) are
+    /// dropped, so they can't stall the queue.
+    private func dropLegacyPending(_ engine: CKSyncEngine) {
+        let legacyRecords = engine.state.pendingRecordZoneChanges.filter { change in
+            switch change {
+            case .saveRecord(let id), .deleteRecord(let id): Self.legacyZones.contains(id.zoneID)
+            @unknown default: false
+            }
+        }
+        let legacyZones = engine.state.pendingDatabaseChanges.filter { change in
+            switch change {
+            case .saveZone(let zone): Self.legacyZones.contains(zone.zoneID)
+            case .deleteZone(let id): Self.legacyZones.contains(id)
+            @unknown default: false
+            }
+        }
+        if !legacyRecords.isEmpty { engine.state.remove(pendingRecordZoneChanges: legacyRecords) }
+        if !legacyZones.isEmpty { engine.state.remove(pendingDatabaseChanges: legacyZones) }
+        if !legacyRecords.isEmpty || !legacyZones.isEmpty {
+            log("Removed \(legacyRecords.count) old-version items and \(legacyZones.count) old folder changes from the queue.")
+        }
+    }
+
+    static func name(of event: CKSyncEngine.Event) -> String {
+        switch event {
+        case .stateUpdate: "state update"
+        case .accountChange: "account change"
+        case .fetchedDatabaseChanges(let changes): "fetched folder changes (\(changes.modifications.count) changed, \(changes.deletions.count) deleted)"
+        case .fetchedRecordZoneChanges(let changes): "fetched \(changes.modifications.count) items, \(changes.deletions.count) deletions"
+        case .sentDatabaseChanges(let sent): "sent folder changes (\(sent.savedZones.count) saved, \(sent.failedZoneSaves.count) failed)"
+        case .sentRecordZoneChanges(let sent): "sent items (\(sent.savedRecords.count) saved, \(sent.failedRecordSaves.count) failed)"
+        case .willFetchChanges: "will fetch"
+        case .willFetchRecordZoneChanges(let zone): "will fetch \(zone.zoneID.zoneName)"
+        case .didFetchRecordZoneChanges(let zone): "did fetch \(zone.zoneID.zoneName)\(zone.error.map { ": \(describe($0))" } ?? "")"
+        case .didFetchChanges: "did fetch"
+        case .willSendChanges: "will send"
+        case .didSendChanges: "did send"
+        @unknown default: "other"
+        }
+    }
+
     // MARK: Sync log
 
     /// The last refusals from iCloud that retrying won't fix, for the status line.
@@ -709,6 +769,7 @@ actor CloudSync: CKSyncEngineDelegate {
     private func log(_ line: String) {
         let url = stateFolder.appendingPathComponent("sync-log.txt")
         let stamp = Date().formatted(.iso8601)
+        print("[sync] \(line)")
         var lines = (try? String(contentsOf: url, encoding: .utf8))?.split(separator: "\n", omittingEmptySubsequences: true).map(String.init) ?? []
         lines.append("\(stamp) \(line)")
         if lines.count > 300 { lines.removeFirst(lines.count - 300) }
