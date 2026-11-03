@@ -210,6 +210,12 @@ actor CloudSync: CKSyncEngineDelegate {
     /// Deletions waiting for the person's confirmation.
     private var heldDeletes: [SyncChanges.Delete] = []
     private var allowLargeDeletionOnce = false
+    /// How many sync engine callbacks are running now (they can nest across awaits).
+    private var eventDepth = 0
+    /// A send is in progress.
+    private var isSending = false
+    /// Local changes arrived while sending wasn't allowed; send once it is.
+    private var needsSend = false
 
     init(sources: [SyncSource], imagesFolder: URL, stateFolder: URL, status: SyncStatus? = nil) {
         self.sources = sources
@@ -398,6 +404,18 @@ actor CloudSync: CKSyncEngineDelegate {
     /// Call after local data is saved. Queues whatever changed since the last sync.
     func localDataChanged() async {
         guard privateEngine != nil else { return }
+        // CKSyncEngine stops the app if sendChanges() runs inside one of its own callbacks, or
+        // while another send is still going (this actor lets calls interleave at each await).
+        // Either way, send again once the current one is done.
+        guard eventDepth == 0, !isSending else {
+            needsSend = true
+            return
+        }
+        isSending = true
+        defer {
+            isSending = false
+            sendAgainIfNeeded()
+        }
         guard await MainActor.run(body: { !sources.contains { $0.isWaitingForFiles } }) else { return }
         let current = await MainActor.run { sources.flatMap { $0.syncRecords() } }
         var changes = state.changes(to: current)
@@ -443,6 +461,13 @@ actor CloudSync: CKSyncEngineDelegate {
             log("Send failed: \(Self.describe(error))")
             await report("Couldn't send changes: \(error.localizedDescription)")
         }
+    }
+
+    /// Changes that arrived during a send or a sync engine callback go out right after it.
+    private func sendAgainIfNeeded() {
+        guard needsSend, eventDepth == 0, !isSending else { return }
+        needsSend = false
+        Task { await self.localDataChanged() }
     }
 
     /// The person confirmed the held deletions (or erased everything on purpose).
@@ -583,6 +608,11 @@ actor CloudSync: CKSyncEngineDelegate {
     // MARK: CKSyncEngineDelegate
 
     func handleEvent(_ event: CKSyncEngine.Event, syncEngine: CKSyncEngine) async {
+        eventDepth += 1
+        defer {
+            eventDepth -= 1
+            sendAgainIfNeeded()
+        }
         let isShared = syncEngine === sharedEngine
         if case .stateUpdate = event {} else { log("Event: \(Self.name(of: event))\(isShared ? " (shared)" : "")") }
         switch event {
