@@ -262,7 +262,7 @@ final class BudgetStore: ObservableObject {
     var calculator: BudgetCalculator { BudgetCalculator(monthStartDay: AppSettings.monthStartDay) }
 
     var monthReport: MonthlyBudgetReport {
-        calculator.report(viewTransactions, budgets: budgets, month: selectedMonth)
+        calculator.report(viewTransactions, budgets: viewBudgets, month: selectedMonth)
     }
 
     // MARK: Couples
@@ -280,7 +280,7 @@ final class BudgetStore: ObservableObject {
     /// to come. Nil when no budgets are set or another month is showing.
     func safeToSpend(contracts: [SubscriptionContract], today: Date = Date()) -> SafeToSpend? {
         let upcoming = ComingUpPlanner().payments(bills(contracts), from: today)
-        return SafeToSpend.calculate(report: monthReport, upcomingBills: upcoming, today: today)
+        return SafeToSpend.calculate(report: monthReport, upcomingBills: upcoming, today: today, period: calculator.monthInterval(for: selectedMonth))
     }
 
     // MARK: Recurring payments
@@ -312,6 +312,11 @@ final class BudgetStore: ObservableObject {
     /// A warning when this receipt looks like one already saved or attached. Nil when it's new.
     func possibleDuplicate(of editor: ReceiptDraftEditor, excluding pendingID: UUID? = nil) -> String? {
         ReceiptDuplicates.match(editor, pending: pendingReceipts.filter { $0.id != pendingID }, transactions: transactions)
+    }
+
+    /// Budgets scaled to the selected side of the household, to compare with `viewTransactions`.
+    var viewBudgets: [MonthlyBudget] {
+        hasPartner ? ledger.budgets(budgets, for: householdView) : budgets
     }
 
     /// Transactions scaled to the selected side of the household.
@@ -732,7 +737,7 @@ final class BudgetStore: ObservableObject {
     func setAsides(contracts: [SubscriptionContract]) -> [SetAside] { SetAside.plan(contracts) }
 
     /// The month just shown, looked back on.
-    var monthReview: MonthReview { MonthReview.make(viewTransactions, budgets: budgets, month: selectedMonth, calculator: calculator) }
+    var monthReview: MonthReview { MonthReview.make(viewTransactions, budgets: viewBudgets, month: selectedMonth, calculator: calculator) }
 
     // MARK: Tags, expense reports, balance forecast
 
@@ -769,7 +774,10 @@ final class BudgetStore: ObservableObject {
                 expected.append((date, income.amount))
             }
         }
-        return BalanceForecast.make(balance: balance, transactions: transactions, upcomingBills: ComingUpPlanner().payments(bills(contracts), from: now), expectedIncome: expected, now: now)
+        let allBills = bills(contracts)
+        let tracker = SubscriptionTracker()
+        return BalanceForecast.make(balance: balance, transactions: transactions, upcomingBills: ComingUpPlanner().payments(allBills, from: now), expectedIncome: expected,
+                                    isBill: { payment in allBills.contains { tracker.matches(transaction: payment, contract: $0) } }, now: now)
     }
 
     // MARK: Starting again

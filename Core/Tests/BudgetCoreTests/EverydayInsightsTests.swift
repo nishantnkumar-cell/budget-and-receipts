@@ -83,4 +83,12 @@ final class EverydayInsightsTests: XCTestCase {
         let reminder = planner.reminders(for: contract, now: day(11, 1)).first { $0.kind == .paymentDue }
         XCTAssertEqual(calendar.component(.day, from: reminder!.fireDate), 15)
     }
+    func testSafeToSpendFollowsAPaydayMonth() {
+        // A budget month from 25 October to 24 November, on 30 October.
+        let period = DateInterval(start: calendar.startOfDay(for: day(10, 25)), end: calendar.startOfDay(for: day(11, 25)))
+        let report = MonthlyBudgetReport(month: day(11, 1), income: 0, spending: 0, lines: [CategoryBudgetLine(category: "Groceries", limit: 260, spent: 0)])
+        let safe = SafeToSpend.calculate(report: report, upcomingBills: [], today: day(10, 30), period: period, calendar: calendar)
+        XCTAssertEqual(safe?.daysLeft, 26, "30 October to 24 November")
+        XCTAssertEqual(safe?.today, 10)
+    }
 }

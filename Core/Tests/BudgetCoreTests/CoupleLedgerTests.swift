@@ -188,4 +188,29 @@ final class CoupleLedgerTests: XCTestCase {
         editor.setOwner(editor.items[0].id, .partner)
         XCTAssertEqual(editor.makeDraft(reviewed: true).proposedSplits.first?.owner, .partner)
     }
+    // MARK: Joint accounts and budgets per person
+
+    func testJointAccountSpendingLeavesYouSquare() {
+        var ledger = ledger(myShare: "0.6")
+        let joint = UUID(), hers = UUID()
+        ledger.accountOwners = [joint: .shared, hers: .partner]
+        var food = tx("-100.00", owner: .shared)
+        food.accountID = joint
+        XCTAssertEqual(ledger.balance([food]).amount, 0, "The joint pot paid for something shared")
+        var mine = tx("-50.00", owner: .mine)
+        mine.accountID = joint
+        XCTAssertEqual(ledger.balance([mine]).amount, money("-20"), "Partner's 40% of the joint money paid for my thing")
+        var hersShared = tx("-100.00", owner: .shared)
+        hersShared.accountID = hers
+        XCTAssertEqual(ledger.balance([hersShared]).amount, money("-60"), "Her account paid, so I owe my 60%")
+        XCTAssertEqual(ledger.balance([tx("-100.00", owner: .shared)]).amount, money("40"), "My account paid, so she owes her 40%")
+    }
+
+    func testBudgetsForOnePersonAreTheirShare() {
+        let ledger = ledger(myShare: "0.6", rules: [OwnerRule(match: .category("Health"), owner: .mine)])
+        let budgets = [MonthlyBudget(category: "Groceries", limit: 400, month: october), MonthlyBudget(category: "Health", limit: 50, month: october)]
+        XCTAssertEqual(ledger.budgets(budgets, for: .me).map(\.limit), [240, 50])
+        XCTAssertEqual(ledger.budgets(budgets, for: .partner).map(\.limit), [160, 0])
+        XCTAssertEqual(ledger.budgets(budgets, for: .together).map(\.limit), [400, 50])
+    }
 }

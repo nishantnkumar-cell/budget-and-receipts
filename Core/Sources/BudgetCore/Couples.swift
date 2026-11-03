@@ -204,22 +204,51 @@ public struct CoupleLedger: Sendable {
         }
     }
 
-    /// Who owes whom. Whoever paid is owed the other person's share of what they paid
-    /// for; a refund reverses that. Income and transfers between accounts are left out.
+    /// Who paid a transaction: as set, else whose account it came from. Nil for a joint account,
+    /// whose money is both of yours in your shares of shared costs.
+    public func payer(of transaction: BankTransaction) -> Person? {
+        if let paidBy = transaction.paidBy { return paidBy }
+        switch transaction.accountID.flatMap({ accountOwners[$0] }) {
+        case .partner: return .partner
+        case .shared: return nil
+        case .mine, nil: return .me
+        }
+    }
+
+    /// Who owes whom: what I paid less my fair part of it, added up. Whoever paid is owed the
+    /// other person's share of what they paid for; a refund reverses that. A joint account paid
+    /// in your shares of shared costs, so shared spending from it leaves you square, while your
+    /// own spending from it is owed back to your partner. Income and transfers are left out.
     /// Settlements count from the day they are recorded.
     public func balance(_ transactions: [BankTransaction], settlements: [Settlement] = []) -> CoupleBalance {
         var owedToMe: Decimal = 0
         for transaction in transactions {
-            let payer = transaction.paidBy ?? .me
+            let payer = payer(of: transaction)
             for (owner, spent) in parts(of: transaction) {
-                let owedToPayer = spent * share(of: owner, person: payer.other)
-                owedToMe += payer == .me ? owedToPayer : -owedToPayer
+                let paidByMe: Decimal = switch payer {
+                case .me: spent
+                case .partner: 0
+                case nil: spent * myShare
+                }
+                owedToMe += paidByMe - spent * share(of: owner, person: .me)
             }
         }
         for settlement in settlements {
             owedToMe += settlement.from == .partner ? -settlement.amount : settlement.amount
         }
         return CoupleBalance(amount: owedToMe)
+    }
+
+    /// Budgets as one view sees them. Together sees them in full. Me and Partner see their share
+    /// of shared costs, or all or none of a category a category rule gives to one of you.
+    public func budgets(_ budgets: [MonthlyBudget], for view: HouseholdView) -> [MonthlyBudget] {
+        guard view != .together else { return budgets }
+        return budgets.map { budget in
+            let owner = settings.rules.first { if case .category(let category) = $0.match { category == budget.category } else { false } }?.owner ?? .shared
+            var scaled = budget
+            scaled.limit = budget.limit * share(of: owner, for: view)
+            return scaled
+        }
     }
 
     /// Spending split by owner: positive for a purchase, negative for a refund.
