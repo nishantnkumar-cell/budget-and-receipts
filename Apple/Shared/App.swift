@@ -120,10 +120,9 @@ struct BudgetReceiptsApp: App {
         #endif
         #if os(macOS)
         .defaultSize(width: 1360, height: 880)
-        // One window each launch, not every window that was ever opened, and opening a file
-        // never makes a new window (the open one handles it).
+        // One window each launch, not every window that was ever opened.
         .restorationBehavior(.disabled)
-        .handlesExternalEvents(matching: [])
+        .defaultLaunchBehavior(.presented)
         .commands { ImportFromDevicesCommands() }
         #endif
     }

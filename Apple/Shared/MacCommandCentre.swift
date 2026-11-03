@@ -8,6 +8,7 @@ import SwiftUI
 struct MacRootView: View {
     @EnvironmentObject var store: BudgetStore
     @State private var selection: AppSection? = .home
+    @State private var showingPalette = false
 
     var body: some View {
         NavigationSplitView {
@@ -26,9 +27,114 @@ struct MacRootView: View {
                         .help("Scan or choose a receipt")
                 }
             }
+            .background {
+                // ⌘K: jump anywhere or find any payment.
+                Button("Go To…") { showingPalette = true }
+                    .keyboardShortcut("k", modifiers: .command)
+                    .hidden()
+            }
+            .sheet(isPresented: $showingPalette) {
+                CommandPalette(selection: $selection)
+                    .frame(width: 560, height: 420)
+            }
         }
         .tint(.brandPink)
         .frame(minWidth: 1080, minHeight: 720)
+    }
+}
+
+// MARK: Command palette
+
+/// ⌘K: type to jump to a place or find a payment by shop, category, tag or amount.
+struct CommandPalette: View {
+    @EnvironmentObject var store: BudgetStore
+    @Environment(\.dismiss) private var dismiss
+    @Binding var selection: AppSection?
+    @State private var query = ""
+    @State private var editing: BankTransaction?
+    @FocusState private var focused: Bool
+
+    private var places: [AppSection] {
+        [AppSection.home, .activity, .inbox, .budgets, .plan, .netWorth, .scan, .settings].filter {
+            query.isEmpty || $0.macTitle.localizedCaseInsensitiveContains(query) || $0.rawValue.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    private var payments: [BankTransaction] {
+        guard query.count >= 2 else { return [] }
+        let amount = Decimal(string: query.replacingOccurrences(of: "£", with: ""))
+        return store.transactions.filter { transaction in
+            transaction.merchant.localizedCaseInsensitiveContains(query)
+                || FinanceCategories.label(transaction.category, transaction.subcategory).localizedCaseInsensitiveContains(query)
+                || (transaction.tags ?? []).contains { $0.localizedCaseInsensitiveContains(query) }
+                || amount.map { abs(transaction.amount) == $0 } == true
+        }
+        .sorted { $0.date > $1.date }
+        .prefix(30)
+        .map { $0 }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("Go to a place, or find a shop, category, tag or amount", text: $query)
+                    .textFieldStyle(.plain)
+                    .font(.title3)
+                    .focused($focused)
+                    .onSubmit(openFirst)
+            }
+            .padding(14)
+            Divider()
+            List {
+                if !places.isEmpty {
+                    Section("Go to") {
+                        ForEach(places) { place in
+                            Button {
+                                selection = place
+                                dismiss()
+                            } label: {
+                                Label(place.macTitle, systemImage: place.macSymbol).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                if !payments.isEmpty {
+                    Section("Payments") {
+                        ForEach(payments) { payment in
+                            Button { editing = payment } label: {
+                                HStack {
+                                    Text(payment.date, format: .dateTime.day().month(.abbreviated)).foregroundStyle(.secondary).monospacedDigit().frame(width: 56, alignment: .leading)
+                                    Text(payment.merchant).lineLimit(1)
+                                    Spacer()
+                                    Text(FinanceCategories.label(payment.category, payment.subcategory)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    Text(payment.amount.money).monospacedDigit().fontWeight(.semibold)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .listStyle(.inset)
+        }
+        .onAppear { focused = true }
+        .onExitCommand { dismiss() }
+        .sheet(item: $editing) { transaction in
+            NavigationStack { TransactionEditor(transaction: transaction) }
+                .frame(minWidth: 460, minHeight: 520)
+        }
+    }
+
+    private func openFirst() {
+        if let place = places.first, payments.isEmpty {
+            selection = place
+            dismiss()
+        } else if let payment = payments.first {
+            editing = payment
+        }
     }
 }
 
@@ -39,7 +145,7 @@ extension AppSection {
     var macTitle: String {
         switch self {
         case .home: "Overview"
-        case .inbox: "Receipts to Check"
+        case .inbox: "To Check"
         case .plan: "Bills and Subscriptions"
         default: rawValue
         }
@@ -66,15 +172,23 @@ struct MacSidebar: View {
             Section {
                 ForEach([AppSection.home, .activity, .inbox, .budgets, .plan, .netWorth]) { section in
                     Label(section.macTitle, systemImage: section.macSymbol)
-                        .badge(section == .inbox ? store.needsReview.count : 0)
+                        .badge(badge(for: section))
                         .tag(section)
                 }
             }
-            if store.hasPartner {
-                Section("People") {
-                    personRow(.me, name: "Me", symbol: "person.fill")
+            Section("People") {
+                if store.hasPartner {
+                    personRow(.me, name: myName, symbol: "person.fill")
                     personRow(.partner, name: store.couple.partnerName, symbol: "person.fill")
                     personRow(.together, name: "Together", symbol: "person.2.fill")
+                } else {
+                    Label(myName, systemImage: "person.fill")
+                    Button { selection = .settings } label: {
+                        Label("Add Your Partner…", systemImage: "person.badge.plus")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.brandPink)
+                    .help("Split shared costs and switch between Me, your partner and Together")
                 }
             }
             if !store.accounts.isEmpty {
@@ -107,7 +221,37 @@ struct MacSidebar: View {
         }
         .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom, spacing: 0) { SidebarSyncFooter() }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            HStack {
+                Text("Duo Budget").font(.headline)
+                Spacer()
+                Text("⌘K").font(.caption.monospaced()).foregroundStyle(.secondary)
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.secondary.opacity(0.4)))
+                    .help("Press ⌘K to jump anywhere or find a payment")
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
+        }
         .navigationTitle("Duo Budget")
+    }
+
+    private var myName: String {
+        store.couple.ownerName.flatMap { $0.isEmpty ? nil : $0.split(separator: " ").first.map(String.init) } ?? "Me"
+    }
+
+    private func badge(for section: AppSection) -> Text? {
+        switch section {
+        case .inbox: store.needsReview.isEmpty ? nil : Text("\(store.needsReview.count)")
+        case .activity: store.transactions.isEmpty ? nil : Text("\(store.transactions.count)")
+        default: nil
+        }
+    }
+
+    /// What one person spent in the month on screen, with their share of shared costs.
+    private func spent(by view: HouseholdView) -> Decimal {
+        let scaled = store.ledger.transactions(store.transactions, for: view)
+        return store.calculator.spendingByCategory(scaled, month: store.selectedMonth).values.reduce(0, +)
     }
 
     private func spent(_ id: UUID) -> Decimal {
@@ -124,9 +268,10 @@ struct MacSidebar: View {
                         .foregroundStyle(view == .partner ? Color.brandPartner : view == .me ? Color.brandPlum : Color.secondary)
                 }
                 Spacer()
-                if store.householdView == view {
-                    Image(systemName: "checkmark").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                }
+                Text(spent(by: view).wholeMoney)
+                    .foregroundStyle(store.householdView == view ? Color.primary : Color.secondary)
+                    .fontWeight(store.householdView == view ? .semibold : .regular)
+                    .monospacedDigit()
             }
             .contentShape(Rectangle())
         }
@@ -265,16 +410,18 @@ struct MacKeyNumbers: View {
         let budgeted = report.lines.compactMap(\.limit).reduce(0, +)
         let spentInBudgets = report.lines.filter { $0.limit != nil }.reduce(0) { $0 + $1.spent }
         let safe = store.safeToSpend(contracts: subscriptions.contracts)
+        let pace = MacSpendingPace.cumulative(store.viewTransactions, month: store.selectedMonth, calculator: store.calculator)
         let due = SubscriptionTracker().dueSoon(subscriptions.contracts, from: Date(), days: 30)
         let dueTotal = due.filter { $0.currency == AppSettings.currency }.reduce(0) { $0 + $1.expectedAmount }
         Grid(horizontalSpacing: 12) {
             GridRow {
                 if budgeted > 0 {
                     MacKeyNumber(title: "Left to spend", symbol: "banknote", value: (budgeted - spentInBudgets).money,
-                                 caption: "of \(budgeted.money) budgeted", tint: .brandIndigo)
+                                 caption: "of \(budgeted.money) budgeted", tint: .brandIndigo,
+                                 trend: pace.map { budgeted - $0 })
                 } else {
                     MacKeyNumber(title: "Spent", symbol: "banknote", value: report.spending.money,
-                                 caption: "Income \(report.income.money)", tint: .brandIndigo)
+                                 caption: "Income \(report.income.money)", tint: .brandIndigo, trend: pace)
                 }
                 MacKeyNumber(title: "Safe to spend today", symbol: "gauge.with.dots.needle.33percent",
                              value: safe?.today.money ?? "–",
@@ -318,6 +465,8 @@ struct MacKeyNumber: View {
     let value: String
     let caption: String
     let tint: Color
+    /// A small trend for the month so far, drawn beside the caption.
+    var trend: [Decimal] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -335,7 +484,21 @@ struct MacKeyNumber: View {
                     .minimumScaleFactor(0.6)
                 Spacer(minLength: 0)
             }
-            Text(caption).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            HStack(spacing: 8) {
+                Text(caption).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Spacer(minLength: 4)
+                if trend.count > 1 {
+                    Chart(Array(trend.enumerated()), id: \.offset) { point in
+                        LineMark(x: .value("Day", point.offset), y: .value("Amount", NSDecimalNumber(decimal: point.element).doubleValue))
+                            .interpolationMethod(.monotone)
+                            .foregroundStyle(tint)
+                    }
+                    .chartXAxis(.hidden)
+                    .chartYAxis(.hidden)
+                    .frame(width: 56, height: 16)
+                    .accessibilityHidden(true)
+                }
+            }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -356,6 +519,11 @@ struct MacSpendingPace: View {
         let series: String
         let day: Int
         let amount: Double
+    }
+
+    static func ordinal(_ day: Int) -> String {
+        let suffix = (11...13).contains(day % 100) ? "th" : [1: "st", 2: "nd", 3: "rd"][day % 10] ?? "th"
+        return "\(day)\(suffix)"
     }
 
     /// Spending so far, day by day, for the month that `month` falls in.
@@ -394,6 +562,17 @@ struct MacSpendingPace: View {
                         .foregroundStyle(by: .value("Month", point.series))
                         .interpolationMethod(.monotone)
                         .lineStyle(StrokeStyle(lineWidth: point.series == "This month" ? 3 : 2))
+                }
+                if let last = now.last {
+                    PointMark(x: .value("Day", now.count), y: .value("Spent", NSDecimalNumber(decimal: last).doubleValue))
+                        .foregroundStyle(Color.brandPink)
+                        .annotation(position: .topLeading, spacing: 6) {
+                            Text("\(last.wholeMoney) by the \(Self.ordinal(now.count))")
+                                .font(.caption.weight(.semibold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.cardBackground.opacity(0.9), in: Capsule())
+                        }
                 }
                 if budget > 0 {
                     LineMark(x: .value("Day", 1), y: .value("Spent", 0.0), series: .value("Month", "Budget"))
@@ -441,11 +620,23 @@ struct MacNeedsYou: View {
 
     private var items: [Item] {
         var items: [Item] = []
-        let toCheck = store.needsReview.count
-        if toCheck > 0 {
+        let toApprove = store.receiptsToApprove.count
+        if toApprove > 0 {
             items.append(Item(id: "check", symbol: "doc.text.magnifyingglass", tint: .brandPink,
-                              title: toCheck == 1 ? "1 receipt to check" : "\(toCheck) receipts to check",
-                              detail: "Matched to a payment and ready to approve", action: "Review") { selection = .inbox })
+                              title: toApprove == 1 ? "1 receipt to approve" : "\(toApprove) receipts to approve",
+                              detail: "Matched to a payment and ready to split", action: "Review") { selection = .inbox })
+        }
+        let uncategorised = store.transactions.filter { $0.category == "Uncategorised" && store.calculator.isInMonth($0.date, store.selectedMonth) }.count
+        if uncategorised > 0 {
+            items.append(Item(id: "uncategorised", symbol: "tag", tint: .orange,
+                              title: uncategorised == 1 ? "1 payment needs a category" : "\(uncategorised) payments need a category",
+                              detail: "Set one, or make a rule so it's automatic", action: "Sort") { selection = .inbox })
+        }
+        let duplicates = store.likelyDuplicates
+        if let first = duplicates.first {
+            items.append(Item(id: "duplicates", symbol: "doc.on.doc", tint: .orange,
+                              title: duplicates.count == 1 ? "Possible duplicate" : "\(duplicates.count) possible duplicates",
+                              detail: "\(first.merchant) \(first.amount.money) was added by hand and by a statement", action: "Check") { selection = .activity })
         }
         if !store.pendingReceipts.isEmpty {
             let count = store.pendingReceipts.count
@@ -587,7 +778,13 @@ struct MacRecentActivity: View {
                 }
                 .width(min: 56, ideal: 64, max: 80)
                 TableColumn("Shop") { transaction in
-                    HStack(spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text(String(Categoriser.merchantKey(transaction.merchant).prefix(1)).ifEmpty(String(transaction.merchant.prefix(1))).uppercased())
+                            .font(.caption.weight(.bold))
+                            .frame(width: 22, height: 22)
+                            .foregroundStyle(Color.brandPlum)
+                            .background(Color.brandPlum.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .accessibilityHidden(true)
                         Text(transaction.merchant).fontWeight(.medium).lineLimit(1)
                         if !transaction.splits.isEmpty || transaction.pendingSplitDraft != nil {
                             Image(systemName: "doc.text")
@@ -600,7 +797,13 @@ struct MacRecentActivity: View {
                 TableColumn("Category") { transaction in
                     HStack(spacing: 6) {
                         Circle().fill(MacPalette.category(transaction.category)).frame(width: 7, height: 7)
-                        Text(FinanceCategories.label(transaction.category, transaction.subcategory)).lineLimit(1)
+                        if transaction.splits.isEmpty {
+                            Text(FinanceCategories.label(transaction.category, transaction.subcategory)).lineLimit(1)
+                        } else {
+                            Label("Split: " + Array(Set(transaction.splits.map(\.category))).sorted().joined(separator: ", "), systemImage: "square.split.2x1")
+                                .lineLimit(1)
+                                .help("Split across categories by its receipt's items")
+                        }
                     }
                 }
                 .width(min: 110, ideal: 150)
@@ -648,3 +851,7 @@ struct MacRecentActivity: View {
     }
 }
 #endif
+
+extension String {
+    func ifEmpty(_ fallback: String) -> String { isEmpty ? fallback : self }
+}
