@@ -258,6 +258,27 @@ actor CloudSync: CKSyncEngineDelegate {
         _ = try? await database.modifyRecordZones(saving: [], deleting: legacy)
     }
 
+    #if DEBUG
+    /// Testing only (launch a Debug build with `-WipeICloud`): deletes every Duo Budget folder
+    /// in this iCloud account and forgets what was synced, so a sync test starts clean.
+    /// The data on this device is untouched.
+    static func wipeICloud(stateFolder: URL) async {
+        guard let id = containerID else { print("[sync] No iCloud container"); return }
+        let database = CKContainer(identifier: id).privateCloudDatabase
+        do {
+            let zones = try await database.allRecordZones().map(\.zoneID).filter { $0.zoneName != CKRecordZone.ID.defaultZoneName }
+            _ = try await database.modifyRecordZones(saving: [], deleting: zones)
+            print("[sync] Deleted iCloud folders: \(zones.map(\.zoneName).joined(separator: ", "))")
+        } catch {
+            print("[sync] Couldn't wipe iCloud: \(describe(error))")
+        }
+        for file in ["sync-engine.json", "sync-engine-shared.json", "sync-state.json", "sync-records.json", "sync-names.json", "sync-sealed-reset", "sync-log.txt"] {
+            try? FileManager.default.removeItem(at: stateFolder.appendingPathComponent(file))
+        }
+        print("[sync] Forgot this device's sync records")
+    }
+    #endif
+
     /// Sends every item again from scratch: for when the person thinks something is missing.
     func sendEverythingAgain() async {
         resetLocalSyncState()
@@ -817,6 +838,7 @@ actor CloudSync: CKSyncEngineDelegate {
     /// lines), so a sync that silently stalls can be diagnosed. It holds no item contents.
     private func log(_ line: String) {
         let url = stateFolder.appendingPathComponent("sync-log.txt")
+        try? FileManager.default.createDirectory(at: stateFolder, withIntermediateDirectories: true)
         let stamp = Date().formatted(.iso8601)
         print("[sync] \(line)")
         var lines = (try? String(contentsOf: url, encoding: .utf8))?.split(separator: "\n", omittingEmptySubsequences: true).map(String.init) ?? []
