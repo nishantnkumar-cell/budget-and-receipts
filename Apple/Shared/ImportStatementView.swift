@@ -97,6 +97,15 @@ struct ImportStatementView: View {
                             .foregroundStyle(Color.brandPink)
                             .font(.callout)
                     }
+                    if let difference = preview.balanceDifference {
+                        Label("The payments don't add up to the change in the file's running balance (\(difference.formatted(.currency(code: AppSettings.currency))) apart). A line may be missing; check the dates the file covers.", systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(Color.brandPink)
+                            .font(.callout)
+                    }
+                    if preview.signsFlipped {
+                        Label("This card statement lists purchases as positive amounts, so they were turned round to count as spending.", systemImage: "arrow.left.arrow.right")
+                            .font(.callout)
+                    }
                     if !preview.possibleDuplicates.isEmpty {
                         LabeledContent("Check: same day and amount as an existing entry", value: "\(preview.possibleDuplicates.count)")
                     }

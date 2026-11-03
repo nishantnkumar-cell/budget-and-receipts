@@ -70,7 +70,12 @@ public struct Categoriser: Sendable {
         }
         if let own = ruleSuggestion(rules.filter { !$0.isStarter }) { return own }
         if let learned = Self.best(merchantVotes[Self.merchantKey(transaction.merchant)]) { return learned }
-        if let starter = ruleSuggestion(rules.filter(\.isStarter)) { return starter }
+        if let starter = ruleSuggestion(rules.filter(\.isStarter)) {
+            // "AMAZON REFUND" goes back to Shopping, so it takes the purchase away rather than
+            // counting as income. A refund from a shop the app doesn't know stays Income › Refund.
+            if transaction.amount > 0, starter.category == "Income", starter.subcategory == "Refund", let shop = refundCategory(for: transaction) { return shop }
+            return starter
+        }
         let words = Self.matchWords(transaction.merchant + " " + transaction.description)
         if transaction.amount > 0 {
             if let income = Self.match(words, Self.incomeKeywords) { return CategorySuggestion(category: income, confidence: 0.6, source: .keyword) }
@@ -78,12 +83,40 @@ public struct Categoriser: Sendable {
             if Self.match(words, Self.cardRepaymentKeywords) != nil { return CategorySuggestion(category: "Card payment", confidence: 0.7, source: .keyword) }
             // "CR" marks money in on bank statements; a sizeable one from a company is pay.
             if ["CR", "BILLPAY", "BGC", "FPI"].contains(words.first ?? ""), transaction.amount >= 200 { return CategorySuggestion(category: "Income", confidence: 0.5, source: .keyword) }
-            return nil
+            // Money back from a shop is a refund of what was bought there.
+            return refundCategory(for: transaction)
         }
         if let keyword = Self.match(words, Self.merchantKeywords) {
             return CategorySuggestion(category: keyword, confidence: 0.6, source: .keyword)
         }
         return lookedUp[Self.merchantKey(transaction.merchant)].map { CategorySuggestion(category: $0.category, confidence: 0.5, source: .lookedUp) }
+    }
+
+    /// The spending category of the shop a credit came from, as if it were a purchase there,
+    /// so a refund reduces that category. Nil when the shop isn't known or isn't spending.
+    func refundCategory(for credit: BankTransaction) -> CategorySuggestion? {
+        var purchase = credit
+        purchase.amount = -credit.amount
+        let refundWords: Set<String> = ["REFUND", "REFUNDED", "REFUNDS", "RETURN", "CREDIT"]
+        purchase.merchant = Self.words(credit.merchant).filter { !refundWords.contains($0) }.joined(separator: " ")
+        purchase.description = Self.words(credit.description).filter { !refundWords.contains($0) }.joined(separator: " ")
+        let spending = Set(FinanceCategories.budgetable)
+        let accountName = credit.accountID.flatMap { accountNames[$0] }
+        var candidates: [CategorySuggestion?] = []
+        candidates.append(RulesEngine.firstMatch(rules.filter { !$0.isStarter }, for: purchase, accountName: accountName).map { rule in
+            var suggestion = CategorySuggestion(category: rule.category, confidence: 0.9, source: .rule)
+            suggestion.subcategory = rule.subcategory
+            return suggestion
+        })
+        candidates.append(Self.best(merchantVotes[Self.merchantKey(purchase.merchant)]))
+        candidates.append(RulesEngine.firstMatch(rules.filter(\.isStarter), for: purchase, accountName: accountName).map { rule in
+            var suggestion = CategorySuggestion(category: rule.category, confidence: 0.6, source: .rule)
+            suggestion.subcategory = rule.subcategory
+            return suggestion
+        })
+        candidates.append(Self.match(Self.matchWords(purchase.merchant + " " + purchase.description), Self.merchantKeywords).map { CategorySuggestion(category: $0, confidence: 0.5, source: .keyword) })
+        candidates.append(lookedUp[Self.merchantKey(purchase.merchant)].map { CategorySuggestion(category: $0.category, confidence: 0.4, source: .lookedUp) })
+        return candidates.compactMap { $0 }.first { spending.contains($0.category) }
     }
 
     /// Item suggestions use what you called similar items before, then common grocery and

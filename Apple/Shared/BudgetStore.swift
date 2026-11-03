@@ -367,7 +367,7 @@ final class BudgetStore: ObservableObject {
     /// - Parameter account: the account the statement is from, when the file doesn't say.
     ///   Account numbers in the file win; unknown numbers become new accounts on import.
     func previewImport(text: String, fileName: String, mapping: CSVColumnMapping?, account: UUID? = nil) throws -> StatementImportResult {
-        let rows: [StatementRow]
+        var rows: [StatementRow]
         switch StatementFormat(fileName: fileName) {
         case .ofx:
             rows = try StatementImporter.parseOFX(text)
@@ -378,7 +378,14 @@ final class BudgetStore: ObservableObject {
             guard let mapping = mapping ?? CSVColumnMapping.guess(header: header) else { throw StatementImportError.missingColumn("date, description or amount") }
             rows = try StatementImporter.parseCSV(text, mapping: mapping)
         }
-        return preview(rows, account: account)
+        // Checked before any signs are turned round: the balance moves with the file's own signs.
+        let balanceDifference = StatementImporter.balanceDifference(rows)
+        let cardSigns = StatementImporter.fixingCardSigns(rows)
+        rows = cardSigns.rows
+        var result = preview(rows, account: account)
+        result.balanceDifference = balanceDifference
+        result.signsFlipped = cardSigns.flipped
+        return result
     }
 
     /// A PDF statement, from the text lines PDFKit read out of it.
