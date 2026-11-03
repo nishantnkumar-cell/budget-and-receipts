@@ -89,6 +89,13 @@ struct SettingsView: View {
                 Text("Asks for Face ID or your passcode, then for the word ERASE, before deleting anything.")
             }
             Section {
+                NavigationLink { CategoriesView() } label: {
+                    LabeledContent {
+                        Text("\(store.catalog.visible.count)").foregroundStyle(.secondary)
+                    } label: {
+                        Label("Categories", systemImage: "square.grid.2x2")
+                    }
+                }
                 NavigationLink { RulesView() } label: {
                     LabeledContent {
                         Text("\(store.rules.filter(\.isEnabled).count) on").foregroundStyle(.secondary)
@@ -99,7 +106,7 @@ struct SettingsView: View {
             } header: {
                 Text("Categories")
             } footer: {
-                Text("Rules sort payments into categories and sub-categories automatically, e.g. Tesco → Groceries › Supermarket.")
+                Text("Rename, recolour, add or delete categories and sub-categories. Rules sort payments into them automatically, e.g. Tesco → Groceries › Supermarket.")
             }
             Section("Export") {
                 NavigationLink { ExpenseReportView() } label: { Label("Expense Report", systemImage: "doc.text.below.ecg") }

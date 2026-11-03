@@ -66,7 +66,7 @@ public enum ReceiptAIMerge {
         let aiItems = ai.items.compactMap { item -> ReceiptLineItem? in
             let name = item.name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty, item.amount > 0, printed.contains(item.amount) else { return nil }
-            let category = item.category.flatMap { FinanceCategories.all.contains($0) ? $0 : nil } ?? "Uncategorised"
+            let category = item.category.map(FinanceCategories.resolve).flatMap { FinanceCategories.all.contains($0) ? $0 : nil } ?? "Uncategorised"
             return ReceiptLineItem(description: name, total: item.amount, category: category, confidence: 0.7)
         }
         let aiSum = aiItems.reduce(Decimal(0)) { $0 + $1.total }
