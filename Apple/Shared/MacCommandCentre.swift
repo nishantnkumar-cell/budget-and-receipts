@@ -70,13 +70,7 @@ struct CommandPalette: View {
 
     private var payments: [BankTransaction] {
         guard query.count >= 2 else { return [] }
-        let amount = Decimal(string: query.replacingOccurrences(of: "£", with: ""))
-        return store.transactions.filter { transaction in
-            transaction.merchant.localizedCaseInsensitiveContains(query)
-                || FinanceCategories.label(transaction.category, transaction.subcategory).localizedCaseInsensitiveContains(query)
-                || (transaction.tags ?? []).contains { $0.localizedCaseInsensitiveContains(query) }
-                || amount.map { abs(transaction.amount) == $0 } == true
-        }
+        return store.transactions.filter { $0.matches(query) }
         .sorted { $0.date > $1.date }
         .prefix(30)
         .map { $0 }
@@ -147,29 +141,6 @@ struct CommandPalette: View {
 }
 
 // MARK: Sidebar
-
-extension AppSection {
-    /// The Mac sidebar's names, which say a little more than the iPhone's tab titles.
-    var macTitle: String {
-        switch self {
-        case .home: "Overview"
-        case .inbox: "To Check"
-        case .plan: "Bills and Subscriptions"
-        default: rawValue
-        }
-    }
-
-    var macSymbol: String {
-        switch self {
-        case .home: "square.grid.2x2"
-        case .inbox: "doc.text.magnifyingglass"
-        case .activity: "list.bullet.rectangle"
-        case .budgets: "chart.bar.xaxis"
-        case .plan: "calendar.badge.clock"
-        default: systemImage
-        }
-    }
-}
 
 struct MacSidebar: View {
     @EnvironmentObject var store: BudgetStore
@@ -351,8 +322,10 @@ struct MacOverview: View {
         .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color.screenBackground)
+        // The same "Finding categories…" note the iPhone shows on Home.
+        .safeAreaInset(edge: .bottom) { CategorisingBanner().padding(.bottom, 8) }
         .navigationTitle(store.selectedMonth.formatted(.dateTime.month(.wide).year()))
-        .searchable(text: $query, placement: .toolbar, prompt: "Search shops and categories")
+        .searchable(text: $query, placement: .toolbar, prompt: "Search shops, categories, tags or amounts")
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 ControlGroup {
@@ -384,8 +357,7 @@ struct MacRecentActivity: View {
             .filter { store.calculator.isInMonth($0.date, store.selectedMonth) }
             .filter { store.accountFilter == nil || $0.accountID == store.accountFilter }
             .filter { !store.hasPartner || store.householdView.includes(store.ledger.owner(of: $0)) }
-            .filter { query.isEmpty || $0.merchant.localizedCaseInsensitiveContains(query) || $0.category.localizedCaseInsensitiveContains(query)
-                || ($0.tags ?? []).contains { $0.localizedCaseInsensitiveContains(query) } }
+            .filter { $0.matches(query) }
             .sorted { $0.date > $1.date }
     }
 

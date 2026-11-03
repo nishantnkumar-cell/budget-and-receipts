@@ -14,7 +14,7 @@ struct InboxView: View {
             inboxContent
         }
         .appBackground()
-        .navigationTitle("Inbox")
+        .navigationTitle(AppSection.inbox.macTitle)
         .safeAreaInset(edge: .bottom) { CategorisingBanner().padding(.bottom, 8) }
         .toolbar {
             if store.uncategorisedCount > 0 {

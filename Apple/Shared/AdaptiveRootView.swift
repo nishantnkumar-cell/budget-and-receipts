@@ -53,9 +53,32 @@ enum AppSection: String, CaseIterable, Identifiable {
     }
 }
 
+extension AppSection {
+    /// Longer names for places, used in the Mac sidebar and the iPhone's "More places" row.
+    var macTitle: String {
+        switch self {
+        case .home: "Overview"
+        case .inbox: "To Check"
+        case .plan: "Bills and Subscriptions"
+        default: rawValue
+        }
+    }
+
+    var macSymbol: String {
+        switch self {
+        case .home: "square.grid.2x2"
+        case .inbox: "doc.text.magnifyingglass"
+        case .activity: "list.bullet.rectangle"
+        case .budgets: "chart.bar.xaxis"
+        case .plan: "calendar.badge.clock"
+        default: systemImage
+        }
+    }
+}
+
 #if os(iOS)
 /// Four tabs plus Scan, which iOS draws as its own round button beside the tab bar.
-/// The Inbox opens from Home, and Settings from Home's toolbar.
+/// To Check, Reports and Net worth open from a row on Home, and Settings from Home's toolbar.
 struct PhoneRootView: View {
     @EnvironmentObject var store: BudgetStore
     @State private var selection = AppSection.home
