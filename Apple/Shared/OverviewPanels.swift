@@ -241,7 +241,7 @@ struct SpendingPacePanel: View {
                 if let last = now.last {
                     PointMark(x: .value("Day", now.count), y: .value("Spent", NSDecimalNumber(decimal: last).doubleValue))
                         .foregroundStyle(Color.brandPink)
-                        .annotation(position: .topLeading, spacing: 6) {
+                        .annotation(position: now.count * 2 < days ? .topTrailing : .topLeading, spacing: 6) {
                             Text("\(last.wholeMoney) by the \(Self.ordinal(now.count))")
                                 .font(.caption.weight(.semibold))
                                 .padding(.horizontal, 6)
