@@ -53,7 +53,7 @@ struct SyncStatusButton: View {
             .help(syncStatus.state.title)
             #if os(iOS)
             .sheet(isPresented: $showingDetails) {
-                SyncDetailsView().presentationDetents([.height(300)])
+                SyncDetailsView().presentationDetents([.height(360)])
             }
             #else
             .popover(isPresented: $showingDetails, arrowEdge: .bottom) {
@@ -82,12 +82,11 @@ struct SyncDetailsView: View {
                 } else {
                     Text("Not synced yet")
                 }
-                if syncStatus.pendingCount > 0 {
-                    Text("^[\(syncStatus.pendingCount) change](inflect: true) waiting to go to iCloud. They'll go when you're back online.")
+                SyncProgressBar()
+                if syncStatus.pendingCount > 0, syncStatus.progress == nil {
+                    Text("^[\(syncStatus.pendingCount) change](inflect: true) waiting to go to iCloud.")
                 }
-                if case .error(let message) = syncStatus.state {
-                    Text(message).foregroundStyle(.red)
-                }
+                SyncErrorLine()
             }
             .font(.subheadline)
             .foregroundStyle(.secondary)
@@ -99,5 +98,38 @@ struct SyncDetailsView: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity)
+    }
+}
+
+/// "Sending 12 of 68" with a bar, while changes are going up to iCloud.
+struct SyncProgressBar: View {
+    @EnvironmentObject var syncStatus: SyncStatus
+
+    var body: some View {
+        if let progress = syncStatus.progress {
+            let sent = syncStatus.uploadTotal - syncStatus.pendingCount
+            VStack(alignment: .leading, spacing: 4) {
+                ProgressView(value: progress).tint(.brandPink)
+                Text("Sent \(sent) of \(syncStatus.uploadTotal) to iCloud")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            .accessibilityElement(children: .combine)
+        }
+    }
+}
+
+/// The last problem, in red, until a sync succeeds.
+struct SyncErrorLine: View {
+    @EnvironmentObject var syncStatus: SyncStatus
+
+    var body: some View {
+        if let error = syncStatus.lastError {
+            Label(error, systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(.red)
+                .multilineTextAlignment(.leading)
+        }
     }
 }

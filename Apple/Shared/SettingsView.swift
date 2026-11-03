@@ -35,6 +35,8 @@ struct SettingsView: View {
                     .disabled(CloudSync.containerID == nil)
                 if settings.iCloudSyncEnabled, CloudSync.containerID != nil {
                     LabeledContent("Status", value: syncStatus.text)
+                    SyncProgressBar()
+                    SyncErrorLine()
                     HeldDeletionsRow()
                     SendEverythingAgainRow()
                 }

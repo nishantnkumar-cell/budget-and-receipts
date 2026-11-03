@@ -26,6 +26,18 @@ final class SyncStatus: ObservableObject {
     @Published private(set) var lastSynced: Date?
     /// Changes on this device not yet in iCloud.
     @Published private(set) var pendingCount = 0
+    /// The size of the current upload, so progress can show "12 of 68".
+    @Published private(set) var uploadTotal = 0
+    /// The last thing that went wrong, kept until a sync succeeds.
+    @Published private(set) var lastError: String?
+
+    /// How far the current upload has got, from 0 to 1. Nil when nothing is uploading.
+    var progress: Double? {
+        guard uploadTotal > 0, pendingCount > 0 else { return nil }
+        return Double(uploadTotal - min(pendingCount, uploadTotal)) / Double(uploadTotal)
+    }
+
+    func noteError(_ message: String?) { lastError = message }
     /// One line for Settings, e.g. "Up to date · 17:20".
     @Published var text = "Not synced yet."
     /// Deletions held back because there were suspiciously many; the person confirms or restores.
@@ -46,7 +58,13 @@ final class SyncStatus: ObservableObject {
     func set(_ state: State, pending: Int) {
         self.state = state
         pendingCount = pending
-        if state == .upToDate { lastSynced = Date() }
+        // A new upload starts the bar again; it grows if more changes join it.
+        if pending == 0 { uploadTotal = 0 } else if pending > uploadTotal { uploadTotal = pending }
+        if state == .upToDate {
+            lastSynced = Date()
+            lastError = nil
+        }
+        if case .error(let message) = state { lastError = message }
     }
 }
 
@@ -270,10 +288,12 @@ actor CloudSync: CKSyncEngineDelegate {
         } else {
             state = pending > 0 ? .pendingOffline : .upToDate
         }
+        let failure = text.hasPrefix("Couldn't") || text.hasPrefix("Sign") ? text : nil
         await MainActor.run {
             status.update(text)
             status.set(state, pending: pending)
             status.setHeld(held)
+            if let failure { status.noteError(failure) }
         }
     }
 
