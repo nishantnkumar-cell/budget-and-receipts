@@ -45,7 +45,8 @@ public enum FinanceCategories {
     ]
 
     /// Categories that move money around rather than spend or earn it, so they have no budget.
-    public static let nonBudget: Set<String> = ["Income", "Card payment", "Internal transfer", "Uncategorised"]
+    /// Savings are your own money put aside, so they aren't spending either.
+    public static let nonBudget: Set<String> = ["Income", "Card payment", "Internal transfer", "Savings & investments", "Uncategorised"]
 
     public static var budgetable: [String] { all.filter { !nonBudget.contains($0) } }
 }

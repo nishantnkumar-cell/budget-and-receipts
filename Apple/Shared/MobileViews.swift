@@ -146,6 +146,8 @@ struct TransactionEditor: View {
     }
 
     private func save() {
+        // A category you pick yourself is kept, even if it looks like a transfer.
+        if transaction.category != savedCategory { transaction.categoryChosen = true }
         store.update(transaction)
         if transaction.category != savedCategory, transaction.category != "Uncategorised" {
             similarCount = store.similarUncategorised(to: transaction).count

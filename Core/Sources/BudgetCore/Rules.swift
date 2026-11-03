@@ -142,7 +142,7 @@ public struct CategoryRule: Identifiable, Codable, Hashable, Sendable {
     static func check(_ condition: Condition, _ transaction: BankTransaction, accountName: String?) -> Bool {
         switch condition.field {
         case .description:
-            let text = " " + Categoriser.words(transaction.merchant + " " + transaction.description).joined(separator: " ") + " "
+            let text = " " + Categoriser.matchWords(transaction.merchant + " " + transaction.description).joined(separator: " ") + " "
             return textMatch(condition, text: text)
         case .account:
             guard let accountName else { return false }
@@ -230,7 +230,7 @@ public enum RulesEngine {
         let cleaned = Array(Set(names.map { $0.uppercased().trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })).sorted()
         guard !cleaned.isEmpty else { return nil }
         return CategoryRule(id: UUID(uuidString: "00000000-0000-4000-8000-5e1f7a45f3e0")!, name: "Payments to yourselves",
-                            conditions: [.init(.description, .containsAny, "OBP, FPO, FPI, TFR, TRANSFER, STO, BP, BGC, MOB"),
+                            conditions: [.init(.description, .containsAny, "OBP, FPO, FPI, TFR, TRANSFER, STO, BP, BILLPAY, BGC, MOB"),
                                          .init(.description, .containsAny, cleaned.joined(separator: ", "))],
                             category: "Internal transfer", subcategory: "Between accounts", isStarter: true)
     }
