@@ -50,8 +50,7 @@ enum OverviewPalette {
 
     /// One steady colour per category, used for dots in the table.
     static func category(_ name: String) -> Color {
-        let index = FinanceCategories.all.firstIndex(of: name) ?? 0
-        return [Color.brown, .orange, .green, .pink, .blue, .brandPink, .red, .purple, .indigo, .teal, .mint, .green, .gray, .gray, .gray][index % 15]
+        CategoryIcon.tint(for: name)
     }
 }
 

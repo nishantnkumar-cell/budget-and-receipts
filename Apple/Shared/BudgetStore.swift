@@ -25,6 +25,11 @@ final class BudgetStore: ObservableObject {
     @Published var notes: [TransactionNote] = []
     /// Category rules, in the order they're tried: your own first, then the starter set.
     @Published var rules: [CategoryRule] = []
+    /// Built-in categories you've renamed, recoloured or deleted, and your own categories.
+    /// Settings › Categories. Every change here moves payments, budgets and rules along.
+    @Published private(set) var categories: [CategoryDefinition] = [] {
+        didSet { FinanceCategories.catalog = CategoryCatalog(saved: categories) }
+    }
     /// This device's place in a shared household (set from iCloud sync).
     @Published var householdRole: HouseholdLink.Role = .solo
     /// Items changed or deleted by another device or the partner, kept 30 days to restore.
@@ -91,9 +96,11 @@ final class BudgetStore: ObservableObject {
         wealthAccounts = loadOrSetAside("wealth.json") ?? []
         notes = loadOrSetAside("notes.json") ?? []
         rules = Self.withNewStarterRules(loadOrSetAside("rules.json") ?? [])
+        categories = loadOrSetAside("categories.json") ?? []
         // Open on a month that has payments: statements usually end before today.
         if selectedMonthIsEmpty, let latest = latestPaymentDate { selectedMonth = latest }
         if !isWaitingForFiles {
+            normaliseCategories()
             removeOldSharedCopies()
             recheckBillPayments()
             assignOwnersFromHolders()
@@ -490,6 +497,60 @@ final class BudgetStore: ObservableObject {
     /// Account names by id, for rules about an account.
     var accountNames: [UUID: String] { Dictionary(accounts.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first }) }
 
+    // MARK: Categories
+
+    /// The categories as they are now: built-in ones as you've changed them, plus your own.
+    var catalog: CategoryCatalog { CategoryCatalog(saved: categories) }
+
+    /// Moves anything still in an old category or sub-category name to its name now.
+    /// Runs before every save and after data arrives, so nothing is left behind.
+    @discardableResult
+    private func normaliseCategories() -> Bool {
+        var normaliser = CategoryNormaliser(catalog: catalog)
+        guard !normaliser.isIdentity else { return false }
+        var changed = false
+        var transactions = self.transactions
+        if normaliser.normalise(&transactions) { self.transactions = transactions; changed = true }
+        var budgets = self.budgets
+        if normaliser.normalise(&budgets, calendar: calculator.calendar) { self.budgets = budgets; changed = true }
+        var rules = self.rules
+        if normaliser.normalise(&rules) { self.rules = rules; changed = true }
+        var lookedUp = self.merchantCategories
+        if normaliser.normalise(&lookedUp) { merchantCategories = lookedUp; changed = true }
+        var receipts = self.pendingReceipts
+        if normaliser.normalise(&receipts) { pendingReceipts = receipts; changed = true }
+        var couple = self.couple
+        if normaliser.normalise(&couple) { self.couple = couple; changed = true }
+        return changed
+    }
+
+    /// Changes the categories, then saves. Payments, budgets and rules follow in `persist`.
+    /// Returns a message when the change isn't allowed.
+    @discardableResult
+    func editCategories(_ change: (inout CategoryCatalog) throws -> Void) -> String? {
+        var edited = catalog
+        do {
+            try change(&edited)
+        } catch let error as CategoryEditError {
+            return error.message
+        } catch {
+            return error.localizedDescription
+        }
+        categories = edited.changed
+        persist()
+        return nil
+    }
+
+    /// Payments (or parts of payments) in a category, to say what a deletion will move.
+    func paymentCount(in category: String) -> Int {
+        transactions.filter { $0.category == category || $0.splits.contains { $0.category == category } }.count
+    }
+
+    /// Payments with this sub-category.
+    func paymentCount(in category: String, subcategory: String) -> Int {
+        transactions.filter { $0.category == category && $0.subcategory == subcategory }.count
+    }
+
     // MARK: Rules
 
     /// Starter rules this device doesn't have yet (new in an update) join the end of the list.
@@ -806,6 +867,7 @@ final class BudgetStore: ObservableObject {
         wealthAccounts = []
         notes = []
         rules = RulesEngine.starterRules
+        categories = []
         accountFilter = nil
         householdView = .together
         for folder in [imagesFolder, sharedFilesFolder] {
@@ -934,6 +996,7 @@ final class BudgetStore: ObservableObject {
 
     private func persist() {
         guard !isWaitingForFiles else { return }
+        normaliseCategories()
         writeFiles()
         didPersist?()
     }
@@ -970,6 +1033,7 @@ final class BudgetStore: ObservableObject {
             storage.save(wealthAccounts, "wealth.json"),
             storage.save(notes, "notes.json"),
             storage.save(rules, "rules.json"),
+            storage.save(categories, "categories.json"),
         ]
         lastSaveSucceeded = !results.contains(false)
         return lastSaveSucceeded
@@ -1109,6 +1173,7 @@ extension BudgetStore: SyncSource {
             + SyncRecord.records(wealthAccounts, collection: "wealth", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })
             + SyncRecord.records(notes, collection: "notes", id: \.id.uuidString)
             + SyncRecord.records(rules, collection: "rules", id: \.id.uuidString)
+            + SyncRecord.records(categories, collection: "categories", id: \.id)
             + imageRecords(privateTransactions: transactions.filter(isPrivate))
     }
 
@@ -1186,7 +1251,7 @@ extension BudgetStore: SyncSource {
         if record.collection == "wealth", let account = try? SyncRecord.decoder().decode(WealthAccount.self, from: record.payload) {
             return "\(account.kind.title): \(account.name)"
         }
-        let names = ["rules": "A category rule", "notes": "A comment", "budgets": "A budget", "settlements": "A settle-up", "pendingReceipts": "A waiting receipt", "couple": "Couple settings", "imports": "An import record", "changes": "A history entry"]
+        let names = ["rules": "A category rule", "categories": "A category", "notes": "A comment", "budgets": "A budget", "settlements": "A settle-up", "pendingReceipts": "A waiting receipt", "couple": "Couple settings", "imports": "An import record", "changes": "A history entry"]
         return names[record.collection] ?? record.collection
     }
 
@@ -1211,6 +1276,9 @@ extension BudgetStore: SyncSource {
         wealthAccounts = SyncMerge.apply(saves: saves, deletes: deletes, to: wealthAccounts, collection: "wealth", id: \.id.uuidString)
         notes = SyncMerge.apply(saves: saves, deletes: deletes, to: notes, collection: "notes", id: \.id.uuidString)
         rules = Self.withNewStarterRules(SyncMerge.apply(saves: saves, deletes: deletes, to: rules, collection: "rules", id: \.id.uuidString))
+        categories = SyncMerge.apply(saves: saves, deletes: deletes, to: categories, collection: "categories", id: \.id)
+        // A rename or deletion from the other device, or a payment it sent in an old category.
+        normaliseCategories()
         return writeFiles()
     }
 }
