@@ -130,6 +130,13 @@ enum AppModel {
     static func startOrStopSync() async {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-WipeICloud") {
+            // Testing only: also clears this device's data, so nothing old is sent again.
+            if ProcessInfo.processInfo.arguments.contains("-AndLocalData") {
+                store.didPersist = nil
+                subscriptions.didPersist = nil
+                store.resetAllData()
+                subscriptions.resetAllData()
+            }
             await CloudSync.wipeICloud(stateFolder: JSONFileStorage.defaultFolder)
             exit(0)
         }
