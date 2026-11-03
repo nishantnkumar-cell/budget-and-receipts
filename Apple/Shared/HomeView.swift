@@ -25,6 +25,8 @@ struct HomeView: View {
                     NavigationLink { InboxView() } label: { InboxSummaryCard(count: store.needsReview.count) }
                         .buttonStyle(.plain)
                 }
+                // Shared statements wait here to be reviewed, even when the Inbox has nothing else.
+                SharedDocumentsBanner(onHome: true)
                 topBudgets(report)
                 ComingUpCard()
                 NetWorthCard()
