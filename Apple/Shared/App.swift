@@ -125,6 +125,12 @@ enum AppModel {
 
     /// iCloud sync runs only when it is switched on, the build has iCloud, and not under tests.
     static func startOrStopSync() async {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-WipeICloud") {
+            await CloudSync.wipeICloud(stateFolder: JSONFileStorage.defaultFolder)
+            exit(0)
+        }
+        #endif
         var testing = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
         #if DEBUG
         testing = testing || SampleData.isOn
