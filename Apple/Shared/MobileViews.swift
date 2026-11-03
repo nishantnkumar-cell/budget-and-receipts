@@ -33,10 +33,7 @@ struct TransactionsView: View {
             .filter { !store.hasPartner || store.householdView.includes(store.ledger.owner(of: $0)) }
             .sorted { $0.date > $1.date }
         guard !query.isEmpty else { return all }
-        return all.filter {
-            $0.merchant.localizedCaseInsensitiveContains(query) || $0.category.localizedCaseInsensitiveContains(query)
-                || ($0.tags ?? []).contains { $0.localizedCaseInsensitiveContains(query) }
-        }
+        return all.filter { $0.matches(query) }
     }
 
     private var days: [(day: Date, transactions: [BankTransaction])] {
@@ -100,6 +97,25 @@ struct TransactionsView: View {
                     .accessibilityLabel("Import statement")
             }
         }
+    }
+}
+
+extension BankTransaction {
+    /// Search used everywhere (Activity, the Mac Overview and ⌘K): shop, category or
+    /// sub-category, tag, or an amount such as "12.50" or "£12.50".
+    func matches(_ query: String) -> Bool {
+        let query = query.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return true }
+        if merchant.localizedCaseInsensitiveContains(query)
+            || FinanceCategories.label(category, subcategory).localizedCaseInsensitiveContains(query)
+            || (tags ?? []).contains(where: { $0.localizedCaseInsensitiveContains(query) }) {
+            return true
+        }
+        // Only a query with no letters is an amount, so "Tesco 2" doesn't match every £2.
+        guard !query.contains(where: \.isLetter) else { return false }
+        let digits = query.filter { $0.isNumber || $0 == "." }
+        guard !digits.isEmpty, let amount = Decimal(string: digits) else { return false }
+        return abs(self.amount) == amount
     }
 }
 

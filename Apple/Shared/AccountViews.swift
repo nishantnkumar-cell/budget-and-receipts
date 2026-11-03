@@ -24,7 +24,9 @@ struct AccountFilterMenu: View {
             Menu {
                 Picker("Account", selection: $store.accountFilter) {
                     Text("All accounts").tag(UUID?.none)
-                    ForEach(store.accounts) { Text($0.label).tag(UUID?.some($0.id)) }
+                    ForEach(store.accounts) { account in
+                        Text("\(account.label) · \(spentLabel(account.id))").tag(UUID?.some(account.id))
+                    }
                 }
             } label: {
                 Label(store.account(store.accountFilter)?.name ?? "All accounts",
@@ -32,6 +34,15 @@ struct AccountFilterMenu: View {
             }
             .accessibilityLabel("Show account")
         }
+    }
+
+    /// What the account spent in the month on screen, like the Mac sidebar, or the day its
+    /// latest statement ends when there's no statement for this month yet.
+    private func spentLabel(_ id: UUID) -> String {
+        if let end = store.statementsEnd(for: id) {
+            return "to \(end.formatted(.dateTime.day().month(.abbreviated)))"
+        }
+        return (store.spendingByAccount.first { $0.account?.id == id }?.spent ?? 0).money
     }
 }
 
