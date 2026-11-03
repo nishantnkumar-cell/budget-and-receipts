@@ -9,7 +9,7 @@ final class CategoriserTests: XCTestCase {
         }
         XCTAssertEqual(category("DIRECT DEBIT PAYMENT - THANK YOU", 1180.13), "Card payment")
         XCTAssertEqual(category("CR ACME TECHNOLOGIES U", 2400), "Income")
-        XCTAssertNil(category("CR VINTED REFUND", 11.14))
+        XCTAssertEqual(category("CR VINTED REFUND", 11.14), "Shopping", "A refund takes away from what was bought there")
         XCTAssertEqual(category("DD ID MOBILE LIMITED", -12), "Bills & utilities")
         XCTAssertEqual(category("SO NS&I 1234567890", -50), "Savings & investments")
         XCTAssertEqual(category("TKMAXX_UK London", -30), "Shopping")
@@ -52,9 +52,10 @@ final class CategoriserTests: XCTestCase {
         XCTAssertEqual(Categoriser(history: [tx("TESCO STORES", category: "Uncategorised")]).suggest(for: tx("TESCO STORES"))?.source, .keyword)
     }
 
-    func testCreditsOnlyBecomeIncomeOrNothing() {
+    func testCreditsBecomeIncomeOrARefundOfTheShop() {
         XCTAssertEqual(Categoriser().suggest(for: tx("ACME LTD SALARY", "2500.00"))?.category, "Income")
-        XCTAssertNil(Categoriser().suggest(for: tx("TESCO STORES", "5.00")), "A refund from a shop is left for you to decide")
+        XCTAssertEqual(Categoriser().suggest(for: tx("TESCO STORES", "5.00"))?.category, "Groceries", "Money back from a shop reduces that spending, not income")
+        XCTAssertNil(Categoriser().suggest(for: tx("A SMITH", "5.00")), "Money from a person is left for you to decide")
     }
 
     func testCategoriseLeavesYourCategoriesAlone() {
