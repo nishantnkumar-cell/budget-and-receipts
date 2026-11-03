@@ -71,13 +71,13 @@ public struct Categoriser: Sendable {
         if let own = ruleSuggestion(rules.filter { !$0.isStarter }) { return own }
         if let learned = Self.best(merchantVotes[Self.merchantKey(transaction.merchant)]) { return learned }
         if let starter = ruleSuggestion(rules.filter(\.isStarter)) { return starter }
-        let words = Self.words(transaction.merchant + " " + transaction.description)
+        let words = Self.matchWords(transaction.merchant + " " + transaction.description)
         if transaction.amount > 0 {
             if let income = Self.match(words, Self.incomeKeywords) { return CategorySuggestion(category: income, confidence: 0.6, source: .keyword) }
             // A credit card's statement thanks you for the payment from your bank account.
             if Self.match(words, Self.cardRepaymentKeywords) != nil { return CategorySuggestion(category: "Card payment", confidence: 0.7, source: .keyword) }
             // "CR" marks money in on bank statements; a sizeable one from a company is pay.
-            if words.first == "CR", transaction.amount >= 200 { return CategorySuggestion(category: "Income", confidence: 0.5, source: .keyword) }
+            if ["CR", "BILLPAY", "BGC", "FPI"].contains(words.first ?? ""), transaction.amount >= 200 { return CategorySuggestion(category: "Income", confidence: 0.5, source: .keyword) }
             return nil
         }
         if let keyword = Self.match(words, Self.merchantKeywords) {
@@ -138,6 +138,19 @@ public struct Categoriser: Sendable {
     }
 
     /// Upper-case words with punctuation removed, accents folded. "Sainsbury's" → "SAINSBURYS".
+    /// Words for matching a payment against keywords and rules. "BP" before a name is first
+    /// direct's code for a bill payment ("BP ANDERSON CDA"), not BP petrol, which comes with a
+    /// branch number or a BP brand word ("BP 4432", "BP CONNECT").
+    public static func matchWords(_ text: String) -> [String] {
+        var words = words(text)
+        let petrol: Set<String> = ["CONNECT", "OIL", "EXPRESS", "PETROL", "SERVICE", "SERVICES", "FUEL", "STATION"]
+        for index in words.indices.dropLast() where words[index] == "BP" {
+            let next = words[index + 1]
+            if !next.contains(where: \.isNumber), !petrol.contains(next) { words[index] = "BILLPAY" }
+        }
+        return words
+    }
+
     static func words(_ text: String) -> [String] {
         text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_GB"))
             .uppercased()
