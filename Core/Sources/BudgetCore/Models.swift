@@ -20,6 +20,8 @@ public struct BankTransaction: Identifiable, Codable, Hashable, Sendable {
     public var isPrivate: Bool?
     /// Free labels, e.g. "Holiday 2026" or "Work expenses", for reports.
     public var tags: [String]?
+    /// Where in its category the money went, e.g. "Supermarket" in Groceries. Optional.
+    public var subcategory: String?
 
     public init(
         date: Date,

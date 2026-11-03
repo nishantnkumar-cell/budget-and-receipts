@@ -2,9 +2,9 @@ import BudgetCore
 import SwiftUI
 
 extension HouseholdView {
-    func label(partnerName: String) -> String {
+    func label(partnerName: String, myName: String? = nil) -> String {
         switch self {
-        case .me: "Me"
+        case .me: myName.flatMap { $0.split(separator: " ").first.map(String.init) } ?? "Me"
         case .partner: partnerName.isEmpty ? "Partner" : partnerName
         case .together: "Together"
         }
@@ -27,7 +27,7 @@ struct HouseholdSwitcher: View {
         if store.hasPartner {
             Picker("Show", selection: $store.householdView) {
                 ForEach(HouseholdView.allCases, id: \.self) { view in
-                    Text(view.label(partnerName: store.couple.partnerName)).tag(view)
+                    Text(view.label(partnerName: store.couple.partnerName, myName: store.couple.ownerName?.isEmpty == false ? store.couple.ownerName : nil)).tag(view)
                 }
             }
             .pickerStyle(.segmented)

@@ -34,7 +34,13 @@ enum MerchantCategoryService {
             Eating out: restaurants, takeaways, cafés, bakeries, sweet shops, fast food.
             Groceries: supermarkets, grocers, convenience stores, butchers.
             Shopping: clothes, shoes, electronics, homeware, online marketplaces, gifts.
-            Health: pharmacies, doctors, dentists, opticians, gyms, hair and beauty.
+            Health: pharmacies, doctors, dentists, opticians, gyms.
+            Personal care: hairdressers, barbers, beauty and nail salons, spas.
+            Entertainment: cinemas, theatres, events and tickets, hobbies, lottery and betting.
+            Education: courses, tuition, university.
+            Gifts & charity: charities, donations, florists, gift shops.
+            Cash: cash machine (ATM) withdrawals.
+            Fees & charges: bank fees, interest charged, late fees.
             Transport: fuel, parking, trains, buses, taxis, car costs.
             Travel: flights, hotels, holidays.
             Subscriptions: streaming, apps, memberships.
@@ -47,7 +53,7 @@ enum MerchantCategoryService {
             DD direct debit, SO standing order, VIS or VISA card payment, IAP in-app purchase
             (an app or game: Subscriptions), CR money in. A name ending in "Limited" or "Services"
             is still a business: guess its kind from the name (e.g. cleaning services: Bills & utilities;
-            phone resellers: Shopping). Lottery and betting: Shopping.
+            phone resellers: Shopping).
             """)
         do {
             let answer = try await session.respond(to: "Statement line: \(merchant)", generating: CategoryGuess.self)

@@ -32,6 +32,10 @@ struct BudgetReceiptsApp: App {
                         .id(settings.currencyCode)
                 }
             }
+            #if os(macOS)
+            // Files opened with the app go to the open window instead of each opening a new one.
+            .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
+            #endif
             .environmentObject(store)
             .environmentObject(subscriptions)
             .environmentObject(settings)
@@ -62,7 +66,9 @@ struct BudgetReceiptsApp: App {
                         if storeReady && contractsReady { await AppModel.startOrStopSync() }
                     }
                     await AppModel.cloud?.refresh()
-                    // Payments synced from other devices get categories too, not only imports.
+                    // Payments synced from other devices get categories too, not only imports:
+                    // rules first (they also fill in sub-categories), then Apple Intelligence.
+                    store.applyRules()
                     Task { await store.categoriseUnknownMerchants() }
                 }
             }
@@ -114,6 +120,9 @@ struct BudgetReceiptsApp: App {
         #endif
         #if os(macOS)
         .defaultSize(width: 1360, height: 880)
+        // One window each launch, not every window that was ever opened.
+        .restorationBehavior(.disabled)
+        .defaultLaunchBehavior(.presented)
         .commands { ImportFromDevicesCommands() }
         #endif
     }

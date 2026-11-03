@@ -23,6 +23,8 @@ final class BudgetStore: ObservableObject {
     @Published var wealthAccounts: [WealthAccount] = []
     /// Comments and reactions on transactions.
     @Published var notes: [TransactionNote] = []
+    /// Category rules, in the order they're tried: your own first, then the starter set.
+    @Published var rules: [CategoryRule] = []
     /// This device's place in a shared household (set from iCloud sync).
     @Published var householdRole: HouseholdLink.Role = .solo
     /// Items changed or deleted by another device or the partner, kept 30 days to restore.
@@ -88,6 +90,9 @@ final class BudgetStore: ObservableObject {
         recentChanges = (loadOrSetAside("recent-changes.json") ?? []).filter { $0.date > Date().addingTimeInterval(-30 * 86_400) }
         wealthAccounts = loadOrSetAside("wealth.json") ?? []
         notes = loadOrSetAside("notes.json") ?? []
+        rules = Self.withNewStarterRules(loadOrSetAside("rules.json") ?? [])
+        // Open on a month that has payments: statements usually end before today.
+        if selectedMonthIsEmpty, let latest = latestPaymentDate { selectedMonth = latest }
         if !isWaitingForFiles { removeOldSharedCopies() }
     }
 
@@ -149,6 +154,31 @@ final class BudgetStore: ObservableObject {
 
     /// The month the Overview and Budgets screens show.
     @Published var selectedMonth = Date()
+
+    // MARK: What the data covers
+
+    /// The newest payment's date, so screens can say how far the statements go.
+    var latestPaymentDate: Date? { transactions.lazy.map(\.date).max() }
+
+    func hasPayments(in month: Date) -> Bool {
+        transactions.contains { calculator.isInMonth($0.date, month) }
+    }
+
+    /// True when there are payments, but none in the month on screen: figures for it would only
+    /// be budgets and averages, not what happened, so screens say so instead.
+    var selectedMonthIsEmpty: Bool { !transactions.isEmpty && !hasPayments(in: selectedMonth) }
+
+    /// "Payments up to 22 Oct" when the month on screen holds the newest payment and it's a few
+    /// days old: the month isn't complete, so its totals are only so far.
+    var coverageNote: String? {
+        guard let latest = latestPaymentDate, calculator.isInMonth(latest, selectedMonth),
+              Date().timeIntervalSince(latest) > 3 * 86_400 else { return nil }
+        return "Payments up to \(latest.formatted(.dateTime.day().month(.abbreviated)))"
+    }
+
+    func showLatestMonthWithPayments() {
+        if let latest = latestPaymentDate { selectedMonth = latest }
+    }
 
     var calculator: BudgetCalculator { BudgetCalculator(monthStartDay: AppSettings.monthStartDay) }
 
@@ -248,6 +278,7 @@ final class BudgetStore: ObservableObject {
         var result = preview(rows, account: account, bankName: bank)
         result.summaryDifference = PDFStatementParser.summaryDifference(lines, rows: rows)
         result.bankName = bank
+        result.holderNames = PDFStatementParser.holderNames(in: lines)
         return result
     }
 
@@ -270,7 +301,76 @@ final class BudgetStore: ObservableObject {
     }
 
     /// Suggests categories on the device, learning from the ones you already chose.
-    var categoriser: Categoriser { Categoriser(history: transactions, lookedUp: merchantCategories) }
+    var categoriser: Categoriser {
+        Categoriser(history: transactions, lookedUp: merchantCategories, rules: activeRules, accountNames: accountNames)
+    }
+
+    /// Your rules, then a built-in rule for payments between the account holders, then the rest.
+    var activeRules: [CategoryRule] {
+        let names = accounts.flatMap { $0.holderNames ?? [] }
+        guard let selfTransfers = RulesEngine.selfTransferRule(names: names) else { return rules }
+        let firstStarter = rules.firstIndex(where: \.isStarter) ?? rules.endIndex
+        var all = rules
+        all.insert(selfTransfers, at: firstStarter)
+        return all
+    }
+
+    /// Account names by id, for rules about an account.
+    var accountNames: [UUID: String] { Dictionary(accounts.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first }) }
+
+    // MARK: Rules
+
+    /// Starter rules this device doesn't have yet (new in an update) join the end of the list.
+    /// Starter rules are never deleted, only turned off, so a removed one doesn't come back.
+    static func withNewStarterRules(_ saved: [CategoryRule]) -> [CategoryRule] {
+        let have = Set(saved.map(\.id))
+        return saved + RulesEngine.starterRules.filter { !have.contains($0.id) }
+    }
+
+    func saveRule(_ rule: CategoryRule) {
+        if let index = rules.firstIndex(where: { $0.id == rule.id }) {
+            rules[index] = rule
+        } else {
+            // Your own rules go before the starter set, so they win.
+            let firstStarter = rules.firstIndex(where: \.isStarter) ?? rules.endIndex
+            rules.insert(rule, at: firstStarter)
+        }
+        persist()
+    }
+
+    /// Your own rules are deleted; a starter rule is turned off instead.
+    func deleteRule(_ rule: CategoryRule) {
+        guard let index = rules.firstIndex(where: { $0.id == rule.id }) else { return }
+        if rule.isStarter { rules[index].isEnabled = false } else { rules.remove(at: index) }
+        persist()
+    }
+
+    func moveRules(fromOffsets source: IndexSet, toOffset destination: Int) {
+        rules.move(fromOffsets: source, toOffset: destination)
+        persist()
+    }
+
+    /// Payments a rule matches.
+    func matches(for rule: CategoryRule) -> [BankTransaction] {
+        RulesEngine.matching(rule, in: transactions, accountNames: accountNames)
+    }
+
+    /// Runs every rule: uncategorised payments get a category, and payments in the right
+    /// category get a sub-category. With `overwrite`, rules also change categories you set.
+    @discardableResult
+    func applyRules(overwrite: Bool = false) -> Int {
+        let changed = RulesEngine.apply(activeRules, to: &transactions, accountNames: accountNames, overwrite: overwrite)
+        if changed > 0 { persist() }
+        return changed
+    }
+
+    /// Gives every payment one rule matches that rule's category. Returns how many changed.
+    @discardableResult
+    func apply(_ rule: CategoryRule) -> Int {
+        let changed = RulesEngine.apply([rule], to: &transactions, accountNames: accountNames, overwrite: true)
+        if changed > 0 { persist() }
+        return changed
+    }
 
     /// Merchants already asked about since the app opened, so automatic runs don't ask again.
     private var triedMerchants = Set<String>()
@@ -337,6 +437,13 @@ final class BudgetStore: ObservableObject {
         let used = Set(result.newTransactions.compactMap(\.accountID)).union(result.accountForExisting.values)
         accounts += proposedAccounts.filter { used.contains($0.id) }
         proposedAccounts = []
+        // Remember who holds the accounts, to recognise payments between you.
+        if !result.holderNames.isEmpty {
+            let numbers = Set(result.duplicates.compactMap(\.accountNumber).map(BankAccount.lastFour))
+            for index in accounts.indices where used.contains(accounts[index].id) || numbers.contains(BankAccount.lastFour(accounts[index].number)) {
+                accounts[index].holderNames = Array(Set((accounts[index].holderNames ?? []) + result.holderNames)).sorted()
+            }
+        }
         // Payments imported before the account was known now get it.
         for index in transactions.indices where transactions[index].accountID == nil {
             if let account = result.accountForExisting[transactions[index].fingerprint] { transactions[index].accountID = account }
@@ -518,6 +625,7 @@ final class BudgetStore: ObservableObject {
         recentChanges = []
         wealthAccounts = []
         notes = []
+        rules = RulesEngine.starterRules
         accountFilter = nil
         householdView = .together
         for folder in [imagesFolder, sharedFilesFolder] {
@@ -618,6 +726,21 @@ final class BudgetStore: ObservableObject {
         return pairs.count
     }
 
+    /// Receipts matched to a payment and waiting for you to approve the split.
+    var receiptsToApprove: [BankTransaction] { transactions.filter { $0.pendingSplitDraft != nil } }
+
+    /// Payments entered by hand that a statement has since brought in too: same day, amount
+    /// and shop. Each pair is listed once, by the hand-entered one.
+    var likelyDuplicates: [BankTransaction] {
+        let imported = transactions.filter { !$0.fingerprint.hasPrefix("manual") }
+        return transactions.filter { manual in
+            manual.fingerprint.hasPrefix("manual") && imported.contains {
+                $0.amount == manual.amount && calculator.calendar.isDate($0.date, inSameDayAs: manual.date)
+                    && Categoriser.merchantKey($0.merchant) == Categoriser.merchantKey(manual.merchant)
+            }
+        }
+    }
+
     var needsReview: [BankTransaction] {
         transactions.filter { $0.category == "Uncategorised" || $0.pendingSplitDraft != nil }
     }
@@ -659,6 +782,7 @@ final class BudgetStore: ObservableObject {
             storage.save(recentChanges, "recent-changes.json"),
             storage.save(wealthAccounts, "wealth.json"),
             storage.save(notes, "notes.json"),
+            storage.save(rules, "rules.json"),
         ]
         lastSaveSucceeded = !results.contains(false)
         return lastSaveSucceeded
@@ -797,6 +921,7 @@ extension BudgetStore: SyncSource {
             + SyncRecord.records(accounts, collection: "accounts", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })
             + SyncRecord.records(wealthAccounts, collection: "wealth", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })
             + SyncRecord.records(notes, collection: "notes", id: \.id.uuidString)
+            + SyncRecord.records(rules, collection: "rules", id: \.id.uuidString)
             + imageRecords(privateTransactions: transactions.filter(isPrivate))
     }
 
@@ -871,7 +996,7 @@ extension BudgetStore: SyncSource {
         if record.collection == "wealth", let account = try? SyncRecord.decoder().decode(WealthAccount.self, from: record.payload) {
             return "\(account.kind.title): \(account.name)"
         }
-        let names = ["notes": "A comment", "budgets": "A budget", "settlements": "A settle-up", "pendingReceipts": "A waiting receipt", "couple": "Couple settings", "imports": "An import record", "changes": "A history entry"]
+        let names = ["rules": "A category rule", "notes": "A comment", "budgets": "A budget", "settlements": "A settle-up", "pendingReceipts": "A waiting receipt", "couple": "Couple settings", "imports": "An import record", "changes": "A history entry"]
         return names[record.collection] ?? record.collection
     }
 
@@ -895,6 +1020,7 @@ extension BudgetStore: SyncSource {
         accounts = SyncMerge.apply(saves: saves, deletes: deletes, to: accounts, collection: "accounts", id: \.id.uuidString)
         wealthAccounts = SyncMerge.apply(saves: saves, deletes: deletes, to: wealthAccounts, collection: "wealth", id: \.id.uuidString)
         notes = SyncMerge.apply(saves: saves, deletes: deletes, to: notes, collection: "notes", id: \.id.uuidString)
+        rules = Self.withNewStarterRules(SyncMerge.apply(saves: saves, deletes: deletes, to: rules, collection: "rules", id: \.id.uuidString))
         return writeFiles()
     }
 }

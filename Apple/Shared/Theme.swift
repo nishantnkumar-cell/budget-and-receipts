@@ -132,7 +132,13 @@ struct TransactionRow: View {
                     Text("Receipt waiting for approval").font(.caption).foregroundStyle(Color.brandAmber)
                 } else {
                     HStack(spacing: 6) {
-                        Text(transaction.category).font(.caption).foregroundStyle(.secondary)
+                        if transaction.splits.isEmpty {
+                            Text(FinanceCategories.label(transaction.category, transaction.subcategory)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        } else {
+                            // Split by its receipt's items: show where the parts went.
+                            Label(Array(Set(transaction.splits.map(\.category))).sorted().joined(separator: ", "), systemImage: "square.split.2x1")
+                                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
                         if store.hasPartner {
                             OwnerChip(owner: store.ledger.owner(of: transaction), partnerName: store.couple.partnerName)
                         }

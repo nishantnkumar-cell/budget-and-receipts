@@ -114,6 +114,8 @@ public struct StatementImportResult: Hashable, Sendable {
     public var accountForExisting: [String: UUID] = [:]
     /// The bank or card company named on the statement, for naming a new account.
     public var bankName: String? = nil
+    /// The account holders named on the statement, for recognising payments to yourselves.
+    public var holderNames: [String] = []
 }
 
 public enum StatementImporter {
