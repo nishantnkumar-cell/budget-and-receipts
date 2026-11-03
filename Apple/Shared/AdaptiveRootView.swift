@@ -17,6 +17,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     case activity = "Activity"
     case budgets = "Budgets"
     case plan = "Plan"
+    case reports = "Reports"
     case netWorth = "Net worth"
     case scan = "Scan"
     case settings = "Settings"
@@ -30,6 +31,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .activity: "list.bullet"
         case .budgets: "chart.bar"
         case .plan: "calendar"
+        case .reports: "chart.pie"
         case .netWorth: "chart.line.uptrend.xyaxis"
         case .scan: "doc.viewfinder"
         case .settings: "gearshape"
@@ -43,6 +45,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .activity: TransactionsView()
         case .budgets: BudgetsView()
         case .plan: PlanView()
+        case .reports: ReportsView()
         case .netWorth: NetWorthView()
         case .scan: CaptureView()
         case .settings: SettingsView()
