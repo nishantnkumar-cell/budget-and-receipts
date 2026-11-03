@@ -523,7 +523,7 @@ actor CloudSync: CKSyncEngineDelegate {
             ? CKUserIdentity.LookupInfo(emailAddress: contact)
             : CKUserIdentity.LookupInfo(phoneNumber: contact.filter { $0.isNumber || $0 == "+" })
         let share = try await prepareShare()
-        guard let result = try await container.shareParticipants(forUserIdentityLookupInfos: [lookup]).first?.value else {
+        guard let result = try await container.shareParticipants(for: [lookup]).first?.value else {
             throw CKError(.unknownItem)
         }
         let participant = try result.get()
