@@ -22,6 +22,8 @@ public struct BankTransaction: Identifiable, Codable, Hashable, Sendable {
     public var tags: [String]?
     /// Where in its category the money went, e.g. "Supermarket" in Groceries. Optional.
     public var subcategory: String?
+    /// You chose the category yourself, so automatic checks such as transfer spotting leave it alone.
+    public var categoryChosen: Bool?
 
     public init(
         date: Date,

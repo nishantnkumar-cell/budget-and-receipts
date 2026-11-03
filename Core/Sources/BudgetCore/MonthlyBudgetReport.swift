@@ -49,7 +49,8 @@ public struct BudgetCalculator: Sendable {
     public var calendar: Calendar
 
     /// Categories that move money between your own accounts. They are neither income nor spending.
-    public static let transferCategories: Set<String> = ["Card payment", "Internal transfer"]
+    /// Money moving between your own accounts, cards and savings: neither spending nor income.
+    public static let transferCategories: Set<String> = ["Card payment", "Internal transfer", "Savings & investments"]
 
     /// The day a budget month starts, for people who budget from payday (1 = calendar months).
     /// The month "November" with a start day of 25 runs from 25 October to 24 November.
