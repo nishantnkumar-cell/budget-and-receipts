@@ -233,6 +233,15 @@ public struct CoupleLedger: Sendable {
                 owedToMe += paidByMe - spent * share(of: owner, person: .me)
             }
         }
+        // Money one of you sent to the other's own account settles up, like a recorded settlement.
+        for transfer in transactions where transfer.amount < 0 && transfer.category == TransferDetector.betweenYou.category
+            && transfer.subcategory == TransferDetector.betweenYou.subcategory {
+            switch payer(of: transfer) {
+            case .me: owedToMe -= transfer.amount
+            case .partner: owedToMe += transfer.amount
+            case nil: break
+            }
+        }
         for settlement in settlements {
             owedToMe += settlement.from == .partner ? -settlement.amount : settlement.amount
         }

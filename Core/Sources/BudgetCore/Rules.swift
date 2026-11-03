@@ -25,7 +25,7 @@ public extension FinanceCategories {
         "Savings & investments": ["Savings", "Investments", "Pension"],
         "Income": ["Salary", "Refund", "Interest", "Benefits", "Other income"],
         "Card payment": ["Credit card repayment"],
-        "Internal transfer": ["Between accounts"],
+        "Internal transfer": ["Between accounts", "Between you"],
     ]
 
     /// The sub-categories for a category, or none.

@@ -316,6 +316,11 @@ struct NeedsYouPanel: View {
                               title: duplicates.count == 1 ? "Possible duplicate" : "\(duplicates.count) possible duplicates",
                               detail: "\(first.merchant) \(first.amount.money) was added by hand and by a statement", action: "Check") { open(.activity) })
         }
+        if let bill = store.untrackedCardBills.first {
+            items.append(Item(id: "card-\(bill.id)", symbol: "creditcard.trianglebadge.exclamationmark", tint: .orange,
+                              title: "Card bill of \((-bill.amount).money) with no card statement",
+                              detail: "Import that card's statements so what you bought on it counts", action: "Import") { open(.inbox) })
+        }
         if !store.pendingReceipts.isEmpty {
             let count = store.pendingReceipts.count
             items.append(Item(id: "waiting", symbol: "clock", tint: .secondary,

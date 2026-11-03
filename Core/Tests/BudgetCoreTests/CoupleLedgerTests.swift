@@ -213,4 +213,18 @@ final class CoupleLedgerTests: XCTestCase {
         XCTAssertEqual(ledger.budgets(budgets, for: .partner).map(\.limit), [160, 0])
         XCTAssertEqual(ledger.budgets(budgets, for: .together).map(\.limit), [400, 50])
     }
+    func testBankTransferBetweenYouSettlesUp() {
+        var ledger = ledger()
+        let hers = UUID()
+        ledger.accountOwners = [hers: .partner]
+        let groceries = tx("-100.00", owner: .shared)
+        var paidBack = tx("-50.00", "Internal transfer")
+        paidBack.accountID = hers
+        paidBack.subcategory = "Between you"
+        XCTAssertEqual(ledger.balance([groceries]).amount, 50)
+        XCTAssertEqual(ledger.balance([groceries, paidBack]).amount, 0, "She sent me her half")
+        var ordinary = paidBack
+        ordinary.subcategory = "Between accounts"
+        XCTAssertEqual(ledger.balance([groceries, ordinary]).amount, 50, "Her own savings move changes nothing")
+    }
 }
