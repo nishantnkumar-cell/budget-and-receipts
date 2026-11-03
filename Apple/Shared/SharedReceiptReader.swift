@@ -20,6 +20,38 @@ enum SharedReceiptReader {
         finish(documents, store: store)
     }
 
+    /// Statements an earlier version left waiting for review are imported now.
+    static func importWaitingStatements(into store: BudgetStore) {
+        // Statements imported before the app could read account numbers are read again, once
+        // some payments have no account: duplicates are skipped and the account is filled in.
+        let flag = "readStatementsForAccounts2"
+        let missingAccounts = !UserDefaults.standard.bool(forKey: flag) && store.transactions.contains { $0.accountID == nil }
+        if missingAccounts { UserDefaults.standard.set(true, forKey: flag) }
+        for document in store.sharedDocuments {
+            let waiting: Bool
+            switch document.outcome {
+            case .statementReady: waiting = true
+            case .statement: waiting = missingAccounts
+            default: waiting = false
+            }
+            guard waiting, let stored = document.storedFile,
+                  let data = try? Data(contentsOf: store.sharedFilesFolder.appendingPathComponent(stored)) else { continue }
+            var updated = document
+            if stored.lowercased().hasSuffix(".pdf") {
+                guard let lines = pdfLines(data) else { continue }
+                let outcome = importPDF(lines, fileName: document.fileName, store: store)
+                // A statement read again keeps its first result unless it added something new.
+                if case .statement(let imported, _, _) = outcome, imported == 0, case .statement = document.outcome { continue }
+                updated.outcome = outcome
+            } else {
+                let text = String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
+                guard let result = try? store.previewImport(text: text, fileName: document.fileName, mapping: nil) else { continue }
+                updated.outcome = importResult(result, fileName: document.fileName, store: store)
+            }
+            store.update(updated)
+        }
+    }
+
     /// Opens a file handed to the app ("Open in", or Open With on the Mac).
     static func open(_ url: URL, into store: BudgetStore) async {
         let document = await process(url, into: store)
@@ -31,8 +63,7 @@ enum SharedReceiptReader {
         store.matchPendingReceipts()
         Task { await store.categoriseUnknownMerchants() }
         let lines = documents.map { "\($0.fileName): \($0.summary)." }
-        let ready = documents.contains { if case .statementReady = $0.outcome { true } else { false } }
-        store.shareSummary = lines.joined(separator: "\n") + (ready ? "\n\nOpen Inbox › Shared files to review and import." : "")
+        store.shareSummary = lines.joined(separator: "\n")
         store.status = documents.count == 1 ? lines[0] : "Read \(documents.count) shared files. See Inbox › Shared files."
     }
 
@@ -60,19 +91,16 @@ enum SharedReceiptReader {
         if SharedReceiptDrop.isStatement(url) {
             let text = String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
             do {
-                // Nothing is imported until the person has seen the preview.
-                document.outcome = .statementReady(payments: try store.previewImport(text: text, fileName: name, mapping: nil).newTransactions.count)
+                // Imported straight away: the account comes from the statement, and payments
+                // already in the app are recognised and skipped.
+                document.outcome = importResult(try store.previewImport(text: text, fileName: name, mapping: nil), fileName: name, store: store)
             } catch {
                 document.outcome = .failed(reason: "its columns couldn't be worked out. Use Import Statement to choose them")
             }
             return recorded(document, store)
         }
         if ext == "pdf", let lines = pdfLines(data), PDFStatementParser.looksLikeStatement(lines) {
-            if let preview = try? store.previewImport(pdfLines: lines) {
-                document.outcome = .statementReady(payments: preview.newTransactions.count)
-            } else {
-                document.outcome = .failed(reason: "no payments could be found in this statement. Try your bank's CSV or OFX download")
-            }
+            document.outcome = importPDF(lines, fileName: name, store: store)
             return recorded(document, store)
         }
         do {

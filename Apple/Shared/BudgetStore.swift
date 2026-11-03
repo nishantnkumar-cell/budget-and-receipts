@@ -244,17 +244,20 @@ final class BudgetStore: ObservableObject {
     func previewImport(pdfLines lines: [String], account: UUID? = nil) throws -> StatementImportResult {
         let year = Calendar.current.component(.year, from: Date())
         let rows = try PDFStatementParser.parse(lines, fallbackYear: year)
-        var result = preview(rows, account: account)
+        let bank = PDFStatementParser.accountName(in: lines)
+        var result = preview(rows, account: account, bankName: bank)
         result.summaryDifference = PDFStatementParser.summaryDifference(lines, rows: rows)
+        result.bankName = bank
         return result
     }
 
-    private func preview(_ rows: [StatementRow], account: UUID?) -> StatementImportResult {
+    private func preview(_ rows: [StatementRow], account: UUID?, bankName: String? = nil) -> StatementImportResult {
         proposedAccounts = []
         for number in Set(rows.compactMap(\.accountNumber)).sorted() where BankAccounts.account(forNumber: number, in: accounts) == nil {
             if BankAccounts.account(forNumber: number, in: proposedAccounts) == nil, !BankAccount.lastFour(number).isEmpty {
                 // Only the last four digits are kept: enough to recognise the account.
-                proposedAccounts.append(BankAccount(name: "Account", number: BankAccount.lastFour(number)))
+                // Named after the bank on the statement, e.g. "first direct", so it reads well at once.
+                proposedAccounts.append(BankAccount(name: bankName ?? "Account", number: BankAccount.lastFour(number)))
             }
         }
         let known = accounts + proposedAccounts
@@ -331,9 +334,13 @@ final class BudgetStore: ObservableObject {
 
     /// Adds the new transactions from a previewed import and records it in the import history.
     func commitImport(_ result: StatementImportResult, fileName: String) {
-        let used = Set(result.newTransactions.compactMap(\.accountID))
+        let used = Set(result.newTransactions.compactMap(\.accountID)).union(result.accountForExisting.values)
         accounts += proposedAccounts.filter { used.contains($0.id) }
         proposedAccounts = []
+        // Payments imported before the account was known now get it.
+        for index in transactions.indices where transactions[index].accountID == nil {
+            if let account = result.accountForExisting[transactions[index].fingerprint] { transactions[index].accountID = account }
+        }
         transactions.insert(contentsOf: result.newTransactions, at: 0)
         transactions.sort { $0.date > $1.date }
         let status = result.duplicates.isEmpty ? "Imported" : "Imported, \(result.duplicates.count) already present"

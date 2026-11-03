@@ -14,7 +14,9 @@ struct ReceiptImageStore {
 
     static var writeOptions: Data.WritingOptions {
         #if os(iOS)
-        [.atomic, .completeFileProtection]
+        // Readable after the first unlock since the phone started, like the app's other data,
+        // so iCloud sync can send a receipt photo while the phone is locked.
+        [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
         #else
         [.atomic]
         #endif

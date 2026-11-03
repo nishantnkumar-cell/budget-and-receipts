@@ -42,8 +42,12 @@ enum MerchantCategoryService {
             Housing: rent, mortgage, letting agents.
             Family: children, schools, nurseries, toys, days out.
             Savings & investments: savings and investment accounts.
-            Uncategorised: when you don't recognise the business or its kind.
-            Words like LTD, the town name and card codes are not clues.
+            Uncategorised: only when you really can't tell what kind of business it is.
+            Words like LTD, the town name and card codes are not clues. Bank codes at the start:
+            DD direct debit, SO standing order, VIS or VISA card payment, IAP in-app purchase
+            (an app or game: Subscriptions), CR money in. A name ending in "Limited" or "Services"
+            is still a business: guess its kind from the name (e.g. cleaning services: Bills & utilities;
+            phone resellers: Shopping). Lottery and betting: Shopping.
             """)
         do {
             let answer = try await session.respond(to: "Statement line: \(merchant)", generating: CategoryGuess.self)

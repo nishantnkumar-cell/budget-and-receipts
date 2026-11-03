@@ -7,18 +7,14 @@ struct BudgetReceiptsApp: App {
     #else
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     #endif
-    #if DEBUG
-    @StateObject private var store = SampleData.isOn ? SampleData.budgetStore() : BudgetStore()
-    @StateObject private var subscriptions = SampleData.isOn ? SampleData.subscriptionStore() : SubscriptionStore()
-    #else
-    @StateObject private var store = BudgetStore()
-    @StateObject private var subscriptions = SubscriptionStore()
-    #endif
-    @StateObject private var settings = AppSettings()
+    // The stores live in AppModel, so a background wake-up (an iCloud push or a background
+    // refresh, with no screen) can sync them too.
+    @StateObject private var store = AppModel.store
+    @StateObject private var subscriptions = AppModel.subscriptions
+    @StateObject private var settings = AppModel.settings
     @StateObject private var lock = AppLock()
     @Environment(\.scenePhase) private var scenePhase
-    @State private var cloud: CloudSync?
-    @StateObject private var syncStatus = SyncStatus()
+    @StateObject private var syncStatus = AppModel.syncStatus
     /// When the app last stopped being in front, to lock the Mac after a while away.
     @State private var leftAt: Date?
 
@@ -46,20 +42,31 @@ struct BudgetReceiptsApp: App {
             }
             .task(id: scenePhase) {
                 // Receipts shared from other apps while this one was closed.
-                if scenePhase == .active { await SharedReceiptReader.readDropped(into: store) }
+                if scenePhase == .active {
+                    await SharedReceiptReader.readDropped(into: store)
+                    #if DEBUG
+                    // Testing only: files copied into Documents/Import over the cable count as shared.
+                    if let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+                        let folder = documents.appendingPathComponent("Import", isDirectory: true)
+                        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                        await SharedReceiptReader.readDropped(into: store, folder: folder)
+                    }
+                    #endif
+                    SharedReceiptReader.importWaitingStatements(into: store)
+                }
                 if scenePhase == .active {
                     // Launched while the phone was locked: read the files now, then sync.
                     if store.isWaitingForFiles || subscriptions.isWaitingForFiles {
                         let storeReady = store.reloadIfWaiting()
                         let contractsReady = subscriptions.reloadIfWaiting()
-                        if storeReady && contractsReady { await startOrStopSync() }
+                        if storeReady && contractsReady { await AppModel.startOrStopSync() }
                     }
-                    await cloud?.refresh()
+                    await AppModel.cloud?.refresh()
                     // Payments synced from other devices get categories too, not only imports.
                     Task { await store.categoriseUnknownMerchants() }
                 }
             }
-            .task(id: settings.iCloudSyncEnabled) { await startOrStopSync() }
+            .task(id: settings.iCloudSyncEnabled) { await AppModel.startOrStopSync() }
             #if os(macOS)
             .task { MacLockWatcher.shared.watch(lock) }
             #endif
@@ -85,6 +92,9 @@ struct BudgetReceiptsApp: App {
             switch phase {
             case .background:
                 lock.lock()
+                #if os(iOS)
+                BackgroundSync.schedule()
+                #endif
             case .inactive:
                 leftAt = leftAt ?? Date()
             case .active:
@@ -95,14 +105,50 @@ struct BudgetReceiptsApp: App {
                 break
             }
         }
+        #if os(iOS)
+        // Every few hours iOS gives the app a moment, even with the phone locked, to sync.
+        .backgroundTask(.appRefresh(BackgroundSync.identifier)) {
+            await AppModel.syncInBackground()
+            await MainActor.run { BackgroundSync.schedule() }
+        }
+        #endif
         #if os(macOS)
         .defaultSize(width: 1360, height: 880)
         .commands { ImportFromDevicesCommands() }
         #endif
     }
+}
+
+/// The app's data and its iCloud sync, made once at launch. Kept outside the SwiftUI scene so
+/// that a background wake-up, which has no screen, can still read the files and sync.
+@MainActor
+enum AppModel {
+    #if DEBUG
+    static let store = SampleData.isOn ? SampleData.budgetStore() : BudgetStore()
+    static let subscriptions = SampleData.isOn ? SampleData.subscriptionStore() : SubscriptionStore()
+    #else
+    static let store = BudgetStore()
+    static let subscriptions = SubscriptionStore()
+    #endif
+    static let settings = AppSettings()
+    static let syncStatus = SyncStatus()
+    private(set) static var cloud: CloudSync?
 
     /// iCloud sync runs only when it is switched on, the build has iCloud, and not under tests.
-    private func startOrStopSync() async {
+    static func startOrStopSync() async {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-WipeICloud") {
+            // Testing only: also clears this device's data, so nothing old is sent again.
+            if ProcessInfo.processInfo.arguments.contains("-AndLocalData") {
+                store.didPersist = nil
+                subscriptions.didPersist = nil
+                store.resetAllData()
+                subscriptions.resetAllData()
+            }
+            await CloudSync.wipeICloud(stateFolder: JSONFileStorage.defaultFolder)
+            exit(0)
+        }
+        #endif
         var testing = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
         #if DEBUG
         testing = testing || SampleData.isOn
@@ -115,6 +161,7 @@ struct BudgetReceiptsApp: App {
             subscriptions.didPersist = nil
             return
         }
+        guard cloud == nil else { return }
         let sync = CloudSync(sources: [store, subscriptions], imagesFolder: store.imagesFolder, stateFolder: JSONFileStorage.defaultFolder, status: syncStatus)
         cloud = sync
         syncStatus.sync = sync
@@ -129,5 +176,15 @@ struct BudgetReceiptsApp: App {
         store.didPersist = { Task { await sync.localDataChanged() } }
         subscriptions.didPersist = { Task { await sync.localDataChanged() } }
         await sync.start()
+    }
+
+    /// A background wake-up: start sync if it isn't running, then fetch and send.
+    static func syncInBackground() async {
+        if store.isWaitingForFiles || subscriptions.isWaitingForFiles {
+            guard store.reloadIfWaiting(), subscriptions.reloadIfWaiting() else { return }
+        }
+        if cloud == nil { await startOrStopSync() }
+        await cloud?.refresh()
+        await cloud?.localDataChanged()
     }
 }
