@@ -44,6 +44,14 @@ struct BudgetReceiptsApp: App {
                 // Receipts shared from other apps while this one was closed.
                 if scenePhase == .active {
                     await SharedReceiptReader.readDropped(into: store)
+                    #if DEBUG
+                    // Testing only: files copied into Documents/Import over the cable count as shared.
+                    if let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+                        let folder = documents.appendingPathComponent("Import", isDirectory: true)
+                        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                        await SharedReceiptReader.readDropped(into: store, folder: folder)
+                    }
+                    #endif
                     SharedReceiptReader.importWaitingStatements(into: store)
                 }
                 if scenePhase == .active {
