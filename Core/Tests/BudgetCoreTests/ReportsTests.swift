@@ -26,7 +26,7 @@ final class ReportsTests: XCTestCase {
             tx(day(10, 8), "TESCO STORES 123", "-250", "Groceries"),
             tx(day(10, 9), "AMEX", "-900", "Card payment"),
         ]
-        let report = CashFlowReport.make(transactions, endingAt: day(11, 1), count: 12, calculator: calculator)
+        let report = CashFlowReport.make(transactions, endingAt: day(11, 1), count: 12, asOf: day(12, 15), calculator: calculator)
         XCTAssertEqual(report.months.count, 3, "September, October and an empty November")
         XCTAssertEqual(report.months[1].net, 1750)
         XCTAssertEqual(report.totalSpending, 400, "Card repayments aren't spending")
@@ -43,7 +43,7 @@ final class ReportsTests: XCTestCase {
             tx(day(10, 7), "CAFE", "-5", "Eating out"),
             tx(day(10, 8), "TESCO", "-40", "Groceries"),
         ]
-        let report = CategoryTrendsReport.make(transactions, endingAt: day(10, 1), count: 2, calculator: calculator)
+        let report = CategoryTrendsReport.make(transactions, endingAt: day(10, 1), count: 2, asOf: day(12, 1), calculator: calculator)
         XCTAssertEqual(report.categories.map(\.category.name), ["Eating out", "Groceries"])
         let eatingOut = report.categories[0]
         XCTAssertEqual(eatingOut.category.monthly, [10, 95])
@@ -89,7 +89,7 @@ final class ReportsTests: XCTestCase {
             tx(day(5, 2, year: 2025), "TESCO", "-500", "Groceries"),
             tx(day(1, 2, year: 2027), "TESCO", "-70", "Groceries"),
         ]
-        let review = YearInReview.make(transactions, year: 2026, calculator: calculator)
+        let review = YearInReview.make(transactions, year: 2026, asOf: day(1, 15, year: 2027), calculator: calculator)
         XCTAssertEqual(review.cashFlow.totalSpending, 1050)
         XCTAssertEqual(review.cashFlow.totalIncome, 3000)
         XCTAssertEqual(review.spendingChange, 550)
@@ -101,6 +101,27 @@ final class ReportsTests: XCTestCase {
         XCTAssertEqual(calendar.component(.month, from: review.busiestMonth!.month), 7)
         XCTAssertEqual(calendar.component(.month, from: review.quietestMonth!.month), 5)
         XCTAssertEqual(YearInReview.years(in: transactions, calendar: calendar), [2027, 2026, 2025])
+    }
+
+    func testAMonthStillGoingIsntComparedOrAveraged() {
+        let transactions = [
+            tx(day(9, 5), "TESCO", "-200", "Groceries"),
+            tx(day(10, 5), "TESCO", "-200", "Groceries"),
+            tx(day(11, 2), "TESCO", "-20", "Groceries"),
+        ]
+        let flow = CashFlowReport.make(transactions, endingAt: day(11, 1), count: 3, asOf: day(11, 3), calculator: calculator)
+        XCTAssertEqual(flow.months.map(\.isPartial), [false, false, true])
+        XCTAssertEqual(flow.averageSpending, 200, "Early November would drag the average down")
+        let trends = CategoryTrendsReport.make(transactions, endingAt: day(11, 1), count: 3, asOf: day(11, 3), calculator: calculator)
+        XCTAssertEqual(trends.categories.first?.category.latestChange ?? 1, 0, accuracy: 0.001, "October against September, not November's first days")
+        let review = YearInReview.make(transactions, year: 2026, asOf: day(11, 3), calculator: calculator)
+        XCTAssertEqual(calendar.component(.month, from: review.quietestMonth!.month), 9)
+    }
+
+    func testShopNamesComeFromTheStatement() {
+        XCTAssertEqual(Reports.shopName("PRET A MANGER 0123"), "Pret A Manger")
+        XCTAssertEqual(Reports.shopName("Sainsbury's"), "Sainsbury's")
+        XCTAssertEqual(Reports.shopName("TESCO STORES 3245 LONDON"), "Tesco Stores London")
     }
 
     func testReadableNames() {

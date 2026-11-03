@@ -40,6 +40,23 @@ struct BudgetsView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                #if os(iOS)
+                // The Mac has Reports in its sidebar; the iPhone reaches it from here.
+                NavigationLink { ReportsView() } label: {
+                    HStack(spacing: 12) {
+                        IconBadge(systemImage: AppSection.reports.systemImage, size: 32)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Reports").font(.body.weight(.semibold))
+                            Text("Cash flow, trends, shops and your year").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                    }
+                    .card(padding: 12)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                #endif
                 VStack(spacing: 0) {
                     ForEach(lines(report)) { line in
                         Button { editing = line } label: {
