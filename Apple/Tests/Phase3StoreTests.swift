@@ -54,14 +54,14 @@ final class MerchantLookupStoreTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: folder) }
         let store = BudgetStore(folder: folder)
         store.transactions = [
-            BankTransaction(date: Date(), merchant: "))) BIKANERVALA HOUNSLOW", amount: -16.47, fingerprint: "a"),
-            BankTransaction(date: Date(), merchant: "))) BIKANERVALA HOUNSLOW", amount: -17.98, fingerprint: "b"),
+            BankTransaction(date: Date(), merchant: "))) ZORBA KITCHEN HOUNSLOW", amount: -16.47, fingerprint: "a"),
+            BankTransaction(date: Date(), merchant: "))) ZORBA KITCHEN HOUNSLOW", amount: -17.98, fingerprint: "b"),
             BankTransaction(date: Date(), merchant: "MYSTERY LTD", amount: -5, fingerprint: "c"),
         ]
         var asked: [String] = []
         let filled = await store.categoriseUnknownMerchants(useAI: true, useMaps: false) { merchant in
             asked.append(merchant)
-            return merchant.contains("BIKANERVALA") ? MerchantCategory(category: "Eating out", source: .maps) : nil
+            return merchant.contains("ZORBA") ? MerchantCategory(category: "Eating out", source: .maps) : nil
         }
         XCTAssertEqual(asked.count, 2, "Each merchant once")
         XCTAssertEqual(filled, 2)

@@ -9,9 +9,12 @@ public struct CategorySuggestion: Hashable, Sendable {
         case keyword
         /// Apple Intelligence on the device, or an Apple Maps lookup, for an unknown merchant.
         case lookedUp
+        /// One of your rules (or a starter rule).
+        case rule
     }
 
     public let category: String
+    public var subcategory: String? = nil
     /// 0 to 1. Learned suggestions use how often you chose this category.
     public let confidence: Double
     public let source: Source
@@ -30,11 +33,15 @@ public struct Categoriser: Sendable {
     private var merchantVotes: [String: [String: Int]] = [:]
     private var itemVotes: [String: [String: Int]] = [:]
     private var lookedUp: [String: MerchantCategory] = [:]
+    private var rules: [CategoryRule] = []
+    private var accountNames: [UUID: String] = [:]
 
     /// Learns from transactions you have already categorised, including approved receipt splits.
     /// `lookedUp` holds categories found for unknown merchants; your own choices still win.
-    public init(history: [BankTransaction] = [], lookedUp: [String: MerchantCategory] = [:]) {
+    public init(history: [BankTransaction] = [], lookedUp: [String: MerchantCategory] = [:], rules: [CategoryRule] = [], accountNames: [UUID: String] = [:]) {
         self.lookedUp = lookedUp
+        self.rules = rules
+        self.accountNames = accountNames
         for transaction in history {
             if transaction.splits.isEmpty {
                 guard transaction.category != "Uncategorised" else { continue }
@@ -52,7 +59,18 @@ public struct Categoriser: Sendable {
     // MARK: Suggestions
 
     public func suggest(for transaction: BankTransaction) -> CategorySuggestion? {
+        // Your own rules decide first, then what you chose for this shop before, then the
+        // starter rules: a choice you made yourself always beats a built-in guess.
+        let accountName = transaction.accountID.flatMap { accountNames[$0] }
+        func ruleSuggestion(_ rules: [CategoryRule]) -> CategorySuggestion? {
+            guard let rule = RulesEngine.firstMatch(rules, for: transaction, accountName: accountName) else { return nil }
+            var suggestion = CategorySuggestion(category: rule.category, confidence: 1, source: .rule)
+            suggestion.subcategory = rule.subcategory
+            return suggestion
+        }
+        if let own = ruleSuggestion(rules.filter { !$0.isStarter }) { return own }
         if let learned = Self.best(merchantVotes[Self.merchantKey(transaction.merchant)]) { return learned }
+        if let starter = ruleSuggestion(rules.filter(\.isStarter)) { return starter }
         let words = Self.words(transaction.merchant + " " + transaction.description)
         if transaction.amount > 0 {
             if let income = Self.match(words, Self.incomeKeywords) { return CategorySuggestion(category: income, confidence: 0.6, source: .keyword) }
@@ -83,9 +101,15 @@ public struct Categoriser: Sendable {
     /// Fills in the category of uncategorised transactions. Categories you set stay as they are.
     public func categorise(_ transactions: [BankTransaction]) -> [BankTransaction] {
         transactions.map { transaction in
-            guard transaction.category == "Uncategorised", transaction.splits.isEmpty, let suggestion = suggest(for: transaction) else { return transaction }
+            guard transaction.splits.isEmpty, let suggestion = suggest(for: transaction) else { return transaction }
             var categorised = transaction
-            categorised.category = suggestion.category
+            if transaction.category == "Uncategorised" {
+                categorised.category = suggestion.category
+                categorised.subcategory = suggestion.subcategory
+            } else if transaction.subcategory == nil, suggestion.category == transaction.category, let sub = suggestion.subcategory {
+                // Already in the right category: a rule can still say where in it.
+                categorised.subcategory = sub
+            }
             return categorised
         }
     }

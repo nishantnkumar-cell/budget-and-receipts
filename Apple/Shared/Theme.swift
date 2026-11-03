@@ -132,7 +132,7 @@ struct TransactionRow: View {
                     Text("Receipt waiting for approval").font(.caption).foregroundStyle(Color.brandAmber)
                 } else {
                     HStack(spacing: 6) {
-                        Text(transaction.category).font(.caption).foregroundStyle(.secondary)
+                        Text(FinanceCategories.label(transaction.category, transaction.subcategory)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         if store.hasPartner {
                             OwnerChip(owner: store.ledger.owner(of: transaction), partnerName: store.couple.partnerName)
                         }
