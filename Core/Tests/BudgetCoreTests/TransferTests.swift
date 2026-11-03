@@ -93,4 +93,60 @@ final class TransferTests: XCTestCase {
         XCTAssertEqual(categoriser.suggest(for: tx(1, "BP 4432 LONDON", "-60", "Uncategorised", current))?.category, "Transport")
         XCTAssertEqual(categoriser.suggest(for: tx(1, "BP ANDERSON CDA 8B CORBAN ROAD", "2904.30", "Uncategorised", current))?.category, "Income")
     }
+    // MARK: Real money that only looked like a transfer
+
+    func testCardPaymentToAShopIsSpending() {
+        let rows = [tx(3, "CARD PAYMENT TO TESCO STORES 3297", "-12.40", "Groceries", current),
+                    tx(4, "Card Payment to AMAZON.CO.UK", "-25.99", "Shopping", current)]
+        XCTAssertTrue(detect(rows).isEmpty, "Santander writes debit card shopping as CARD PAYMENT TO")
+    }
+
+    func testPhoneAndOysterTopUpsAreSpending() {
+        let rows = [tx(1, "VODAFONE TOP UP", "-10", "Bills & utilities", current), tx(2, "OYSTER TOP-UP", "-20", "Transport", current),
+                    tx(3, "EE TOPUP 0791", "-15", "Uncategorised", current)]
+        XCTAssertTrue(detect(rows).isEmpty)
+    }
+
+    func testPaymentReceivedIsACardBillOnlyOnACard() {
+        let fromSomeone = tx(1, "FASTER PAYMENT RECEIVED FROM A SMITH", "50", "Uncategorised", current)
+        let onCard = tx(2, "PAYMENT RECEIVED", "400", "Uncategorised", amex)
+        let thanks = tx(3, "PAYMENT RECEIVED - THANK YOU", "300", "Uncategorised", nil)
+        let found = detect([fromSomeone, onCard, thanks])
+        XCTAssertNil(found[fromSomeone.id], "Money from someone else into a current account")
+        XCTAssertEqual(found[onCard.id]?.category, "Card payment")
+        XCTAssertEqual(found[thanks.id]?.category, "Card payment")
+    }
+
+    func testSomeoneWithYourInitialAndSurnameIsntYou() {
+        let plumber = tx(1, "FPO N KUMAR PLUMBING", "-120", "Uncategorised", current)
+        let aunt = tx(2, "S KUMAR BIRTHDAY", "50", "Uncategorised", current)
+        let joint = tx(3, "SO KUMAR N&S", "-500", "Uncategorised", current)
+        let found = detect([plumber, aunt, joint])
+        XCTAssertNil(found[plumber.id], "N KUMAR is how a payee you typed reads")
+        XCTAssertNil(found[aunt.id])
+        XCTAssertEqual(found[joint.id]?.category, "Internal transfer", "Surname then initials is how banks print a holder")
+    }
+
+    func testUnrelatedEqualAmountsInTwoAccountsArentPaired() {
+        let shop = tx(1, "TESCO STORES 3297", "-30", "Groceries", current)
+        let paidBack = tx(2, "A SMITH DINNER", "30", "Uncategorised", savings)
+        XCTAssertTrue(detect([shop, paidBack], names: []).isEmpty, "A purchase isn't cancelled by an unrelated credit")
+        let moved = tx(1, "TFR TO SAVINGS", "-30", "Shopping", current)
+        let arrived = tx(2, "FROM CURRENT ACCOUNT", "30", "Shopping", savings)
+        let found = detect([moved, arrived], names: [])
+        XCTAssertEqual(found[moved.id]?.category, "Internal transfer", "Transfer wording on one side is enough")
+        XCTAssertEqual(found[arrived.id]?.category, "Internal transfer")
+    }
+
+    func testOldStarterRulesAreUpdatedUnlessYouChangedThem() {
+        let old = RulesEngine.retiredStarterRules
+        var edited = old[1]
+        edited.conditions[0].value = "REVOLUT, WISE"
+        let refreshed = RulesEngine.refreshingStarterRules([old[0], edited])
+        XCTAssertEqual(refreshed[0].conditions, RulesEngine.starterRules.first { $0.id == old[0].id }?.conditions)
+        XCTAssertEqual(refreshed[1].conditions, edited.conditions, "Your own change stays")
+        let categoriser = Categoriser(history: [], rules: refreshed)
+        XCTAssertNotEqual(categoriser.suggest(for: tx(1, "FASTER PAYMENT RECEIVED FROM A SMITH", "50", "Uncategorised", current))?.category, "Card payment")
+        XCTAssertEqual(categoriser.suggest(for: tx(1, "PAYMENT RECEIVED - THANK YOU", "50", "Uncategorised", amex))?.category, "Card payment")
+    }
 }
