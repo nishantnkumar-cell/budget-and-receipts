@@ -24,8 +24,9 @@ enum SharedReceiptReader {
     static func importWaitingStatements(into store: BudgetStore) {
         // Statements imported before the app could read account numbers are read again, once
         // some payments have no account: duplicates are skipped and the account is filled in.
-        let flag = "readStatementsForAccounts2"
-        let missingAccounts = !UserDefaults.standard.bool(forKey: flag) && store.transactions.contains { $0.accountID == nil }
+        // Read again once per change in what's taken from statements (now: account holders).
+        let flag = "readStatementsForAccounts3"
+        let missingAccounts = !UserDefaults.standard.bool(forKey: flag) && !store.transactions.isEmpty
         if missingAccounts { UserDefaults.standard.set(true, forKey: flag) }
         for document in store.sharedDocuments {
             let waiting: Bool

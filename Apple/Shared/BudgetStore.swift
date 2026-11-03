@@ -278,6 +278,7 @@ final class BudgetStore: ObservableObject {
         var result = preview(rows, account: account, bankName: bank)
         result.summaryDifference = PDFStatementParser.summaryDifference(lines, rows: rows)
         result.bankName = bank
+        result.holderNames = PDFStatementParser.holderNames(in: lines)
         return result
     }
 
@@ -301,7 +302,17 @@ final class BudgetStore: ObservableObject {
 
     /// Suggests categories on the device, learning from the ones you already chose.
     var categoriser: Categoriser {
-        Categoriser(history: transactions, lookedUp: merchantCategories, rules: rules, accountNames: accountNames)
+        Categoriser(history: transactions, lookedUp: merchantCategories, rules: activeRules, accountNames: accountNames)
+    }
+
+    /// Your rules, then a built-in rule for payments between the account holders, then the rest.
+    var activeRules: [CategoryRule] {
+        let names = accounts.flatMap { $0.holderNames ?? [] }
+        guard let selfTransfers = RulesEngine.selfTransferRule(names: names) else { return rules }
+        let firstStarter = rules.firstIndex(where: \.isStarter) ?? rules.endIndex
+        var all = rules
+        all.insert(selfTransfers, at: firstStarter)
+        return all
     }
 
     /// Account names by id, for rules about an account.
@@ -348,7 +359,7 @@ final class BudgetStore: ObservableObject {
     /// category get a sub-category. With `overwrite`, rules also change categories you set.
     @discardableResult
     func applyRules(overwrite: Bool = false) -> Int {
-        let changed = RulesEngine.apply(rules, to: &transactions, accountNames: accountNames, overwrite: overwrite)
+        let changed = RulesEngine.apply(activeRules, to: &transactions, accountNames: accountNames, overwrite: overwrite)
         if changed > 0 { persist() }
         return changed
     }
@@ -426,6 +437,13 @@ final class BudgetStore: ObservableObject {
         let used = Set(result.newTransactions.compactMap(\.accountID)).union(result.accountForExisting.values)
         accounts += proposedAccounts.filter { used.contains($0.id) }
         proposedAccounts = []
+        // Remember who holds the accounts, to recognise payments between you.
+        if !result.holderNames.isEmpty {
+            let numbers = Set(result.duplicates.compactMap(\.accountNumber).map(BankAccount.lastFour))
+            for index in accounts.indices where used.contains(accounts[index].id) || numbers.contains(BankAccount.lastFour(accounts[index].number)) {
+                accounts[index].holderNames = Array(Set((accounts[index].holderNames ?? []) + result.holderNames)).sorted()
+            }
+        }
         // Payments imported before the account was known now get it.
         for index in transactions.indices where transactions[index].accountID == nil {
             if let account = result.accountForExisting[transactions[index].fingerprint] { transactions[index].accountID = account }

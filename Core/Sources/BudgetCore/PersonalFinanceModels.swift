@@ -35,9 +35,12 @@ public struct ImportRecord: Identifiable, Codable, Hashable, Sendable {
 }
 
 public enum FinanceCategories {
+    /// Checked against the defaults of UK budgeting apps (Monzo, Starling, Emma): cash,
+    /// entertainment, gifts and charity, personal care, education and fees were missing.
     public static let all = [
         "Housing", "Bills & utilities", "Groceries", "Eating out", "Transport", "Shopping", "Health",
-        "Family", "Subscriptions", "Travel", "Savings & investments", "Income", "Card payment",
+        "Personal care", "Family", "Entertainment", "Subscriptions", "Travel", "Education",
+        "Gifts & charity", "Cash", "Fees & charges", "Savings & investments", "Income", "Card payment",
         "Internal transfer", "Uncategorised"
     ]
 
