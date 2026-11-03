@@ -73,6 +73,24 @@ struct BudgetReceiptsApp: App {
                 }
             }
             .task(id: settings.iCloudSyncEnabled) { await AppModel.startOrStopSync() }
+            // Joining a partner's household says what happened, even when it fails.
+            .alert(syncStatus.invite?.title ?? "", isPresented: Binding(
+                get: { syncStatus.invite != nil && syncStatus.invite != .joining },
+                set: { if !$0 { syncStatus.invite = nil } }
+            )) {
+                Button("OK") { syncStatus.invite = nil }
+            } message: {
+                Text(syncStatus.invite?.message ?? "")
+            }
+            .overlay(alignment: .top) {
+                if syncStatus.invite == .joining {
+                    Label("Joining the household…", systemImage: "person.2.badge.gearshape")
+                        .font(.footnote.weight(.semibold))
+                        .padding(.horizontal, 14).padding(.vertical, 8)
+                        .background(.thinMaterial, in: Capsule())
+                        .padding(.top, 8)
+                }
+            }
             #if os(macOS)
             .task { MacLockWatcher.shared.watch(lock) }
             #endif
@@ -178,13 +196,32 @@ enum AppModel {
             do {
                 try await sync.accept(metadata)
                 store.status = "You've joined the household."
+                syncStatus.invite = .joined(syncStatus.household.sharedBy)
             } catch {
                 store.status = "Couldn't join the household: \(error.localizedDescription)"
+                syncStatus.invite = .failed(Self.inviteFailure(error))
             }
         }
         store.didPersist = { Task { await sync.localDataChanged() } }
         subscriptions.didPersist = { Task { await sync.localDataChanged() } }
         await sync.start()
+    }
+
+    /// Why joining failed, in words the person can act on.
+    static func inviteFailure(_ error: Error) -> String {
+        if let error = error as? CKError {
+            switch error.code {
+            case .notAuthenticated:
+                return "This iPhone isn't signed in to iCloud, or iCloud Drive is off. Check Settings › your name › iCloud, then open the invitation again."
+            case .networkUnavailable, .networkFailure:
+                return "There's no internet connection. Open the invitation again when you're online."
+            case .unknownItem, .participantMayNeedVerification:
+                return "This invitation was sent to a different Apple ID, or it has been withdrawn. Ask for a new one and open it on this iPhone. (\(CloudSync.describe(error)))"
+            default:
+                return CloudSync.describe(error)
+            }
+        }
+        return error.localizedDescription
     }
 
     /// A background wake-up: start sync if it isn't running, then fetch and send.

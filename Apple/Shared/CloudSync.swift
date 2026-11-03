@@ -49,6 +49,33 @@ final class SyncStatus: ObservableObject {
     @Published var participants: [String] = []
     /// The running sync, for Settings' actions (invite, restore, leave). Nil when sync is off.
     var sync: CloudSync?
+    /// What happened to a household invitation just opened, so joining never fails silently.
+    @Published var invite: InviteProgress?
+
+    enum InviteProgress: Equatable {
+        case joining
+        /// The invitation arrived but iCloud sync isn't running, so it waits.
+        case waitingForSync(String)
+        case joined(String)
+        case failed(String)
+
+        var title: String {
+            switch self {
+            case .joining: "Joining the household…"
+            case .waitingForSync: "Can't join yet"
+            case .joined: "You've joined the household"
+            case .failed: "Couldn't join the household"
+            }
+        }
+
+        var message: String {
+            switch self {
+            case .joining: "Duo Budget is accepting the invitation with iCloud."
+            case .waitingForSync(let reason), .failed(let reason): reason
+            case .joined(let owner): "You now share everything that isn't private with \(owner). It can take a minute for their items to appear."
+            }
+        }
+    }
 
     func update(_ text: String) {
         self.text = text + " · " + Date().formatted(date: .omitted, time: .shortened)
@@ -462,10 +489,42 @@ actor CloudSync: CKSyncEngineDelegate {
         return saved
     }
 
+    /// A link to the household that only this person's Apple ID can open, for a QR code,
+    /// AirDrop or copying. `contact` is the email address or phone number of their Apple ID.
+    func inviteLink(for contact: String) async throws -> URL {
+        guard let container else { throw CKError(.notAuthenticated) }
+        let contact = contact.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lookup = contact.contains("@")
+            ? CKUserIdentity.LookupInfo(emailAddress: contact)
+            : CKUserIdentity.LookupInfo(phoneNumber: contact.filter { $0.isNumber || $0 == "+" })
+        let share = try await prepareShare()
+        guard let result = try await container.shareParticipants(forUserIdentityLookupInfos: [lookup]).first?.value else {
+            throw CKError(.unknownItem)
+        }
+        let participant = try result.get()
+        let already = share.participants.contains { $0.userIdentity.userRecordID != nil && $0.userIdentity.userRecordID == participant.userIdentity.userRecordID }
+        if !already {
+            participant.permission = .readWrite
+            share.addParticipant(participant)
+        }
+        let saved = try await container.privateCloudDatabase.save(share)
+        log("Made an invitation link for a partner (added: \(!already))")
+        guard let url = (saved as? CKShare)?.url ?? share.url else { throw CKError(.internalError) }
+        await refreshParticipants()
+        return url
+    }
+
     /// Joins a partner's household from their invitation. Shared items on this device move into it.
     func accept(_ metadata: CKShare.Metadata) async throws {
         guard let container else { throw CKError(.notAuthenticated) }
-        _ = try await container.accept(metadata)
+        log("Accepting household invitation from zone \(metadata.share.recordID.zoneID.zoneName), status \(metadata.participantStatus.rawValue)")
+        do {
+            _ = try await container.accept(metadata)
+        } catch {
+            log("Couldn't accept household invitation: \(Self.describe(error))")
+            throw error
+        }
+        log("Accepted household invitation")
         let zone = metadata.share.recordID.zoneID
         household = HouseholdLink(role: .member, zoneName: zone.zoneName, zoneOwner: zone.ownerName,
                                   sharedBy: metadata.ownerIdentity.nameComponents.map { PersonNameComponentsFormatter().string(from: $0) } ?? "your partner")
