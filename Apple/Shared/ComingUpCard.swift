@@ -9,7 +9,8 @@ struct ComingUpCard: View {
 
     var body: some View {
         let now = Date()
-        let payments = planner.payments(subscriptions.contracts, from: now)
+        // Bills from Plan, and regular payments spotted on your statements.
+        let payments = planner.payments(store.bills(subscriptions.contracts), from: now)
         let dates = planner.contractDates(subscriptions.contracts, from: now)
         let rises = subscriptions.priceRises(transactions: store.transactions)
         VStack(alignment: .leading, spacing: 12) {
@@ -17,7 +18,7 @@ struct ComingUpCard: View {
                 NavigationLink("Plan") { PlanView() }
             }
             if payments.isEmpty && dates.isEmpty {
-                Text("Add your bills, subscriptions and contracts in Plan to see what's due next.")
+                Text("Regular payments appear here once your statements show them, or add bills and contracts in Plan.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
