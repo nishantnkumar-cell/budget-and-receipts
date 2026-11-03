@@ -344,22 +344,37 @@ public enum PDFStatementParser {
             .contains(where: lower.contains)
     }
 
-    /// The account holders on a statement, from the line that shows the name next to the sort
-    /// code ("MR NEIL PATEL & MRS SARA PATEL 11-22-33 11112222"), titles removed.
+    /// The account holders on a statement, titles removed. First from the line that shows the
+    /// name next to the sort code ("MR NEIL PATEL & MRS SARA PATEL 11-22-33 11112222"),
+    /// else from the address at the top, which starts with a title ("Mrs Sara Patel").
     public static func holderNames(in lines: [String]) -> [String] {
-        guard let regex = try? NSRegularExpression(pattern: "^(.+?)\\s+\\d{2}-\\d{2}-\\d{2}\\s+\\d{8}\\b") else { return [] }
-        let titles: Set<String> = ["MR", "MRS", "MS", "MISS", "DR", "MX"]
-        for line in lines.prefix(80) {
-            guard let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
-                  let range = Range(match.range(at: 1), in: line) else { continue }
-            let people = line[range].uppercased()
-                .replacingOccurrences(of: " AND ", with: "&")
-                .split(separator: "&")
-                .map { $0.split(separator: " ").filter { !titles.contains(String($0)) }.joined(separator: " ") }
-                .filter { $0.split(separator: " ").count >= 2 && !$0.contains(where: \.isNumber) }
-            if !people.isEmpty { return people }
+        if let regex = try? NSRegularExpression(pattern: "^(.+?)\\s+\\d{2}-\\d{2}-\\d{2}\\s+\\d{8}\\b") {
+            for line in lines.prefix(80) {
+                guard let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+                      let range = Range(match.range(at: 1), in: line) else { continue }
+                let found = Self.people(in: String(line[range]))
+                if !found.isEmpty { return found }
+            }
+        }
+        // The addressee: a title, then only letters, e.g. "Mrs Sara Patel" or "MR N PATEL & MRS S PATEL".
+        let title = "(?:MR|MRS|MS|MISS|DR|MX)\\.?"
+        let addressee = "(?i)^\\s*\(title)\\s+[A-Z][A-Z' .-]*(?:\\s*(?:&|AND)\\s*\(title)\\s+[A-Z][A-Z' .-]*)?\\s*$"
+        guard let regex = try? NSRegularExpression(pattern: addressee) else { return [] }
+        for line in lines.prefix(40) where regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) != nil {
+            let found = Self.people(in: line)
+            if !found.isEmpty { return found }
         }
         return []
+    }
+
+    /// "MR NEIL PATEL & MRS SARA PATEL" as ["NEIL PATEL", "SARA PATEL"].
+    static func people(in text: String) -> [String] {
+        let titles: Set<String> = ["MR", "MRS", "MS", "MISS", "DR", "MX"]
+        return text.uppercased()
+            .replacingOccurrences(of: " AND ", with: "&")
+            .split(separator: "&")
+            .map { $0.split(separator: " ").filter { !titles.contains(String($0).replacingOccurrences(of: ".", with: "")) }.joined(separator: " ") }
+            .filter { $0.split(separator: " ").count >= 2 && !$0.contains(where: \.isNumber) }
     }
 
     /// The bank or card company named on a statement, e.g. "first direct" or "Capital One".
