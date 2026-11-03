@@ -671,7 +671,18 @@ actor CloudSync: CKSyncEngineDelegate {
         var pending = syncEngine.state.pendingRecordZoneChanges.filter { context.options.scope.contains($0) }
         // A save this device can no longer build (its item is gone, or it's left over from an
         // older version) would sit in the queue for ever: drop it instead.
-        let orphans = pending.filter { if case .saveRecord(let id) = $0 { outgoing[id.recordName] == nil } else { false } }
+        var orphans = pending.filter { if case .saveRecord(let id) = $0 { outgoing[id.recordName] == nil } else { false } }
+        if !orphans.isEmpty {
+            // Queued before the app last quit: rebuild them from the current data where it exists.
+            let keysByName = Dictionary(names.map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+            let current = await MainActor.run { sources.flatMap { $0.syncRecords() } }
+            let byKey = Dictionary(current.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
+            orphans.removeAll { change in
+                guard case .saveRecord(let id) = change, let key = keysByName[id.recordName], let record = byKey[key] else { return false }
+                outgoing[id.recordName] = record
+                return true
+            }
+        }
         if !orphans.isEmpty {
             syncEngine.state.remove(pendingRecordZoneChanges: orphans)
             pending.removeAll { orphans.contains($0) }
