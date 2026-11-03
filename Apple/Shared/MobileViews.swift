@@ -183,6 +183,29 @@ struct PlanView: View {
                 }
             }
             SetAsidesSection()
+            let spotted = store.spottedBills(besides: subscriptions.contracts)
+            if !spotted.isEmpty {
+                Section {
+                    ForEach(spotted) { payment in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(payment.name).font(.body.weight(.semibold))
+                                Text("\(payment.period == .custom ? "Every \(payment.intervalDays ?? 0) days" : payment.period.title) · \(payment.count) payments so far")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(payment.amount.money).monospacedDigit()
+                            Button("Add") { subscriptions.save(payment.contract(currency: AppSettings.currency)) }
+                                .buttonStyle(.bordered)
+                                .accessibilityLabel("Add \(payment.name) to your bills")
+                        }
+                    }
+                } header: {
+                    Text("Spotted on your statements")
+                } footer: {
+                    Text("These already show in Coming up. Add one to set its renewal date or notice period.")
+                }
+            }
             Section("All bills and subscriptions") {
                 ForEach(subscriptions.contracts) { contract in
                     NavigationLink { ContractEditor(contract: contract, priceRise: rises[contract.id]) } label: { ContractRow(contract: contract, priceRise: rises[contract.id]) }

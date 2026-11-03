@@ -205,7 +205,12 @@ struct MacSidebar: View {
                                         .foregroundStyle(OverviewPalette.series(index))
                                 }
                                 Spacer()
-                                Text(spent(account.id).money).foregroundStyle(.secondary).monospacedDigit()
+                                if let end = store.statementsEnd(for: account.id) {
+                                    Text("to \(end.formatted(.dateTime.day().month(.abbreviated)))").font(.caption).foregroundStyle(.tertiary)
+                                        .help("No statement for \(store.selectedMonth.formatted(.dateTime.month(.wide))) yet. The latest one ends on \(end.formatted(date: .long, time: .omitted)).")
+                                } else {
+                                    Text(spent(account.id).money).foregroundStyle(.secondary).monospacedDigit()
+                                }
                             }
                             .contentShape(Rectangle())
                         }
