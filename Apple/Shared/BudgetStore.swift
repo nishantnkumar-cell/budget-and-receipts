@@ -726,6 +726,21 @@ final class BudgetStore: ObservableObject {
         return pairs.count
     }
 
+    /// Receipts matched to a payment and waiting for you to approve the split.
+    var receiptsToApprove: [BankTransaction] { transactions.filter { $0.pendingSplitDraft != nil } }
+
+    /// Payments entered by hand that a statement has since brought in too: same day, amount
+    /// and shop. Each pair is listed once, by the hand-entered one.
+    var likelyDuplicates: [BankTransaction] {
+        let imported = transactions.filter { !$0.fingerprint.hasPrefix("manual") }
+        return transactions.filter { manual in
+            manual.fingerprint.hasPrefix("manual") && imported.contains {
+                $0.amount == manual.amount && calculator.calendar.isDate($0.date, inSameDayAs: manual.date)
+                    && Categoriser.merchantKey($0.merchant) == Categoriser.merchantKey(manual.merchant)
+            }
+        }
+    }
+
     var needsReview: [BankTransaction] {
         transactions.filter { $0.category == "Uncategorised" || $0.pendingSplitDraft != nil }
     }
