@@ -7,8 +7,16 @@ import SwiftUI
 /// whole month at once (key numbers, spending pace, what needs you, and recent activity).
 struct MacRootView: View {
     @EnvironmentObject var store: BudgetStore
-    @State private var selection: AppSection? = .home
+    @State private var selection: AppSection? = Self.firstSection
     @State private var showingPalette = false
+
+    /// Debug builds open on `-Section Reports` (any sidebar name), for screenshots.
+    private static var firstSection: AppSection {
+        #if DEBUG
+        if let name = UserDefaults.standard.string(forKey: "Section"), let section = AppSection(rawValue: name) { return section }
+        #endif
+        return .home
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -55,7 +63,7 @@ struct CommandPalette: View {
     @FocusState private var focused: Bool
 
     private var places: [AppSection] {
-        [AppSection.home, .activity, .inbox, .budgets, .plan, .netWorth, .scan, .settings].filter {
+        [AppSection.home, .activity, .inbox, .budgets, .reports, .plan, .netWorth, .scan, .settings].filter {
             query.isEmpty || $0.macTitle.localizedCaseInsensitiveContains(query) || $0.rawValue.localizedCaseInsensitiveContains(query)
         }
     }
@@ -170,7 +178,7 @@ struct MacSidebar: View {
     var body: some View {
         List(selection: $selection) {
             Section {
-                ForEach([AppSection.home, .activity, .inbox, .budgets, .plan, .netWorth]) { section in
+                ForEach([AppSection.home, .activity, .inbox, .budgets, .reports, .plan, .netWorth]) { section in
                     Label(section.macTitle, systemImage: section.macSymbol)
                         .badge(badge(for: section))
                         .tag(section)

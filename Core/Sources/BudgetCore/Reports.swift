@@ -10,6 +10,8 @@ public struct MonthFlow: Identifiable, Hashable, Sendable {
     public let month: Date
     public let income: Decimal
     public let spending: Decimal
+    /// The month is still going, so its totals will grow.
+    public var isPartial = false
     public var net: Decimal { income - spending }
 }
 
@@ -25,20 +27,19 @@ public struct CashFlowReport: Hashable, Sendable {
         guard totalIncome > 0 else { return nil }
         return NSDecimalNumber(decimal: net / totalIncome).doubleValue
     }
+    /// Average spending of the finished months with any payments (all of them if none has finished).
     public var averageSpending: Decimal {
-        let active = months.filter { $0.income != 0 || $0.spending != 0 }
-        return active.isEmpty ? 0 : totalSpending / Decimal(active.count)
+        let finished = months.filter { !$0.isPartial }
+        let active = (finished.isEmpty ? months : finished).filter { $0.income != 0 || $0.spending != 0 }
+        return active.isEmpty ? 0 : active.reduce(0) { $0 + $1.spending } / Decimal(active.count)
     }
 
     /// The `count` months up to and including `month`, oldest first. Months before the first
     /// payment are left out, so a new user doesn't see a year of empty bars.
-    public static func make(_ transactions: [BankTransaction], endingAt month: Date, count: Int = 12, calculator: BudgetCalculator = BudgetCalculator()) -> CashFlowReport {
+    public static func make(_ transactions: [BankTransaction], endingAt month: Date, count: Int = 12, asOf today: Date = Date(),
+                            calculator: BudgetCalculator = BudgetCalculator()) -> CashFlowReport {
         let months = Reports.months(endingAt: month, count: count, calculator: calculator)
-        let flows = months.map { month in
-            MonthFlow(month: month,
-                      income: calculator.income(transactions, month: month),
-                      spending: calculator.spendingByCategory(transactions, month: month).values.reduce(0, +))
-        }
+        let flows = Reports.flows(transactions, months: months, asOf: today, calculator: calculator)
         let firstActive = flows.firstIndex { $0.income != 0 || $0.spending != 0 } ?? flows.endIndex
         return CashFlowReport(months: Array(flows[firstActive...]))
     }
@@ -50,12 +51,25 @@ public struct SpendingTrend: Identifiable, Hashable, Sendable {
     public let name: String
     /// Spending in each month of the report, oldest first.
     public let monthly: [Decimal]
+    /// How many of the months have finished. The last one is often still going.
+    public var finishedMonths: Int
+    public init(name: String, monthly: [Decimal], finishedMonths: Int? = nil) {
+        self.name = name
+        self.monthly = monthly
+        self.finishedMonths = finishedMonths ?? monthly.count
+    }
     public var total: Decimal { monthly.reduce(0, +) }
-    public var average: Decimal { monthly.isEmpty ? 0 : total / Decimal(monthly.count) }
-    /// The latest month against the average of the months before it, from -1 up. Nil without history.
+    /// The average of the finished months (of all of them when none has finished).
+    public var average: Decimal {
+        let months = finishedMonths > 0 ? Array(monthly.prefix(finishedMonths)) : monthly
+        return months.isEmpty ? 0 : months.reduce(0, +) / Decimal(months.count)
+    }
+    /// The latest finished month against the average of the months before it, from -1 up.
+    /// Nil without history. A month still going isn't compared, as it would always look low.
     public var latestChange: Double? {
-        guard monthly.count > 1, let latest = monthly.last else { return nil }
-        let earlier = monthly.dropLast()
+        let finished = monthly.prefix(finishedMonths)
+        guard finished.count > 1, let latest = finished.last else { return nil }
+        let earlier = finished.dropLast()
         let average = earlier.reduce(0, +) / Decimal(earlier.count)
         guard average > 0 else { return nil }
         return NSDecimalNumber(decimal: (latest - average) / average).doubleValue
@@ -79,8 +93,10 @@ public struct CategoryTrendsReport: Hashable, Sendable {
 
     public static let otherSubcategory = "Other"
 
-    public static func make(_ transactions: [BankTransaction], endingAt month: Date, count: Int = 6, calculator: BudgetCalculator = BudgetCalculator()) -> CategoryTrendsReport {
+    public static func make(_ transactions: [BankTransaction], endingAt month: Date, count: Int = 6, asOf today: Date = Date(),
+                            calculator: BudgetCalculator = BudgetCalculator()) -> CategoryTrendsReport {
         let months = Reports.months(endingAt: month, count: count, calculator: calculator)
+        let finished = months.filter { calculator.monthInterval(for: $0).end <= today }.count
         var byCategory: [String: [Decimal]] = [:]
         var bySub: [String: [String: [Decimal]]] = [:]
         for (index, month) in months.enumerated() {
@@ -94,11 +110,11 @@ public struct CategoryTrendsReport: Hashable, Sendable {
         }
         var categories: [CategoryTrend] = []
         for (name, monthly) in byCategory {
-            let trend = SpendingTrend(name: name, monthly: monthly)
+            let trend = SpendingTrend(name: name, monthly: monthly, finishedMonths: finished)
             guard trend.total > 0 else { continue }
             var subs: [SpendingTrend] = []
             for (sub, values) in bySub[name] ?? [:] {
-                let subTrend = SpendingTrend(name: sub, monthly: values)
+                let subTrend = SpendingTrend(name: sub, monthly: values, finishedMonths: finished)
                 if subTrend.total != 0 { subs.append(subTrend) }
             }
             subs.sort { $0.total > $1.total }
@@ -133,7 +149,7 @@ public enum TopShops {
     /// sub-category. Refunds reduce a shop's total; transfers are left out.
     public static func make(_ transactions: [BankTransaction], from: Date, to: Date, category: String? = nil, subcategory: String? = nil,
                             limit: Int? = nil, calculator: BudgetCalculator = BudgetCalculator()) -> [ShopSpending] {
-        struct Tally { var total: Decimal = 0; var visits = 0; var last = Date.distantPast; var categories: [String: Decimal] = [:] }
+        struct Tally { var total: Decimal = 0; var visits = 0; var last = Date.distantPast; var names: [String: Int] = [:]; var categories: [String: Decimal] = [:] }
         var tallies: [String: Tally] = [:]
         for transaction in transactions where transaction.date >= from && transaction.date <= to {
             let allocations = Reports.allocations(of: transaction, calculator: calculator).filter { allocation in
@@ -149,12 +165,13 @@ public enum TopShops {
             }
             if transaction.amount < 0 { tally.visits += 1 }
             tally.last = max(tally.last, transaction.date)
+            tally.names[transaction.merchant, default: 0] += 1
             tallies[key] = tally
         }
         let shops = tallies
             .filter { $0.value.total > 0 }
             .map { key, tally in
-                ShopSpending(key: key, name: Reports.readableName(key), total: tally.total, visits: tally.visits, lastVisit: tally.last,
+                ShopSpending(key: key, name: Reports.shopName(tally.names.max { $0.value != $1.value ? $0.value < $1.value : $0.key > $1.key }?.key ?? key), total: tally.total, visits: tally.visits, lastVisit: tally.last,
                              category: tally.categories.max { $0.value < $1.value }?.key ?? "Uncategorised")
             }
             .sorted { $0.total != $1.total ? $0.total > $1.total : $0.name < $1.name }
@@ -190,15 +207,11 @@ public struct YearInReview: Hashable, Sendable {
         hasher.combine(payments)
     }
 
-    public static func make(_ transactions: [BankTransaction], year: Int, calculator: BudgetCalculator = BudgetCalculator()) -> YearInReview {
+    public static func make(_ transactions: [BankTransaction], year: Int, asOf today: Date = Date(), calculator: BudgetCalculator = BudgetCalculator()) -> YearInReview {
         let calendar = calculator.calendar
         let december = calendar.date(from: DateComponents(year: year, month: 12, day: 15)) ?? Date()
         let months = Reports.months(endingAt: december, count: 12, calculator: calculator)
-        let flows = months.map { month in
-            MonthFlow(month: month,
-                      income: calculator.income(transactions, month: month),
-                      spending: calculator.spendingByCategory(transactions, month: month).values.reduce(0, +))
-        }
+        let flows = Reports.flows(transactions, months: months, asOf: today, calculator: calculator)
         let previousSpending = Reports.months(endingAt: calendar.date(byAdding: .year, value: -1, to: december) ?? december, count: 12, calculator: calculator)
             .reduce(Decimal(0)) { $0 + calculator.spendingByCategory(transactions, month: $1).values.reduce(0, +) }
         let inYear = transactions.filter { transaction in months.contains { calculator.isInMonth(transaction.date, $0) } }
@@ -209,6 +222,7 @@ public struct YearInReview: Hashable, Sendable {
         let interval = DateInterval(start: calculator.monthInterval(for: months.first ?? december).start, end: calculator.monthInterval(for: december).end)
         let shops = TopShops.make(inYear, from: interval.start, to: interval.end, calculator: calculator)
         let active = flows.filter { $0.spending > 0 }
+        let finished = active.filter { !$0.isPartial }
         return YearInReview(
             year: year,
             cashFlow: CashFlowReport(months: flows),
@@ -219,7 +233,7 @@ public struct YearInReview: Hashable, Sendable {
             biggestPurchase: inYear.filter { $0.amount < 0 && !BudgetCalculator.transferCategories.contains($0.category) }.min { $0.amount < $1.amount },
             payments: inYear.filter { $0.amount < 0 && !BudgetCalculator.transferCategories.contains($0.category) }.count,
             busiestMonth: active.max { $0.spending < $1.spending },
-            quietestMonth: active.min { $0.spending < $1.spending }
+            quietestMonth: (finished.isEmpty ? active : finished).min { $0.spending < $1.spending }
         )
     }
 
@@ -279,6 +293,15 @@ public enum Reports {
     struct Allocation { let category: String; let subcategory: String?; let amount: Decimal }
 
     /// The budget months ending at `month`, oldest first.
+    static func flows(_ transactions: [BankTransaction], months: [Date], asOf today: Date, calculator: BudgetCalculator) -> [MonthFlow] {
+        months.map { month in
+            MonthFlow(month: month,
+                      income: calculator.income(transactions, month: month),
+                      spending: calculator.spendingByCategory(transactions, month: month).values.reduce(0, +),
+                      isPartial: calculator.monthInterval(for: month).end > today)
+        }
+    }
+
     public static func months(endingAt month: Date, count: Int, calculator: BudgetCalculator) -> [Date] {
         (0..<max(count, 1)).reversed().compactMap { calculator.calendar.date(byAdding: .month, value: -$0, to: month) }
     }
@@ -288,6 +311,14 @@ public enum Reports {
     static func allocations(of transaction: BankTransaction, calculator: BudgetCalculator) -> [Allocation] {
         let subcategory = transaction.splits.isEmpty ? transaction.subcategory.flatMap { $0.isEmpty ? nil : $0 } : nil
         return calculator.allocations(of: transaction).map { Allocation(category: $0.0, subcategory: subcategory, amount: $0.1) }
+    }
+
+    /// A shop's name from a statement line: "PRET A MANGER 0123" → "Pret A Manger". Words with
+    /// digits (branch and card numbers) are dropped.
+    public static func shopName(_ merchant: String) -> String {
+        let words = merchant.split(separator: " ").filter { !$0.contains(where: \.isNumber) }
+        let kept = words.isEmpty ? merchant : words.prefix(4).joined(separator: " ")
+        return kept == kept.uppercased() ? readableName(kept) : kept
     }
 
     /// "TESCO STORES" → "Tesco Stores". Short all-capital words such as "BP" or "M&S" stay as they are.
@@ -300,7 +331,7 @@ public enum Reports {
         }.joined(separator: " ")
     }
 
-    static func rounded(_ value: Decimal, places: Int = 2) -> Decimal {
+    public static func rounded(_ value: Decimal, places: Int = 2) -> Decimal {
         var value = value
         var result = Decimal()
         NSDecimalRound(&result, &value, places, .plain)
