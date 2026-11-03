@@ -2,6 +2,20 @@ import XCTest
 @testable import BudgetCore
 
 final class CategoriserTests: XCTestCase {
+    func testBankCodesAndCommonUKNamesAreCategorised() {
+        let categoriser = Categoriser(history: [])
+        func category(_ merchant: String, _ amount: Decimal) -> String? {
+            categoriser.suggest(for: BankTransaction(date: Date(), merchant: merchant, amount: amount, fingerprint: ""))?.category
+        }
+        XCTAssertEqual(category("DIRECT DEBIT PAYMENT - THANK YOU", 1180.13), "Card payment")
+        XCTAssertEqual(category("CR ACME TECHNOLOGIES U", 2400), "Income")
+        XCTAssertNil(category("CR VINTED REFUND", 11.14))
+        XCTAssertEqual(category("DD ID MOBILE LIMITED", -12), "Bills & utilities")
+        XCTAssertEqual(category("SO NS&I 1234567890", -50), "Savings & investments")
+        XCTAssertEqual(category("TKMAXX_UK London", -30), "Shopping")
+        XCTAssertEqual(category("TWICKENHAM PLANT CENTR WHITTON ENG", -9.5), "Shopping")
+    }
+
     private func tx(_ merchant: String, _ amount: String = "-10.00", category: String = "Uncategorised", splits: [TransactionSplit] = []) -> BankTransaction {
         BankTransaction(date: Date(), merchant: merchant, amount: money(amount), category: category, fingerprint: UUID().uuidString, splits: splits)
     }
