@@ -16,13 +16,20 @@ public enum TransferDetector {
     static let cardRepayment = Change(category: "Card payment", subcategory: "Credit card repayment")
     static let savings = Change(category: "Savings & investments", subcategory: "Savings")
 
-    /// Words on a bank statement for paying a credit card bill.
-    static let cardBillWords = ["AMERICAN EXPRESS", "AMEX", "CAPITAL ONE", "BARCLAYCARD", "MBNA", "CARD PYMT", "CARD PAYMENT",
+    /// Words on a bank statement for paying a credit card bill. Not "CARD PAYMENT": banks such as
+    /// Santander write ordinary debit card shopping as "CARD PAYMENT TO TESCO STORES".
+    static let cardBillWords = ["AMERICAN EXPRESS", "AMEX", "CAPITAL ONE", "BARCLAYCARD", "MBNA", "CARD PYMT",
                                 "CREDIT CARD", "VANQUIS", "AQUA CARD", "TESCO BANK", "JOHN LEWIS FINANCE", "NEWDAY"]
-    /// Words on a card statement for the bill being paid.
-    static let cardPaidWords = ["PAYMENT THANK YOU", "PAYMENT THANKYOU", "PAYMENT RECEIVED", "DIRECT DEBIT PAYMENT", "DD PAYMENT"]
-    /// Your own e-money accounts, topped up from the bank.
-    static let topUpWords = ["REVOLUT", "MONZO", "TOP UP", "TOPUP"]
+    /// Words a card statement uses for the bill being paid, wherever they appear.
+    static let cardThanksWords = ["PAYMENT THANK YOU", "PAYMENT THANKYOU", "PAYMENT RECEIVED THANK YOU", "PAYMENT RECEIVED THANKYOU"]
+    /// Words that mean the bill was paid only on a card account (or a line with no account):
+    /// on a current account "FASTER PAYMENT RECEIVED" is money from someone else.
+    static let cardPaidWords = cardThanksWords + ["PAYMENT RECEIVED", "DIRECT DEBIT PAYMENT", "DD PAYMENT"]
+    /// Your own e-money accounts, topped up from the bank. Not "TOP UP": a phone or Oyster
+    /// top-up ("VODAFONE TOP UP") is spending.
+    static let topUpWords = ["REVOLUT", "MONZO"]
+    /// Bank codes for money moved by transfer rather than spent with a card.
+    static let transferCodes = ["OBP", "FPO", "FPI", "TFR", "TRANSFER", "STO", "SO"]
     static let savingsWords = ["NS I", "NS AND I", "NSANDI", "PREMIUM BONDS", "SAVINGS ACCOUNT", "ISA"]
     /// Pay that happens to mention your name isn't a transfer.
     static let incomeWords = ["SALARY", "PAYROLL", "WAGES", "PENSION", "HMRC", "DIVIDEND", "REFUND"]
@@ -57,7 +64,8 @@ public enum TransferDetector {
                 .map { (credit: $0, days: abs(calendar.dateComponents([.day], from: calendar.startOfDay(for: debit.date), to: calendar.startOfDay(for: $0.date)).day ?? 99)) }
                 .filter { $0.days <= pairWindow && !mentions(incomeWords, in: $0.credit) }
                 .min { $0.days < $1.days }
-            guard let credit = match?.credit else { continue }
+            guard let credit = match?.credit,
+                  looksLikeTransfer(debit, credit, people: people, cardAccounts: cardAccounts) else { continue }
             usedCredits.insert(credit.id)
             let change = cardAccounts.contains(credit.accountID!) || mentions(cardBillWords, in: debit) ? cardRepayment : betweenAccounts
             found[debit.id] = change
@@ -78,16 +86,34 @@ public enum TransferDetector {
         let isCredit = transaction.amount > 0
         if mentions(incomeWords, in: transaction) { return nil }
         if isCredit {
-            if mentions(cardPaidWords, in: transaction) { return cardRepayment }
+            if mentions(cardThanksWords, in: transaction) { return cardRepayment }
+            let onCard = transaction.accountID.map(cardAccounts.contains) ?? true
+            if onCard, mentions(cardPaidWords, in: transaction) { return cardRepayment }
             if let account = transaction.accountID, cardAccounts.contains(account), mentions(["PAYMENT", "THANK YOU"], in: transaction) { return cardRepayment }
         } else {
             if mentions(cardBillWords, in: transaction) { return cardRepayment }
             if mentions(topUpWords, in: transaction) { return betweenAccounts }
             if mentions(savingsWords, in: transaction) { return savings }
         }
-        let words = Set(Categoriser.words(transaction.merchant + " " + transaction.description))
-        if people.contains(where: { $0.isNamed(in: words) }) { return betweenAccounts }
+        if namesAHolder(transaction, people: people) { return betweenAccounts }
         return nil
+    }
+
+    static func namesAHolder(_ transaction: BankTransaction, people: [Person]) -> Bool {
+        let words = Categoriser.words(transaction.merchant + " " + transaction.description)
+        return people.contains { $0.isNamed(in: words) }
+    }
+
+    /// Equal and opposite amounts in two accounts happen by chance too (a £30 shop on one card,
+    /// £30 paid back to the other). They pair only when neither is a purchase or refund the app
+    /// recognised, or when either side's wording says money was moved.
+    static func looksLikeTransfer(_ debit: BankTransaction, _ credit: BankTransaction, people: [Person], cardAccounts: Set<UUID>) -> Bool {
+        let spending = Set(FinanceCategories.budgetable)
+        if !spending.contains(debit.category) && !spending.contains(credit.category) { return true }
+        if let account = credit.accountID, cardAccounts.contains(account) { return true }
+        return [debit, credit].contains { side in
+            mentions(transferCodes + cardBillWords + cardThanksWords + topUpWords + savingsWords, in: side) || namesAHolder(side, people: people)
+        }
     }
 
     static func mentions(_ phrases: [String], in transaction: BankTransaction) -> Bool {
@@ -95,8 +121,9 @@ public enum TransferDetector {
         return phrases.contains { phrase in text.contains(" " + Categoriser.words(phrase).joined(separator: " ") + " ") }
     }
 
-    /// An account holder, recognised the ways banks write a name: "NISHANT KUMAR",
-    /// "KUMAR N", "N KUMAR", or "KUMAR N&S" for a joint account.
+    /// An account holder, recognised the ways banks write a holder's name: "NISHANT KUMAR",
+    /// "KUMAR N", or "KUMAR N&S" for a joint account. "N KUMAR" alone is not enough: that is
+    /// how a payee you typed reads, and many people share a surname and an initial.
     struct Person {
         let first: String
         let last: String
@@ -108,9 +135,12 @@ public enum TransferDetector {
             self.last = last
         }
 
-        func isNamed(in words: Set<String>) -> Bool {
+        func isNamed(in words: [String]) -> Bool {
             guard words.contains(last) else { return false }
-            return words.contains(first) || words.contains(String(first.prefix(1)))
+            if words.contains(first) { return true }
+            // Surname first, then the initial: the way banks print an account holder.
+            let initial = String(first.prefix(1))
+            return zip(words, words.dropFirst()).contains { $0 == last && $1 == initial }
         }
     }
 }

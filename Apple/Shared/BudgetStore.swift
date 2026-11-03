@@ -115,6 +115,7 @@ final class BudgetStore: ObservableObject {
     /// spending and income. Categories you chose yourself stay as they are.
     @discardableResult
     func markTransfers() -> Int {
+        recheckTransfers()
         let found = TransferDetector.detect(transactions, accounts: accounts, names: holderNames, calendar: calculator.calendar)
         guard !found.isEmpty else { return 0 }
         for index in transactions.indices {
@@ -144,6 +145,31 @@ final class BudgetStore: ObservableObject {
         }
         let ids = Set(misread.map { transactions[$0].id })
         // Re-sort them without learning from their own wrong categories.
+        let sorter = Categoriser(history: transactions.filter { !ids.contains($0.id) }, lookedUp: merchantCategories, rules: activeRules, accountNames: accountNames)
+        transactions = sorter.categorise(transactions)
+        persist()
+    }
+
+    /// Once: earlier versions counted real money as transfers ("CARD PAYMENT TO TESCO" as a card
+    /// bill, "VODAFONE TOP UP", "FASTER PAYMENT RECEIVED", any equal amounts in two accounts).
+    /// Transfers the app chose, not you, are sorted again with today's rules.
+    private func recheckTransfers() {
+        let key = "transfer-recheck-1"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        UserDefaults.standard.set(true, forKey: key)
+        let automatic = transactions.indices.filter { index in
+            let transaction = transactions[index]
+            return transaction.categoryChosen != true && transaction.splits.isEmpty
+                && (transaction.category == "Card payment" || transaction.category == "Internal transfer")
+        }
+        guard !automatic.isEmpty else { return }
+        for index in automatic {
+            transactions[index].category = "Uncategorised"
+            transactions[index].subcategory = nil
+        }
+        let ids = Set(automatic.map { transactions[$0].id })
+        // Re-sort them without learning from their own old categories; real transfers come back
+        // from the rules and the transfer check that runs next.
         let sorter = Categoriser(history: transactions.filter { !ids.contains($0.id) }, lookedUp: merchantCategories, rules: activeRules, accountNames: accountNames)
         transactions = sorter.categorise(transactions)
         persist()
@@ -457,6 +483,7 @@ final class BudgetStore: ObservableObject {
     /// Starter rules this device doesn't have yet (new in an update) join the end of the list.
     /// Starter rules are never deleted, only turned off, so a removed one doesn't come back.
     static func withNewStarterRules(_ saved: [CategoryRule]) -> [CategoryRule] {
+        let saved = RulesEngine.refreshingStarterRules(saved)
         let have = Set(saved.map(\.id))
         return saved + RulesEngine.starterRules.filter { !have.contains($0.id) }
     }

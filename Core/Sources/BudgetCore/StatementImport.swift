@@ -107,6 +107,10 @@ public struct StatementImportResult: Hashable, Sendable {
     /// New transactions that match an existing one on date and amount but not description,
     /// e.g. a manual entry. They are imported but should be checked.
     public var possibleDuplicates: [BankTransaction]
+    /// Lines already imported from another file of the same account (a PDF and a CSV of one
+    /// month word payments differently): same account, day and amount. Skipped, and also
+    /// counted in `duplicates`.
+    public var fromAnotherFile: [StatementRow] = []
     /// For a PDF statement: how far what was read is from the statement's own totals. Nil when they agree.
     public var summaryDifference: Decimal? = nil
     /// Payments imported before their account was known, by fingerprint, with the account this
@@ -241,6 +245,15 @@ public enum StatementImporter {
         let legacyAccounts = Dictionary(existing.filter { !$0.fingerprint.contains("|acct:") }.map { ($0.fingerprint, $0.accountID) }, uniquingKeysWith: { first, _ in first })
         var seenInFile: [String: Int] = [:]
         var result = StatementImportResult(newTransactions: [], duplicates: [], possibleDuplicates: [])
+        // Payments already held per account, day and amount. A line that matches none by its
+        // fingerprint can still be one of these, read from another file of the same statement.
+        func slot(_ account: UUID, _ date: Date, _ amount: Decimal) -> String {
+            let parts = calendar.dateComponents([.year, .month, .day], from: date)
+            return "\(account.uuidString)|\(parts.year ?? 0)-\(parts.month ?? 0)-\(parts.day ?? 0)|\(amount)"
+        }
+        var held: [String: Int] = [:]
+        for transaction in existing { if let id = transaction.accountID { held[slot(id, transaction.date, transaction.amount), default: 0] += 1 } }
+        var waiting: [(row: StatementRow, transaction: BankTransaction, slot: String?)] = []
 
         for row in rows {
             let rowAccount = row.accountNumber.flatMap(accountForNumber) ?? account
@@ -260,12 +273,28 @@ public enum StatementImporter {
             if existingIDs.contains(fingerprint) || legacyMatch {
                 result.duplicates.append(row)
                 if let rowAccount, legacyMatch, legacyAccounts[legacy] == .some(nil) { result.accountForExisting[legacy] = rowAccount }
+                // It is one of the payments already held, so it can't also stand for another.
+                if let rowAccount, existingIDs.contains(fingerprint) || legacyAccounts[legacy] == .some(rowAccount) {
+                    held[slot(rowAccount, row.date, row.amount), default: 0] -= 1
+                }
                 continue
             }
             var transaction = BankTransaction(date: row.date, merchant: row.description, description: row.description, amount: row.amount, fingerprint: fingerprint)
             transaction.accountID = rowAccount
+            waiting.append((row, transaction, rowAccount.map { slot($0, row.date, row.amount) }))
+        }
+
+        for (row, transaction, key) in waiting {
+            // As many lines as the account already has on that day for that amount are the same
+            // payments again; any more are new (a second coffee the other file didn't have).
+            if let key, held[key, default: 0] > 0 {
+                held[key, default: 0] -= 1
+                result.duplicates.append(row)
+                result.fromAnotherFile.append(row)
+                continue
+            }
             result.newTransactions.append(transaction)
-            if existing.contains(where: { $0.amount == row.amount && calendar.isDate($0.date, inSameDayAs: row.date) && ($0.accountID == nil || $0.accountID == rowAccount) }) {
+            if existing.contains(where: { $0.amount == row.amount && calendar.isDate($0.date, inSameDayAs: row.date) && ($0.accountID == nil || $0.accountID == transaction.accountID) }) {
                 result.possibleDuplicates.append(transaction)
             }
         }
