@@ -13,6 +13,31 @@ final class BankAccountTests: XCTestCase {
 
     private func day(_ d: Int) -> Date { calendar.date(from: DateComponents(year: 2026, month: 10, day: d, hour: 12))! }
 
+    func testStatementReadAgainGivesOldPaymentsTheirAccountWithoutCopies() {
+        let rows = [StatementRow(date: day(3), description: "TESCO", amount: -12.5)]
+        // First imported before the app could read the account number.
+        let first = StatementImporter.prepare(rows, existing: [], calendar: calendar)
+        var existing = first.newTransactions
+        let numbered = rows.map { StatementRow(date: $0.date, description: $0.description, amount: $0.amount, accountNumber: "12345678") }
+        let second = StatementImporter.prepare(numbered, existing: existing, accountForNumber: { _ in self.current.id }, calendar: calendar)
+        XCTAssertTrue(second.newTransactions.isEmpty)
+        XCTAssertEqual(second.accountForExisting[existing[0].fingerprint], current.id)
+        existing[0].accountID = current.id
+        // Read a third time: still nothing new, and nothing more to fill in.
+        let third = StatementImporter.prepare(numbered, existing: existing, accountForNumber: { _ in self.current.id }, calendar: calendar)
+        XCTAssertTrue(third.newTransactions.isEmpty)
+        XCTAssertTrue(third.accountForExisting.isEmpty)
+    }
+
+    func testAccountNamesAndNumbersFromStatements() {
+        XCTAssertEqual(PDFStatementParser.accountName(in: ["Your HSBC Premier Credit Card Statement"]), "HSBC credit card")
+        XCTAssertEqual(PDFStatementParser.accountName(in: ["first direct", "HSBC UK Bank plc"]), "first direct")
+        XCTAssertEqual(PDFStatementParser.accountName(in: ["Capital One credit card statement"]), "Capital One")
+        XCTAssertEqual(PDFStatementParser.accountNumber(in: ["Mrs A Person 44-55-66 33334444 536"]), "33334444")
+        XCTAssertEqual(PDFStatementParser.accountNumber(in: ["MR A PERSON xxxx-xxxxxx-12345 05/09/26"]), "12345")
+        XCTAssertEqual(PDFStatementParser.accountNumber(in: ["Statement Date 21 August 2026 Card number 1234 56** **** 4321"]), "4321")
+    }
+
     func testLabelsShowOnlyTheLastFourDigits() {
         XCTAssertEqual(current.label, "Current ••5678")
         XCTAssertEqual(BankAccount(name: "Cash").label, "Cash")
