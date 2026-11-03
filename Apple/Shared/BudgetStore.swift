@@ -252,8 +252,34 @@ final class BudgetStore: ObservableObject {
     /// How much can be spent today to stay within this month's budgets, after the bills still
     /// to come. Nil when no budgets are set or another month is showing.
     func safeToSpend(contracts: [SubscriptionContract], today: Date = Date()) -> SafeToSpend? {
-        let upcoming = ComingUpPlanner().payments(contracts, from: today)
+        let upcoming = ComingUpPlanner().payments(bills(contracts), from: today)
         return SafeToSpend.calculate(report: monthReport, upcomingBills: upcoming, today: today)
+    }
+
+    // MARK: Recurring payments
+
+    /// Payments that come round regularly on your statements (direct debits, standing orders,
+    /// subscriptions) and aren't already a bill in Plan.
+    func spottedBills(besides contracts: [SubscriptionContract]) -> [RecurringPayment] {
+        let tracker = SubscriptionTracker()
+        return RecurringDetector.detect(viewTransactions, calendar: calculator.calendar).filter { payment in
+            let sample = BankTransaction(date: payment.lastDate, merchant: payment.name + " " + payment.key, amount: -payment.amount, fingerprint: "")
+            return !contracts.contains { $0.id == payment.id || tracker.matches(transaction: sample, contract: $0) }
+        }
+    }
+
+    /// Your bills in Plan plus the ones spotted on your statements, for Coming up,
+    /// safe-to-spend and the balance forecast.
+    func bills(_ contracts: [SubscriptionContract]) -> [SubscriptionContract] {
+        contracts + spottedBills(besides: contracts).map { $0.contract(currency: AppSettings.currency) }
+    }
+
+    /// The last day an account's statements reach, when that's before the month on screen,
+    /// so an account with no newer statement doesn't just say £0.
+    func statementsEnd(for accountID: UUID) -> Date? {
+        guard let latest = transactions.lazy.filter({ $0.accountID == accountID }).map(\.date).max(),
+              latest < calculator.monthInterval(for: selectedMonth).start else { return nil }
+        return latest
     }
 
     /// A warning when this receipt looks like one already saved or attached. Nil when it's new.
@@ -658,7 +684,7 @@ final class BudgetStore: ObservableObject {
                 expected.append((date, income.amount))
             }
         }
-        return BalanceForecast.make(balance: balance, transactions: transactions, upcomingBills: ComingUpPlanner().payments(contracts, from: now), expectedIncome: expected, now: now)
+        return BalanceForecast.make(balance: balance, transactions: transactions, upcomingBills: ComingUpPlanner().payments(bills(contracts), from: now), expectedIncome: expected, now: now)
     }
 
     // MARK: Starting again
