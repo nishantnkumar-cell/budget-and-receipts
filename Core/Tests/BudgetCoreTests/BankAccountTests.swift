@@ -120,4 +120,24 @@ final class BankAccountTests: XCTestCase {
         fromCurrent.accountID = current.id
         XCTAssertTrue(ReceiptMatcher.autoMatch([pending], in: [fromCurrent], accountFor: { _ in self.credit.id }, calendar: calendar).isEmpty)
     }
+    func testSameStatementAsPDFAndCSVIsNotCountedTwice() {
+        // The PDF and the CSV of one month word the same payments differently.
+        let pdf = [StatementRow(date: day(3), description: "CARD PAYMENT TO COSTA COFFEE 1234", amount: money("-3.20")),
+                   StatementRow(date: day(4), description: "DIRECT DEBIT BRITISH GAS", amount: money("-80.00"))]
+        let csv = [StatementRow(date: day(3), description: "COSTA COFFEE", amount: money("-3.20")),
+                   StatementRow(date: day(3), description: "COSTA COFFEE", amount: money("-3.20")),
+                   StatementRow(date: day(4), description: "BRITISH GAS", amount: money("-80.00")),
+                   StatementRow(date: day(5), description: "TESCO", amount: money("-12.00"))]
+        let first = StatementImporter.prepare(pdf, existing: [], account: current.id, calendar: calendar)
+        let second = StatementImporter.prepare(csv, existing: first.newTransactions, account: current.id, calendar: calendar)
+        XCTAssertEqual(second.fromAnotherFile.count, 2)
+        XCTAssertEqual(second.duplicates.count, 2)
+        XCTAssertEqual(second.newTransactions.map(\.amount), [money("-3.20"), money("-12.00")], "The second coffee and Tesco are new")
+        // Another account's payment of the same amount that day is a different payment.
+        let card = StatementImporter.prepare([csv[0]], existing: first.newTransactions, account: credit.id, calendar: calendar)
+        XCTAssertEqual(card.newTransactions.count, 1)
+        // Importing the CSV again adds nothing more.
+        let third = StatementImporter.prepare(csv, existing: first.newTransactions + second.newTransactions, account: current.id, calendar: calendar)
+        XCTAssertTrue(third.newTransactions.isEmpty)
+    }
 }

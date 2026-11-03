@@ -182,7 +182,7 @@ public struct Categoriser: Sendable {
     ]
 
     static let cardRepaymentKeywords: [(String, [String])] = [
-        ("Card payment", ["PAYMENT THANK YOU", "PAYMENT RECEIVED", "DIRECT DEBIT PAYMENT", "PAYMENT THANKYOU"])
+        ("Card payment", ["PAYMENT THANK YOU", "PAYMENT RECEIVED THANK YOU", "DIRECT DEBIT PAYMENT", "PAYMENT THANKYOU"])
     ]
 
     static let merchantKeywords: [(String, [String])] = [
