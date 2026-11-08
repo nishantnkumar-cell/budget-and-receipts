@@ -18,6 +18,8 @@ struct BudgetReceiptsApp: App {
     @StateObject private var syncStatus = AppModel.syncStatus
     /// When the app last stopped being in front, to lock the Mac after a while away.
     @State private var leftAt: Date?
+    /// The one-time welcome sheet on a new install.
+    @State private var showWelcome = false
 
     var body: some Scene {
         WindowGroup {
@@ -31,6 +33,14 @@ struct BudgetReceiptsApp: App {
                     AdaptiveRootView()
                         // Rebuild every screen when the currency changes so all amounts update.
                         .id(settings.currencyCode)
+                        .task { showWelcome = WelcomeView.shouldShow(store: store) }
+                        .sheet(isPresented: $showWelcome, onDismiss: { UserDefaults.standard.set(true, forKey: WelcomeView.shownKey) }) {
+                            WelcomeView()
+                                .environmentObject(store)
+                                .environmentObject(subscriptions)
+                                .environmentObject(settings)
+                                .environmentObject(syncStatus)
+                        }
                 }
             }
             #if os(macOS)
