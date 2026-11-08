@@ -29,6 +29,8 @@ final class BudgetStore: ObservableObject {
     @Published var goals: [SavingsGoal] = []
     /// Holidays and trips, with their spending, exchange rates and card fees.
     @Published var trips: [Trip] = []
+    /// Return-by dates and warranties on things bought.
+    @Published var covers: [ProductCover] = []
     /// Built-in categories you've renamed, recoloured or deleted, and your own categories.
     /// Settings › Categories. Every change here moves payments, budgets and rules along.
     @Published private(set) var categories: [CategoryDefinition] = [] {
@@ -103,6 +105,7 @@ final class BudgetStore: ObservableObject {
         categories = loadOrSetAside("categories.json") ?? []
         goals = loadOrSetAside("goals.json") ?? []
         trips = loadOrSetAside("trips.json") ?? []
+        covers = loadOrSetAside("covers.json") ?? []
         // Open on a month that has payments: statements usually end before today.
         if selectedMonthIsEmpty, let latest = latestPaymentDate { selectedMonth = latest }
         if !isWaitingForFiles {
@@ -225,6 +228,31 @@ final class BudgetStore: ObservableObject {
         let changed = ForeignAmountReader.fill(&transactions, home: AppSettings.currency)
         if !changed.isEmpty { persist() }
         return changed.count
+    }
+
+    // MARK: Returns and warranties
+
+    func saveCover(_ cover: ProductCover) {
+        if let index = covers.firstIndex(where: { $0.id == cover.id }) { covers[index] = cover } else { covers.append(cover) }
+        persist()
+    }
+
+    func deleteCover(_ cover: ProductCover) {
+        covers.removeAll { $0.id == cover.id }
+        persist()
+    }
+
+    /// The folder the data lives in, for backups.
+    var dataFolder: URL { storage.folder }
+
+    /// Replaces everything with a backup's data, then reloads, so iCloud sync makes the other
+    /// devices match. Contracts are reloaded too (they live in the same folder).
+    func restore(_ contents: EncryptedBackup.Contents, subscriptions: SubscriptionStore) throws {
+        try EncryptedBackup.replace(folder: storage.folder, with: contents)
+        unreadableFiles = []
+        loadAll()
+        subscriptions.reloadAfterRestore()
+        persist()
     }
 
     // MARK: Transfers
@@ -1027,6 +1055,7 @@ final class BudgetStore: ObservableObject {
         categories = []
         goals = []
         trips = []
+        covers = []
         accountFilter = nil
         householdView = .together
         for folder in [imagesFolder, sharedFilesFolder] {
@@ -1195,6 +1224,7 @@ final class BudgetStore: ObservableObject {
             storage.save(categories, "categories.json"),
             storage.save(goals, "goals.json"),
             storage.save(trips, "trips.json"),
+            storage.save(covers, "covers.json"),
         ]
         lastSaveSucceeded = !results.contains(false)
         return lastSaveSucceeded
@@ -1337,6 +1367,7 @@ extension BudgetStore: SyncSource {
             + SyncRecord.records(categories, collection: "categories", id: \.id)
             + SyncRecord.records(goals, collection: "goals", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })
             + SyncRecord.records(trips, collection: "trips", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })
+            + SyncRecord.records(covers, collection: "covers", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })
             + imageRecords(privateTransactions: transactions.filter(isPrivate))
     }
 
@@ -1354,6 +1385,8 @@ extension BudgetStore: SyncSource {
             use(transaction.pendingSplitDraft?.receipt.imagePath, privateIDs.contains(transaction.id))
         }
         for receipt in pendingReceipts { use(receipt.editor.imagePath, receipt.isPrivate == true) }
+        // A receipt kept for its return or warranty keeps its photo after the split is approved.
+        for cover in covers { use(cover.receiptImage, cover.isPrivate == true) }
         return used.compactMap { name, isPrivate in
             guard images.url(for: name) != nil else { return nil }
             return SyncRecord(collection: "images", id: name, payload: Data(), isPrivate: isPrivate, fileName: name)
@@ -1414,7 +1447,7 @@ extension BudgetStore: SyncSource {
         if record.collection == "wealth", let account = try? SyncRecord.decoder().decode(WealthAccount.self, from: record.payload) {
             return "\(account.kind.title): \(account.name)"
         }
-        let names = ["rules": "A category rule", "categories": "A category", "notes": "A comment", "budgets": "A budget", "settlements": "A settle-up", "pendingReceipts": "A waiting receipt", "couple": "Couple settings", "goals": "A savings goal", "trips": "A trip", "imports": "An import record", "changes": "A history entry"]
+        let names = ["rules": "A category rule", "categories": "A category", "notes": "A comment", "budgets": "A budget", "settlements": "A settle-up", "pendingReceipts": "A waiting receipt", "couple": "Couple settings", "goals": "A savings goal", "trips": "A trip", "covers": "A return or warranty", "imports": "An import record", "changes": "A history entry"]
         return names[record.collection] ?? record.collection
     }
 
@@ -1442,6 +1475,7 @@ extension BudgetStore: SyncSource {
         categories = SyncMerge.apply(saves: saves, deletes: deletes, to: categories, collection: "categories", id: \.id)
         goals = SyncMerge.apply(saves: saves, deletes: deletes, to: goals, collection: "goals", id: \.id.uuidString)
         trips = SyncMerge.apply(saves: saves, deletes: deletes, to: trips, collection: "trips", id: \.id.uuidString).sorted { $0.start > $1.start }
+        covers = SyncMerge.apply(saves: saves, deletes: deletes, to: covers, collection: "covers", id: \.id.uuidString)
         // A rename or deletion from the other device, or a payment it sent in an old category.
         normaliseCategories()
         return writeFiles()

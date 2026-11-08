@@ -7,6 +7,10 @@ public enum ReminderKind: String, Codable, CaseIterable, Sendable {
     case fixedPriceEnds
     /// A fixed term ending without a set renewal date.
     case contractEnds
+    /// The last day to take something back to the shop.
+    case returnBy
+    /// A product's warranty running out.
+    case warrantyEnds
 }
 
 /// A reminder the app should show as a local notification.
@@ -79,12 +83,12 @@ public struct ReminderPlanner: Sendable {
         return result
     }
 
-    private func fireDate(daysBefore days: Int, _ event: Date) -> Date? {
+    func fireDate(daysBefore days: Int, _ event: Date) -> Date? {
         guard let day = calendar.date(byAdding: .day, value: -days, to: calendar.startOfDay(for: event)) else { return nil }
         return calendar.date(bySettingHour: hour, minute: 0, second: 0, of: day)
     }
 
-    private func dayText(_ date: Date) -> String {
+    func dayText(_ date: Date) -> String {
         var style = Date.FormatStyle.dateTime.day().month(.wide).year()
         style.timeZone = calendar.timeZone
         return date.formatted(style)
