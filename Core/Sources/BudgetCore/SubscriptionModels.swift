@@ -23,6 +23,14 @@ public enum ContractPricing: String, Codable, CaseIterable, Identifiable, Sendab
 public enum SubscriptionStatus: String, Codable, CaseIterable, Identifiable, Sendable {
     case active, paused, cancelled, expired
     public var id: String { rawValue }
+    public var title: String { self == .expired ? "Ended" : rawValue.capitalized }
+}
+
+/// A subscription runs month to month and can stop any time (streaming, apps, the gym).
+/// A contract has a fixed term with an end date (a mobile phone deal, a fixed energy tariff).
+public enum CommitmentKind: String, Codable, CaseIterable, Identifiable, Sendable {
+    case subscription, contract
+    public var id: String { rawValue }
 }
 
 public struct SubscriptionContract: Identifiable, Codable, Hashable, Sendable {
@@ -48,6 +56,9 @@ public struct SubscriptionContract: Identifiable, Codable, Hashable, Sendable {
     public var isPrivate: Bool? = nil
     /// Days before each payment to be reminded. Nil uses the default (2 days); 0 turns it off.
     public var remindDaysBefore: Int? = nil
+    /// Subscription or fixed-term contract. Nil for items saved before the two were separate:
+    /// see `resolvedKind`.
+    public var kind: CommitmentKind? = nil
 
     public init(
         id: UUID = UUID(),
@@ -67,7 +78,8 @@ public struct SubscriptionContract: Identifiable, Codable, Hashable, Sendable {
         accountReference: String = "",
         notes: String = "",
         status: SubscriptionStatus = .active,
-        transactionMatchers: [String] = []
+        transactionMatchers: [String] = [],
+        kind: CommitmentKind? = nil
     ) {
         self.id = id
         self.vendor = vendor
@@ -87,6 +99,27 @@ public struct SubscriptionContract: Identifiable, Codable, Hashable, Sendable {
         self.notes = notes
         self.status = status
         self.transactionMatchers = transactionMatchers
+        self.kind = kind
+    }
+
+    /// The kind, or for older items a guess: anything with a term, renewal, fixed price or
+    /// notice period is a contract; the rest are subscriptions.
+    public var resolvedKind: CommitmentKind {
+        if let kind { return kind }
+        let hasTerm = minimumTermEndDate != nil || renewalDate != nil || fixedPriceEndDate != nil || (cancellationNoticeDays ?? 0) > 0
+        return hasTerm ? .contract : .subscription
+    }
+
+    public var isContract: Bool { resolvedKind == .contract }
+
+    /// When a contract's fixed term ends.
+    public var termEndDate: Date? { minimumTermEndDate ?? renewalDate }
+
+    /// Whole months from `date` until the term ends; 0 once it has ended. Nil without an end date.
+    public func monthsLeft(from date: Date, calendar: Calendar = Calendar(identifier: .gregorian)) -> Int? {
+        guard let end = termEndDate else { return nil }
+        guard end > date else { return 0 }
+        return calendar.dateComponents([.month], from: calendar.startOfDay(for: date), to: calendar.startOfDay(for: end)).month ?? 0
     }
 }
 

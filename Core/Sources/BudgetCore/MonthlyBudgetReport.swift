@@ -141,9 +141,10 @@ public struct BudgetCalculator: Sendable {
     /// until a newer one is set, so you do not have to re-enter it every month.
     public func budget(for category: String, in budgets: [MonthlyBudget], month: Date) -> MonthlyBudget? {
         guard let monthStart = calendar.dateInterval(of: .month, for: month)?.start else { return nil }
-        return budgets
+        let latest = budgets
             .filter { $0.category == category && (calendar.dateInterval(of: .month, for: $0.month)?.start ?? $0.month) <= monthStart }
             .max { $0.month < $1.month }
+        return latest?.removed == true ? nil : latest
     }
 
     /// The limit for a month, including last month's leftover when the budget rolls over.
