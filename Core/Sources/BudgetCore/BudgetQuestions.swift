@@ -23,6 +23,10 @@ public struct BudgetFacts: Sendable {
     public let safeToSpendToday: Decimal?
     public let leftThisMonth: Decimal?
     public var billsStillToCome: Decimal = 0
+    /// Savings goals: name, saved, target.
+    public var goals: [(name: String, saved: Decimal, target: Decimal)] = []
+    /// Still owed back to you from reimbursed payments.
+    public var owedBack: Decimal = 0
     public let bills: [(name: String, date: Date, amount: Decimal)]
     public let currency: String
 
@@ -68,6 +72,7 @@ public struct BudgetFacts: Sendable {
             currency: currency
         )
         facts.billsStillToCome = safeToSpend?.billsStillToCome ?? 0
+        facts.owedBack = Reimbursements.outstanding(transactions).reduce(0) { $0 + $1.amount }
         return facts
     }
 
@@ -78,6 +83,11 @@ public struct BudgetFacts: Sendable {
         var lines = ["Month: \(monthName)", "Spent this month: \(money(spending))", "Money in this month: \(money(income))"]
         if let leftThisMonth { lines.append("Left in this month's budgets: \(money(leftThisMonth))") }
         if let safeToSpendToday { lines.append("Safe to spend per day for the rest of the month, after bills: \(money(safeToSpendToday))") }
+        if owedBack > 0 { lines.append("Still owed back to you (reimbursements): \(money(owedBack))") }
+        if !goals.isEmpty {
+            lines.append("Savings goals:")
+            for goal in goals { lines.append("- \(goal.name): \(money(goal.saved)) saved of \(money(goal.target))") }
+        }
         lines.append("Categories this month:")
         for line in categories.prefix(16) {
             var text = "- \(line.name): spent \(money(line.spent)) so far"

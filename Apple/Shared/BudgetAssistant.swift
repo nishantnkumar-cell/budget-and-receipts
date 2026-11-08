@@ -16,8 +16,10 @@ enum BudgetAssistant {
         let report = store.calculator.report(store.transactions, budgets: store.budgets, month: month)
         let upcoming = ComingUpPlanner().payments(store.bills(subscriptions.contracts), from: today)
         let safe = SafeToSpend.calculate(report: report, upcomingBills: upcoming, today: today, period: store.calculator.monthInterval(for: month))
-        return BudgetFacts.make(transactions: store.transactions, budgets: store.budgets, month: month, calculator: store.calculator,
-                                safeToSpend: safe, bills: upcoming, currency: AppSettings.currency)
+        var facts = BudgetFacts.make(transactions: store.transactions, budgets: store.budgets, month: month, calculator: store.calculator,
+                                     safeToSpend: safe, bills: upcoming, currency: AppSettings.currency)
+        facts.goals = store.goals.map { ($0.name, $0.saved, $0.target) }
+        return facts
     }
 
     static func answer(_ question: String, store: BudgetStore, subscriptions: SubscriptionStore) async -> String {
