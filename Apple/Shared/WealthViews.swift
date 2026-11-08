@@ -302,13 +302,19 @@ struct WealthAccountEditor: View {
                     }
                 }
             }
-            if account.balances.count > 1 {
-                Section("History") {
+            if !account.balances.isEmpty {
+                Section {
                     ForEach(account.balances.sorted { $0.date > $1.date }, id: \.date) { balance in
-                        LabeledContent(balance.date.formatted(date: .abbreviated, time: .omitted)) {
-                            Text(balance.amount.money).monospacedDigit()
+                        DeletableRow(label: "Delete Value", onDelete: { account.balances.removeAll { $0.date == balance.date } }) {
+                            LabeledContent(balance.date.formatted(date: .abbreviated, time: .omitted)) {
+                                Text(balance.amount.money).monospacedDigit()
+                            }
                         }
                     }
+                } header: {
+                    Text("History")
+                } footer: {
+                    Text("Delete a value entered by mistake, then Save.")
                 }
             }
             if !isNew {

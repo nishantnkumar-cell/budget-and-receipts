@@ -124,7 +124,7 @@ enum SampleData {
         let calendar = Calendar.current
         func ahead(_ days: Int) -> Date { calendar.date(byAdding: .day, value: days, to: Date()) ?? Date() }
         let bills: [(String, SubscriptionCategory, Int, Decimal)] = [
-            ("Spotify", .other, 3, 12.99), ("EE mobile", .other, 5, 18.00), ("Thames Water", .other, 6, 41.00), ("Council tax", .other, 12, 164.00)
+            ("Spotify", .streaming, 3, 12.99), ("Thames Water", .utilities, 6, 41.00), ("Council tax", .other, 12, 164.00)
         ]
         for bill in bills {
             store.save(SubscriptionContract(vendor: bill.0, category: bill.1, startDate: ahead(-400), billingPeriod: .monthly,
@@ -134,6 +134,16 @@ enum SampleData {
                                         nextPaymentDueDate: ahead(150), expectedAmount: 540, currency: AppSettings.currency))
         store.save(SubscriptionContract(vendor: "Amazon Prime", category: .membership, startDate: ahead(-200), billingPeriod: .yearly,
                                         nextPaymentDueDate: ahead(90), expectedAmount: 95, currency: AppSettings.currency))
+        var phone = SubscriptionContract(vendor: "EE mobile", category: .mobile, startDate: ahead(-670), billingPeriod: .monthly,
+                                         nextPaymentDueDate: ahead(5), expectedAmount: 18, currency: AppSettings.currency, pricing: .fixed,
+                                         cancellationNoticeDays: 30, kind: .contract)
+        phone.minimumTermEndDate = ahead(60)
+        store.save(phone)
+        var energy = SubscriptionContract(vendor: "Octopus Energy", category: .energy, startDate: ahead(-200), billingPeriod: .monthly,
+                                          nextPaymentDueDate: ahead(9), expectedAmount: 96, currency: AppSettings.currency, pricing: .fixed, kind: .contract)
+        energy.minimumTermEndDate = ahead(165)
+        energy.fixedPriceEndDate = ahead(165)
+        store.save(energy)
         return store
     }
 }

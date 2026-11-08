@@ -126,7 +126,9 @@ struct RuleEditor: View {
             }
             Section {
                 ForEach($rule.conditions.indices, id: \.self) { index in
-                    ConditionRow(condition: $rule.conditions[index])
+                    DeletableRow(label: "Delete Condition", onDelete: { rule.conditions.remove(at: index) }) {
+                        ConditionRow(condition: $rule.conditions[index])
+                    }
                 }
                 .onDelete { rule.conditions.remove(atOffsets: $0) }
                 Button { rule.conditions.append(.init(.description, .contains)) } label: {

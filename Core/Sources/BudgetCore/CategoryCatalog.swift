@@ -471,6 +471,7 @@ public struct CategoryNormaliser {
             if let index = merged.firstIndex(where: { $0.category == budget.category && (calendar.dateInterval(of: .month, for: $0.month)?.start ?? $0.month) == start }) {
                 merged[index].limit += budget.limit
                 if budget.rollover == true { merged[index].rollover = true }
+                if budget.removed != true { merged[index].removed = nil }
             } else {
                 merged.append(budget)
             }

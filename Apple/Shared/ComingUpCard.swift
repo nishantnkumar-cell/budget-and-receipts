@@ -18,7 +18,7 @@ struct ComingUpCard: View {
                 NavigationLink("Plan") { PlanView() }
             }
             if payments.isEmpty && dates.isEmpty {
-                Text("Regular payments appear here once your statements show them, or add bills and contracts in Plan.")
+                Text("Regular payments appear here once your statements show them, or add subscriptions and contracts in Plan.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -95,7 +95,7 @@ struct UpcomingRow: View {
         case .cancellationDeadline: "Last day to cancel"
         case .renewal: "Renews"
         case .fixedPriceEnds: "Fixed price ends"
-        case .minimumTermEnds: "Minimum term ends"
+        case .minimumTermEnds: "Contract ends"
         }
     }
 
