@@ -356,7 +356,7 @@ public enum StatementImporter {
     }
 
     /// A readable, stable key for a statement line: date, amount and description.
-    /// Kept simple on purpose so the Windows app can compute exactly the same value.
+    /// Kept simple on purpose so every device computes exactly the same value.
     public static func baseFingerprint(_ row: StatementRow, calendar: Calendar = .current) -> String {
         let parts = calendar.dateComponents([.year, .month, .day], from: row.date)
         let day = String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)

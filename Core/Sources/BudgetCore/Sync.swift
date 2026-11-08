@@ -1,7 +1,7 @@
 import Foundation
 
 /// One item as it travels to iCloud: a transaction, a budget, a receipt image and so on.
-/// The payload is the item's JSON, so every app (and later Windows) reads the same thing.
+/// The payload is the item's JSON, so the iPhone and Mac apps read the same thing.
 public struct SyncRecord: Hashable, Sendable {
     public var collection: String
     public var id: String

@@ -1,6 +1,6 @@
 # Synthetic bank statements
 
-Made-up statements used by the tests on every platform (Apple and Windows). They contain no real data.
+Made-up statements used by the tests on every platform (the BudgetCore package and the Apple apps). They contain no real data.
 Each file describes the same five lines for October 2026, so every importer must produce the same result:
 
 | Date | Description | Amount |
