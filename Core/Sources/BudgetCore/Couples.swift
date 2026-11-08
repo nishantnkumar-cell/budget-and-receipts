@@ -200,6 +200,11 @@ public struct CoupleLedger: Sendable {
                 let total = scaled.splits.reduce(Decimal(0)) { $0 + $1.amount }
                 scaled.amount = transaction.amount < 0 ? -total : total
             }
+            // What's paid back shrinks with the share, so the same part stays reimbursed.
+            if var reimbursement = transaction.reimbursement, transaction.amount != 0 {
+                reimbursement.amount = reimbursement.amount * scaled.amount / transaction.amount
+                scaled.reimbursement = reimbursement
+            }
             return scaled.amount == 0 ? nil : scaled
         }
     }

@@ -166,18 +166,47 @@ public struct BudgetCalculator: Sendable {
             && !Self.transferCategories.contains(transaction.category)
             && !FinanceCategories.budgetable.contains(transaction.category)
             && !(transaction.category == "Income" && transaction.subcategory == "Refund")
+            && !transaction.isRepayment
     }
 
     /// Signed spending per category: positive for a purchase, negative for a refund.
     func allocations(of transaction: BankTransaction) -> [(String, Decimal)] {
         guard transaction.amount != 0, !Self.transferCategories.contains(transaction.category) else { return [] }
+        // Money paying back a reimbursed payment is neither income nor a refund.
+        if transaction.isRepayment { return [] }
         let isDebit = transaction.amount < 0
+        // A reimbursed payment only counts for the part that isn't being paid back.
+        let kept = transaction.amountAfterReimbursement
+        if isDebit && kept == 0 { return [] }
         if transaction.splits.isEmpty {
             // An uncategorised or income credit is income, not a refund.
             if !isDebit && !FinanceCategories.budgetable.contains(transaction.category) { return [] }
             if transaction.category == "Income" { return [] }
-            return [(transaction.category, -transaction.amount)]
+            return [(transaction.category, -kept)]
         }
-        return transaction.splits.map { ($0.category, isDebit ? $0.amount : -$0.amount) }
+        let parts = transaction.splits.map { ($0.category, isDebit ? $0.amount : -$0.amount) }
+        guard isDebit, kept != transaction.amount else { return parts }
+        return Self.scaled(parts, to: -kept)
+    }
+
+    /// Shares a smaller total out over the same parts, in proportion and to the penny. The last
+    /// part takes the rounding, so the parts always add up to the total.
+    static func scaled(_ parts: [(String, Decimal)], to total: Decimal) -> [(String, Decimal)] {
+        let whole = parts.reduce(Decimal(0)) { $0 + $1.1 }
+        guard whole != 0, !parts.isEmpty else { return parts }
+        var result: [(String, Decimal)] = []
+        var given = Decimal(0)
+        for (index, part) in parts.enumerated() {
+            if index == parts.count - 1 {
+                result.append((part.0, total - given))
+            } else {
+                var share = part.1 * total / whole
+                var rounded = Decimal()
+                NSDecimalRound(&rounded, &share, 2, .bankers)
+                given += rounded
+                result.append((part.0, rounded))
+            }
+        }
+        return result.filter { $0.1 != 0 }
     }
 }
