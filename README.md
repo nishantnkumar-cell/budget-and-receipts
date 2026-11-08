@@ -39,7 +39,9 @@ Duo Budget is open source under the [MIT licence](LICENSE). It is also sold on t
 
 ## User guides
 
-Plain-language guides for people using the app are in [docs/guides](docs/guides/README.md): first setup, importing statements, receipts, budgets, subscriptions and contracts, couples, reports, goals and trips, widgets and Siri, backups, and privacy.
+The guides for people using the app are on the [wiki](https://github.com/nishantnkumar-cell/budget-and-receipts/wiki). They cover first setup, importing statements, receipts, budgets, subscriptions and contracts, budgeting as a couple, reports, goals and trips, widgets and Siri, backups, and privacy.
+
+The wiki pages are kept in `docs/wiki/` and published to the wiki by a workflow whenever they change on `main`, so edit them there rather than on the wiki itself.
 
 ## Layout
 
@@ -51,7 +53,7 @@ Plain-language guides for people using the app are in [docs/guides](docs/guides/
 | `Apple/Widgets/` | Home Screen, Lock Screen and Control Centre widgets. |
 | `Apple/ShareExtension/` | Share receipts and statements into the app from other apps. |
 | `Fixtures/` | Synthetic bank statements (CSV, OFX, QIF) that the tests must read the same way. |
-| `docs/guides/` | User guides. |
+| `docs/wiki/` | User guides, published to the GitHub wiki. |
 | `docs/design/` | Design notes for each feature, for contributors. |
 | `docs/PRIVACY.md`, `docs/RELEASING.md` | Privacy policy and the App Store release steps. |
 
