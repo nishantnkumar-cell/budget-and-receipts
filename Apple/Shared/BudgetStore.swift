@@ -340,6 +340,56 @@ final class BudgetStore: ObservableObject {
         persist()
     }
 
+    // MARK: Logged payments (Shortcuts and Siri)
+
+    /// Adds a payment logged from Shortcuts or Siri, e.g. an Apple Pay tap. It's matched to the
+    /// statement line when the statement is imported, so it never shows twice.
+    @discardableResult
+    func logPayment(amount: Decimal, currency: String? = nil, merchant: String, card: String? = nil, date: Date = Date()) -> BankTransaction {
+        var payment = BankTransaction.logged(amount: amount, merchant: merchant, card: card, date: date, accountID: card.flatMap(account(forCard:))?.id)
+        if let currency, currency.uppercased() != AppSettings.currency.uppercased() {
+            // Paid abroad: the amount is in that currency; the statement brings the real cost.
+            payment.loggedCurrency = currency.uppercased()
+            payment.foreign = ForeignAmount(amount: abs(amount), currency: currency)
+            payment.description += " (\(abs(amount).formatted(.currency(code: currency))))"
+        }
+        let sorter = Categoriser(history: transactions, lookedUp: merchantCategories, rules: activeRules, accountNames: accountNames)
+        payment = sorter.categorise([payment])[0]
+        transactions.insert(payment, at: 0)
+        transactions.sort { $0.date > $1.date }
+        persist()
+        return payment
+    }
+
+    /// The account a Wallet card name points to: by its last four digits, else by name.
+    func account(forCard card: String) -> BankAccount? {
+        let digits = String(card.filter(\.isNumber).suffix(4))
+        if digits.count == 4, let match = accounts.first(where: { BankAccount.lastFour($0.number) == digits }) { return match }
+        let words = card.lowercased()
+        return accounts.first { !$0.label.isEmpty && (words.contains($0.label.lowercased()) || $0.label.lowercased().contains(words)) }
+    }
+
+    /// Joins logged payments to the statement lines that brought the same payment in.
+    @discardableResult
+    func reconcileLoggedPayments() -> Int {
+        let matches = LoggedPaymentMatcher.match(transactions, calendar: calculator.calendar)
+        guard !matches.isEmpty else { return 0 }
+        for match in matches {
+            guard let loggedIndex = transactions.firstIndex(where: { $0.id == match.logged }),
+                  let lineIndex = transactions.firstIndex(where: { $0.id == match.statement }) else { continue }
+            let logged = transactions[loggedIndex]
+            transactions[lineIndex] = LoggedPaymentMatcher.merged(statement: transactions[lineIndex], logged: logged)
+            for index in notes.indices where notes[index].transactionID == logged.id { notes[index].transactionID = match.statement }
+            for index in transactions.indices where transactions[index].repays == logged.id { transactions[index].repays = match.statement }
+            transactions.remove(at: loggedIndex)
+        }
+        persist()
+        return matches.count
+    }
+
+    /// Logged payments still waiting for their statement line.
+    var waitingLoggedPayments: [BankTransaction] { transactions.filter(\.isLogged) }
+
     func delete(_ transaction: BankTransaction) {
         transactions.removeAll { $0.id == transaction.id }
         relinkRepayment(of: transaction.id, from: transaction.reimbursement?.repaymentID, to: nil)
@@ -842,6 +892,7 @@ final class BudgetStore: ObservableObject {
         transactions.sort { $0.date > $1.date }
         let status = result.duplicates.isEmpty ? "Imported" : "Imported, \(result.duplicates.count) already present"
         imports.insert(ImportRecord(fileName: fileName, transactionCount: result.newTransactions.count, status: status), at: 0)
+        let joined = reconcileLoggedPayments()
         let matched = matchPendingReceipts()
         if UserDefaults.standard.object(forKey: "readForeignAmounts") as? Bool ?? true {
             ForeignAmountReader.fill(&transactions, home: AppSettings.currency)
@@ -849,6 +900,7 @@ final class BudgetStore: ObservableObject {
         persist()
         markTransfers()
         self.status = "Imported \(result.newTransactions.count) transactions from \(fileName)."
+            + (joined > 0 ? " \(joined) payment\(joined == 1 ? "" : "s") logged with Apple Pay joined their statement line\(joined == 1 ? "" : "s")." : "")
             + (matched > 0 ? " Matched \(matched) waiting receipt\(matched == 1 ? "" : "s"); check them in the Inbox." : "")
     }
 
@@ -1140,9 +1192,15 @@ final class BudgetStore: ObservableObject {
     }
 
     var likelyDuplicates: [BankTransaction] {
-        let imported = transactions.filter { !$0.fingerprint.hasPrefix("manual") }
+        let imported = transactions.filter { !$0.fingerprint.hasPrefix("manual") && !$0.isLogged }
         return transactions.filter { manual in
-            manual.fingerprint.hasPrefix("manual") && imported.contains {
+            if manual.isLogged {
+                // Left waiting because two statement lines could be it: you pick.
+                return imported.contains {
+                    $0.amount == manual.amount && abs($0.date.timeIntervalSince(manual.date)) < 7 * 86_400
+                }
+            }
+            return manual.fingerprint.hasPrefix("manual") && imported.contains {
                 $0.amount == manual.amount && calculator.calendar.isDate($0.date, inSameDayAs: manual.date)
                     && Categoriser.merchantKey($0.merchant) == Categoriser.merchantKey(manual.merchant)
             }
@@ -1158,7 +1216,11 @@ final class BudgetStore: ObservableObject {
         normaliseCategories()
         writeFiles()
         didPersist?()
+        didChange?()
     }
+
+    /// Called after every save, including changes from iCloud, so the widgets can update.
+    var didChange: (() -> Void)?
 
     /// Loads a file; an unreadable one is set aside and remembered (see `unreadableFiles`).
     private func loadOrSetAside<T: Decodable>(_ name: String) -> T? {
@@ -1382,6 +1444,8 @@ extension BudgetStore: SyncSource {
         }
         keepRecentChanges(saves: saves, deletes: deletes)
         let merged = merge(saves: saves, deletes: deletes)
+        // A payment logged on the phone may meet its statement line imported on the Mac.
+        if saves.contains(where: { $0.collection == "transactions" }) { reconcileLoggedPayments() }
         // The other side of a transfer may have just arrived from another device.
         if saves.contains(where: { $0.collection == "transactions" || $0.collection == "accounts" }) { markTransfers() }
         return merged
@@ -1444,6 +1508,7 @@ extension BudgetStore: SyncSource {
         trips = SyncMerge.apply(saves: saves, deletes: deletes, to: trips, collection: "trips", id: \.id.uuidString).sorted { $0.start > $1.start }
         // A rename or deletion from the other device, or a payment it sent in an old category.
         normaliseCategories()
+        defer { didChange?() }
         return writeFiles()
     }
 }
