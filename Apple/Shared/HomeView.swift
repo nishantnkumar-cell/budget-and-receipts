@@ -29,6 +29,7 @@ struct HomeView: View {
                 }
                 NeedsYouPanel(open: { destination = $0 }, limit: 3)
                 NextDaysPanel()
+                GoalsPanel()
             }
             .padding()
             .frame(maxWidth: 720)

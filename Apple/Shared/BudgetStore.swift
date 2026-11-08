@@ -25,6 +25,10 @@ final class BudgetStore: ObservableObject {
     @Published var notes: [TransactionNote] = []
     /// Category rules, in the order they're tried: your own first, then the starter set.
     @Published var rules: [CategoryRule] = []
+    /// Things you're saving up for, on your own or together.
+    @Published var goals: [SavingsGoal] = []
+    /// Holidays and trips, with their spending, exchange rates and card fees.
+    @Published var trips: [Trip] = []
     /// Built-in categories you've renamed, recoloured or deleted, and your own categories.
     /// Settings › Categories. Every change here moves payments, budgets and rules along.
     @Published private(set) var categories: [CategoryDefinition] = [] {
@@ -97,6 +101,8 @@ final class BudgetStore: ObservableObject {
         notes = loadOrSetAside("notes.json") ?? []
         rules = Self.withNewStarterRules(loadOrSetAside("rules.json") ?? [])
         categories = loadOrSetAside("categories.json") ?? []
+        goals = loadOrSetAside("goals.json") ?? []
+        trips = loadOrSetAside("trips.json") ?? []
         // Open on a month that has payments: statements usually end before today.
         if selectedMonthIsEmpty, let latest = latestPaymentDate { selectedMonth = latest }
         if !isWaitingForFiles {
@@ -105,7 +111,120 @@ final class BudgetStore: ObservableObject {
             recheckBillPayments()
             assignOwnersFromHolders()
             markTransfers()
+            readForeignAmounts()
         }
+    }
+
+    // MARK: Savings goals
+
+    func saveGoal(_ goal: SavingsGoal) {
+        if let index = goals.firstIndex(where: { $0.id == goal.id }) { goals[index] = goal } else { goals.append(goal) }
+        persist()
+    }
+
+    func deleteGoal(_ goal: SavingsGoal) {
+        goals.removeAll { $0.id == goal.id }
+        persist()
+    }
+
+    /// Money put into (or, negative, taken out of) a goal.
+    func addContribution(_ contribution: SavingsGoal.Contribution, to goal: SavingsGoal) {
+        guard let index = goals.firstIndex(where: { $0.id == goal.id }) else { return }
+        goals[index].contributions.append(contribution)
+        persist()
+    }
+
+    /// Goals for the Me / Partner / Together switch: yours or shared ones on Me, and so on.
+    var viewGoals: [SavingsGoal] {
+        guard hasPartner else { return goals }
+        return goals.filter { goal in
+            switch householdView {
+            case .together: true
+            case .me: (goal.owner ?? .shared) != .partner
+            case .partner: (goal.owner ?? .shared) != .mine
+            }
+        }
+    }
+
+    // MARK: Reimbursements
+
+    /// Marks a payment as being paid back, or (nil) not any more. A linked repayment credit
+    /// counts as income again once the mark is taken off.
+    func setReimbursement(_ reimbursement: Reimbursement?, for transaction: BankTransaction) {
+        guard let index = transactions.firstIndex(where: { $0.id == transaction.id }) else { return }
+        let oldRepayment = transactions[index].reimbursement?.repaymentID
+        transactions[index].reimbursement = reimbursement
+        relinkRepayment(of: transaction.id, from: oldRepayment, to: reimbursement?.repaymentID)
+        changes.append(ChangeRecord(date: Date(), transactionID: transaction.id, reason: reimbursement.map { "Reimbursed by \($0.from)" } ?? "No longer reimbursed"))
+        persist()
+    }
+
+    /// Records the money as paid back, by this credit when it's on a statement.
+    func markRepaid(_ transaction: BankTransaction, by credit: BankTransaction?, on date: Date = Date()) {
+        guard var reimbursement = transactions.first(where: { $0.id == transaction.id })?.reimbursement else { return }
+        reimbursement.receivedOn = credit?.date ?? date
+        reimbursement.repaymentID = credit?.id
+        setReimbursement(reimbursement, for: transaction)
+    }
+
+    var outstandingReimbursements: [Reimbursements.Outstanding] { Reimbursements.outstanding(transactions) }
+
+    // MARK: Trips
+
+    func saveTrip(_ trip: Trip) {
+        if let index = trips.firstIndex(where: { $0.id == trip.id }) { trips[index] = trip } else { trips.append(trip) }
+        trips.sort { $0.start > $1.start }
+        persist()
+    }
+
+    /// Removes a trip. Its payments stay, just not on a trip.
+    func deleteTrip(_ trip: Trip) {
+        trips.removeAll { $0.id == trip.id }
+        for index in transactions.indices where transactions[index].tripID == trip.id { transactions[index].tripID = nil }
+        persist()
+    }
+
+    func summary(of trip: Trip) -> TripLedger.Summary {
+        // The saved trip, so payments taken off it since are left out.
+        TripLedger.summary(for: trips.first { $0.id == trip.id } ?? trip, in: transactions, calendar: calculator.calendar)
+    }
+
+    /// Puts payments on a trip (nil takes them off every trip).
+    func setTrip(_ trip: Trip?, for ids: [String]) {
+        let ids = Set(ids)
+        for index in transactions.indices where ids.contains(transactions[index].id) {
+            transactions[index].tripID = trip?.id
+        }
+        for index in trips.indices {
+            trips[index].excluded = (trips[index].excluded ?? []).filter { !ids.contains($0) }
+            if trips[index].excluded?.isEmpty == true { trips[index].excluded = nil }
+        }
+        persist()
+    }
+
+    /// Takes one payment off a trip, even one it picked up by its dates.
+    func removeFromTrip(_ transaction: BankTransaction, trip: Trip) {
+        guard let tripIndex = trips.firstIndex(where: { $0.id == trip.id }) else { return }
+        if let index = transactions.firstIndex(where: { $0.id == transaction.id }), transactions[index].tripID == trip.id {
+            transactions[index].tripID = nil
+        }
+        trips[tripIndex].excluded = Array(Set((trips[tripIndex].excluded ?? []) + [transaction.id])).sorted()
+        persist()
+    }
+
+    /// The trip a payment is on, if any.
+    func trip(for transaction: BankTransaction) -> Trip? {
+        if let id = transaction.tripID { return trips.first { $0.id == id } }
+        return trips.first { TripLedger.payments(for: $0, in: [transaction], calendar: calculator.calendar).isEmpty == false }
+    }
+
+    /// Reads amounts in other currencies that statements print beside payments.
+    @discardableResult
+    func readForeignAmounts() -> Int {
+        guard UserDefaults.standard.object(forKey: "readForeignAmounts") as? Bool ?? true else { return 0 }
+        let changed = ForeignAmountReader.fill(&transactions, home: AppSettings.currency)
+        if !changed.isEmpty { persist() }
+        return changed.count
     }
 
     // MARK: Transfers
@@ -215,13 +334,29 @@ final class BudgetStore: ObservableObject {
 
     func update(_ transaction: BankTransaction) {
         guard let index = transactions.firstIndex(where: { $0.id == transaction.id }) else { return }
+        let oldRepayment = transactions[index].reimbursement?.repaymentID
         transactions[index] = transaction
+        relinkRepayment(of: transaction.id, from: oldRepayment, to: transaction.reimbursement?.repaymentID)
         persist()
     }
 
     func delete(_ transaction: BankTransaction) {
         transactions.removeAll { $0.id == transaction.id }
+        relinkRepayment(of: transaction.id, from: transaction.reimbursement?.repaymentID, to: nil)
+        // A deleted repayment no longer pays anything back.
+        for index in transactions.indices where transactions[index].reimbursement?.repaymentID == transaction.id {
+            transactions[index].reimbursement?.repaymentID = nil
+        }
         persist()
+    }
+
+    /// Keeps the credit that pays a payment back pointing at it, and lets go of an old one.
+    private func relinkRepayment(of paymentID: String, from old: String?, to new: String?) {
+        guard old != new else { return }
+        if let old, let credit = transactions.firstIndex(where: { $0.id == old }), transactions[credit].repays == paymentID {
+            transactions[credit].repays = nil
+        }
+        if let new, let credit = transactions.firstIndex(where: { $0.id == new }) { transactions[credit].repays = paymentID }
     }
 
     /// Sets a category's limit from `month` onwards. `rollover` carries leftover money into
@@ -708,6 +843,9 @@ final class BudgetStore: ObservableObject {
         let status = result.duplicates.isEmpty ? "Imported" : "Imported, \(result.duplicates.count) already present"
         imports.insert(ImportRecord(fileName: fileName, transactionCount: result.newTransactions.count, status: status), at: 0)
         let matched = matchPendingReceipts()
+        if UserDefaults.standard.object(forKey: "readForeignAmounts") as? Bool ?? true {
+            ForeignAmountReader.fill(&transactions, home: AppSettings.currency)
+        }
         persist()
         markTransfers()
         self.status = "Imported \(result.newTransactions.count) transactions from \(fileName)."
@@ -887,6 +1025,8 @@ final class BudgetStore: ObservableObject {
         notes = []
         rules = RulesEngine.starterRules
         categories = []
+        goals = []
+        trips = []
         accountFilter = nil
         householdView = .together
         for folder in [imagesFolder, sharedFilesFolder] {
@@ -1053,6 +1193,8 @@ final class BudgetStore: ObservableObject {
             storage.save(notes, "notes.json"),
             storage.save(rules, "rules.json"),
             storage.save(categories, "categories.json"),
+            storage.save(goals, "goals.json"),
+            storage.save(trips, "trips.json"),
         ]
         lastSaveSucceeded = !results.contains(false)
         return lastSaveSucceeded
@@ -1193,6 +1335,8 @@ extension BudgetStore: SyncSource {
             + SyncRecord.records(notes, collection: "notes", id: \.id.uuidString)
             + SyncRecord.records(rules, collection: "rules", id: \.id.uuidString)
             + SyncRecord.records(categories, collection: "categories", id: \.id)
+            + SyncRecord.records(goals, collection: "goals", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })
+            + SyncRecord.records(trips, collection: "trips", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })
             + imageRecords(privateTransactions: transactions.filter(isPrivate))
     }
 
@@ -1270,7 +1414,7 @@ extension BudgetStore: SyncSource {
         if record.collection == "wealth", let account = try? SyncRecord.decoder().decode(WealthAccount.self, from: record.payload) {
             return "\(account.kind.title): \(account.name)"
         }
-        let names = ["rules": "A category rule", "categories": "A category", "notes": "A comment", "budgets": "A budget", "settlements": "A settle-up", "pendingReceipts": "A waiting receipt", "couple": "Couple settings", "imports": "An import record", "changes": "A history entry"]
+        let names = ["rules": "A category rule", "categories": "A category", "notes": "A comment", "budgets": "A budget", "settlements": "A settle-up", "pendingReceipts": "A waiting receipt", "couple": "Couple settings", "goals": "A savings goal", "trips": "A trip", "imports": "An import record", "changes": "A history entry"]
         return names[record.collection] ?? record.collection
     }
 
@@ -1296,6 +1440,8 @@ extension BudgetStore: SyncSource {
         notes = SyncMerge.apply(saves: saves, deletes: deletes, to: notes, collection: "notes", id: \.id.uuidString)
         rules = Self.withNewStarterRules(SyncMerge.apply(saves: saves, deletes: deletes, to: rules, collection: "rules", id: \.id.uuidString))
         categories = SyncMerge.apply(saves: saves, deletes: deletes, to: categories, collection: "categories", id: \.id)
+        goals = SyncMerge.apply(saves: saves, deletes: deletes, to: goals, collection: "goals", id: \.id.uuidString)
+        trips = SyncMerge.apply(saves: saves, deletes: deletes, to: trips, collection: "trips", id: \.id.uuidString).sorted { $0.start > $1.start }
         // A rename or deletion from the other device, or a payment it sent in an old category.
         normaliseCategories()
         return writeFiles()
