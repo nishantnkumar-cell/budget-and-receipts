@@ -10,6 +10,8 @@ struct SettingsView: View {
     @State private var exportingCSV = false
     @State private var exportingPDF = false
     @State private var exportError: String?
+    @AppStorage("showGoalsOnHome") private var showGoalsOnHome = true
+    @AppStorage("readForeignAmounts") private var readForeignAmounts = true
 
     var body: some View {
         Form {
@@ -73,6 +75,17 @@ struct SettingsView: View {
                 Text("Receipts")
             } footer: {
                 Text(ReceiptAIService.unavailableReason ?? "Uses Apple Intelligence on this device when a receipt's items don't add up. Nothing leaves the device, and you still check every item.")
+            }
+            Section {
+                Toggle("Show savings goals on Home", isOn: $showGoalsOnHome)
+                Toggle("Read other currencies from statements", isOn: Binding(get: { readForeignAmounts }, set: { on in
+                    readForeignAmounts = on
+                    if on { store.readForeignAmounts() }
+                }))
+            } header: {
+                Text("Goals and travel")
+            } footer: {
+                Text("Statements often show what a payment abroad cost in the local currency. The app reads it to show the exchange rate and card fees on your trips.")
             }
             Section {
                 Toggle("Payment and renewal reminders", isOn: Binding(get: { settings.remindersEnabled }, set: setReminders))

@@ -137,6 +137,8 @@ struct TransactionEditor: View {
             }
             PrivateToggle(isPrivate: $transaction.isPrivate)
             TransactionOwnerSection(transaction: $transaction)
+            ReimbursementSection(transaction: $transaction)
+            TripAndCurrencySection(transaction: $transaction)
             Section("Receipt") {
                 NavigationLink("Scan or review receipt") { ReceiptView(transaction: transaction) }
             }
