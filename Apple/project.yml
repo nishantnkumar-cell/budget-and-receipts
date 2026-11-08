@@ -38,7 +38,7 @@ targets:
         CFBundleDisplayName: Duo Budget
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
-        NSCameraUsageDescription: Duo Budget uses the camera to scan receipts. Images stay on this device.
+        NSCameraUsageDescription: Duo Budget uses the camera to scan receipts and contract documents. Scans stay on your devices and in end-to-end encrypted iCloud.
         NSPhotoLibraryUsageDescription: Duo Budget reads the receipt photos you choose so it can read their text on this device.
         NSFaceIDUsageDescription: Duo Budget uses Face ID to unlock your budget.
         LSSupportsOpeningDocumentsInPlace: false
