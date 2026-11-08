@@ -64,6 +64,11 @@ targets:
             CFBundleTypeRole: Viewer
             LSHandlerRank: Alternate
             LSItemContentTypes: [public.comma-separated-values-text, com.intuit.ofx, com.intuit.qfx, com.intuit.qif]
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.nishantkumar.budgetreceipts.backup
+            UTTypeDescription: Duo Budget encrypted backup
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification: {public.filename-extension: [duobackup]}
         UTImportedTypeDeclarations:
           - UTTypeIdentifier: com.intuit.ofx
             UTTypeDescription: OFX bank statement
@@ -131,6 +136,11 @@ targets:
             CFBundleTypeRole: Viewer
             LSHandlerRank: Alternate
             LSItemContentTypes: [public.comma-separated-values-text, com.intuit.ofx, com.intuit.qfx, com.intuit.qif]
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.nishantkumar.budgetreceipts.backup
+            UTTypeDescription: Duo Budget encrypted backup
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification: {public.filename-extension: [duobackup]}
         UTImportedTypeDeclarations:
           - UTTypeIdentifier: com.intuit.ofx
             UTTypeDescription: OFX bank statement
@@ -148,7 +158,8 @@ targets:
       path: macOS/BudgetReceipts.entitlements
       properties:
         com.apple.security.app-sandbox: true
-        com.apple.security.files.user-selected.read-only: true
+        # Read-write so exports (CSV, PDF, encrypted backups) can be saved where you choose.
+        com.apple.security.files.user-selected.read-write: true
         # On the Mac a team-prefixed group needs no provisioning profile.
         com.apple.security.application-groups: [$(TeamIdentifierPrefix)com.nishantkumar.budgetreceipts]
         com.apple.security.network.client: true

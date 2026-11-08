@@ -127,8 +127,8 @@ struct BudgetReceiptsApp: App {
             .task(id: store.transactions.count) {
                 await PriceRiseNotifier.check(subscriptions.priceRises(transactions: store.transactions), enabled: settings.remindersEnabled)
             }
-            .task(id: subscriptions.contracts) {
-                await ReminderScheduler.reschedule(subscriptions.contracts, enabled: settings.remindersEnabled)
+            .task(id: ReminderInputs(contracts: subscriptions.contracts, covers: store.covers)) {
+                await ReminderScheduler.reschedule(subscriptions.contracts, covers: store.covers, enabled: settings.remindersEnabled)
                 WidgetBridge.scheduleRefresh()
             }
             // Widgets move on a day and pick up anything changed while the app was away.
