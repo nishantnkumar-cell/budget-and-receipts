@@ -62,7 +62,7 @@
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<false/>
 	<key>NSCameraUsageDescription</key>
-	<string>Duo Budget uses the camera to scan receipts. Images stay on this device.</string>
+	<string>Duo Budget uses the camera to scan receipts and contract documents. Scans stay on your devices and in end-to-end encrypted iCloud.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Duo Budget uses Face ID to unlock your budget.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

@@ -11,13 +11,24 @@ struct ComingUpCard: View {
         let now = Date()
         // Bills from Plan, and regular payments spotted on your statements.
         let payments = planner.payments(store.bills(subscriptions.contracts), from: now)
-        let dates = planner.contractDates(subscriptions.contracts, from: now)
+        let attention = Array(subscriptions.needingAttention(now: now).prefix(3))
+        let flagged = Set(attention.map(\.id))
+        // A contract flagged above isn't listed again below.
+        let dates = planner.contractDates(subscriptions.contracts, from: now).filter { !flagged.contains($0.contractID) }
         let rises = subscriptions.priceRises(transactions: store.transactions)
         VStack(alignment: .leading, spacing: 12) {
             CardHeader(title: "Coming up") {
                 NavigationLink("Plan") { PlanView() }
             }
-            if payments.isEmpty && dates.isEmpty {
+            if !attention.isEmpty {
+                section("Contracts to look at", trailing: nil) {
+                    ForEach(attention) { entry in
+                        NavigationLink { CommitmentEditor(item: entry.contract) } label: { AttentionRow(entry: entry) }
+                            .buttonStyle(.plain)
+                    }
+                }
+            }
+            if payments.isEmpty && dates.isEmpty && attention.isEmpty {
                 Text("Regular payments appear here once your statements show them, or add subscriptions and contracts in Plan.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -108,5 +119,27 @@ struct UpcomingRow: View {
         case 2...13: return "in \(days) days, \(item.date.formatted(.dateTime.weekday(.abbreviated).day()))"
         default: return item.date.formatted(.dateTime.day().month(.abbreviated))
         }
+    }
+}
+
+/// A contract that's ending or near its notice date, on Home.
+struct AttentionRow: View {
+    let entry: ContractAttention
+
+    var body: some View {
+        HStack(spacing: 10) {
+            IconBadge(systemImage: CommitmentKind.contract.symbol, tint: entry.urgency.tint, size: 32)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(entry.contract.vendor).font(.subheadline.weight(.medium)).lineLimit(1)
+                ContractUrgencyChip(urgency: entry.urgency)
+            }
+            Spacer()
+            if !(entry.contract.documents ?? []).isEmpty {
+                Image(systemName: "paperclip").font(.caption).foregroundStyle(.secondary).accessibilityLabel("Has documents")
+            }
+            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary).accessibilityHidden(true)
+        }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 }
