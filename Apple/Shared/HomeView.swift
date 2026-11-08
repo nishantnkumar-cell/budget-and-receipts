@@ -41,6 +41,7 @@ struct HomeView: View {
         .navigationDestination(item: $destination) { $0.screen }
         #if os(iOS)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) { AskBudgetButton() }
             ToolbarItem(placement: .topBarTrailing) { SyncStatusButton() }
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink { SettingsView() } label: { Image(systemName: "gearshape") }

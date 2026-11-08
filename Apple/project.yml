@@ -31,9 +31,12 @@ targets:
       - Shared
       - iOS
       - ShareExtension/SharedReceiptDrop.swift
+      - Widgets/WidgetSnapshot.swift
+      - Widgets/OpenScanIntent.swift
     dependencies:
       - package: BudgetCore
       - target: ShareExtension-iOS
+      - target: Widgets-iOS
     info:
       path: iOS/Info.plist
       properties:
@@ -48,6 +51,10 @@ targets:
         NSPhotoLibraryUsageDescription: Duo Budget reads the receipt photos you choose so it can read their text on this device.
         NSFaceIDUsageDescription: Duo Budget uses Face ID to unlock your budget.
         LSSupportsOpeningDocumentsInPlace: false
+        # duobudget://scan, budgets, plan, ask: links from the widgets and the Control Centre button.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.nishantkumar.budgetreceipts
+            CFBundleURLSchemes: [duobudget]
         CFBundleDocumentTypes:
           - CFBundleTypeName: Receipt
             CFBundleTypeRole: Viewer
@@ -98,9 +105,12 @@ targets:
       - Shared
       - macOS
       - ShareExtension/SharedReceiptDrop.swift
+      - Widgets/WidgetSnapshot.swift
+      - Widgets/OpenScanIntent.swift
     dependencies:
       - package: BudgetCore
       - target: ShareExtension-macOS
+      - target: Widgets-macOS
     info:
       path: macOS/Info.plist
       properties:
@@ -111,6 +121,10 @@ targets:
         # Only Apple's own encryption (HTTPS, CloudKit, iCloud Keychain), which is exempt from export rules.
         ITSAppUsesNonExemptEncryption: false
         LSApplicationCategoryType: public.app-category.finance
+        # duobudget://scan, budgets, plan, ask: links from the widgets and the Control Centre button.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.nishantkumar.budgetreceipts
+            CFBundleURLSchemes: [duobudget]
         CloudKitContainer: iCloud.com.nishantkumar.budgetreceipts
         CKSharingSupported: true
         CFBundleDocumentTypes:
@@ -212,6 +226,54 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nishantkumar.budgetreceipts.share
+        ENABLE_HARDENED_RUNTIME: YES
+  # Safe to spend and Next bill widgets, and (iPhone) the Control Centre Scan Receipt button.
+  Widgets-iOS:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Widgets
+        excludes: ["*.plist", "*.entitlements"]
+      - ShareExtension/SharedReceiptDrop.swift
+    info:
+      path: Widgets/Info-iOS.plist
+      properties:
+        CFBundleDisplayName: Duo Budget
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: Widgets/Widgets-iOS.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.nishantkumar.budgetreceipts]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nishantkumar.budgetreceipts.widgets
+        TARGETED_DEVICE_FAMILY: "1"
+  Widgets-macOS:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: Widgets
+        excludes: ["*.plist", "*.entitlements"]
+      - ShareExtension/SharedReceiptDrop.swift
+    info:
+      path: Widgets/Info-macOS.plist
+      properties:
+        CFBundleDisplayName: Duo Budget
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: Widgets/Widgets-macOS.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups: [$(TeamIdentifierPrefix)com.nishantkumar.budgetreceipts]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nishantkumar.budgetreceipts.widgets
         ENABLE_HARDENED_RUNTIME: YES
   AppTests-iOS:
     type: bundle.unit-test

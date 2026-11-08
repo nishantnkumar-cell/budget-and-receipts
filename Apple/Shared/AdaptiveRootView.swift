@@ -82,6 +82,7 @@ extension AppSection {
 struct PhoneRootView: View {
     @EnvironmentObject var store: BudgetStore
     @State private var selection = AppSection.home
+    @EnvironmentObject var navigator: AppNavigator
 
     var body: some View {
         TabView(selection: $selection) {
@@ -94,6 +95,12 @@ struct PhoneRootView: View {
             Tab(AppSection.scan.rawValue, systemImage: AppSection.scan.systemImage, value: AppSection.scan, role: .search) {
                 NavigationStack { CaptureView() }
             }
+        }
+        // A widget, the Control Centre button or Siri asked for a place.
+        .onChange(of: navigator.requested, initial: true) { _, place in
+            guard let place else { return }
+            selection = [.home, .activity, .budgets, .plan, .scan].contains(place) ? place : .home
+            navigator.requested = nil
         }
     }
 }
