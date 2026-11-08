@@ -27,7 +27,19 @@ struct PlanView: View {
     var body: some View {
         let due = SubscriptionTracker().dueSoon(subscriptions.contracts, from: Date(), days: 30)
         let rises = subscriptions.priceRises(transactions: store.transactions)
+        let attention = subscriptions.needingAttention()
         List {
+            if !attention.isEmpty {
+                Section {
+                    ForEach(attention) { entry in
+                        NavigationLink { CommitmentEditor(item: entry.contract, priceRise: rises[entry.id]) } label: { CommitmentRow(item: entry.contract, priceRise: rises[entry.id]) }
+                    }
+                } header: {
+                    Label("Contracts to look at", systemImage: "exclamationmark.circle")
+                } footer: {
+                    Text("Contracts ending in the next 60 days, near their last day to give notice, or already past their end date.")
+                }
+            }
             Section {
                 LabeledContent("Committed per year") { Text(annualCost.money).fontWeight(.semibold).monospacedDigit() }
                 LabeledContent("Due in the next 30 days") { Text("\(due.count)").fontWeight(.semibold) }
@@ -124,10 +136,16 @@ struct CommitmentRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            IconBadge(systemImage: item.resolvedKind.symbol, tint: item.status == .active ? .brandPlum : .secondary, size: 32)
+            IconBadge(systemImage: item.resolvedKind.symbol, tint: urgency?.tint ?? (item.status == .active ? .brandPlum : .secondary), size: 32)
             VStack(alignment: .leading, spacing: 3) {
-                Text(item.vendor).font(.body.weight(.semibold)).lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(item.vendor).font(.body.weight(.semibold)).lineLimit(1)
+                    if !(item.documents ?? []).isEmpty {
+                        Image(systemName: "paperclip").font(.caption).foregroundStyle(.secondary).accessibilityLabel("Has documents")
+                    }
+                }
                 Text(detail).font(.caption).foregroundStyle(.secondary)
+                if let urgency { ContractUrgencyChip(urgency: urgency) }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 3) {
@@ -139,6 +157,8 @@ struct CommitmentRow: View {
         }
         .accessibilityElement(children: .combine)
     }
+
+    private var urgency: ContractUrgency? { ContractWatch().urgency(item, now: Date()) }
 
     private var detail: String {
         guard item.status == .active else { return item.status.title }
@@ -158,6 +178,8 @@ struct CommitmentEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State var item: SubscriptionContract
     var priceRise: PriceRise?
+    @State private var addedDocuments: [ContractDocument] = []
+    @State private var removedDocuments: [ContractDocument] = []
 
     private var isNew: Bool { !subscriptions.contracts.contains { $0.id == item.id } }
     private var kind: CommitmentKind { item.resolvedKind }
@@ -188,7 +210,13 @@ struct CommitmentEditor: View {
                 DatePicker("Next payment", selection: $item.nextPaymentDueDate, displayedComponents: .date)
                 ReminderPicker(daysBefore: $item.remindDaysBefore)
             }
-            if kind == .contract { termSection }
+            if kind == .contract {
+                if let urgency = ContractWatch().urgency(item, now: Date()) {
+                    Section { ContractUrgencyChip(urgency: urgency, large: true) }
+                }
+                termSection
+                ContractDocumentsSection(documents: $item.documents, added: $addedDocuments, removed: $removedDocuments)
+            }
             Section {
                 Picker("Status", selection: $item.status) {
                     ForEach(statuses) { Text($0.title).tag($0) }
@@ -198,7 +226,10 @@ struct CommitmentEditor: View {
             }
             if !isNew {
                 DeleteSection(title: kind == .subscription ? "Delete Subscription" : "Delete Contract",
-                              message: "It stops showing in Coming up and reminders. Your payments stay.") {
+                              message: kind == .contract && !(item.documents ?? []).isEmpty
+                                ? "It stops showing in Coming up and reminders, and its documents are deleted. Your payments stay."
+                                : "It stops showing in Coming up and reminders. Your payments stay.") {
+                    subscriptions.removeFiles(addedDocuments)
                     subscriptions.delete(item)
                     dismiss()
                 }
@@ -212,6 +243,7 @@ struct CommitmentEditor: View {
                     item.vendor = item.vendor.trimmingCharacters(in: .whitespaces)
                     item.kind = kind
                     subscriptions.save(item)
+                    subscriptions.removeFiles(removedDocuments)
                     dismiss()
                 }
                 .disabled(item.vendor.trimmingCharacters(in: .whitespaces).isEmpty || item.expectedAmount < 0)
@@ -299,4 +331,53 @@ struct OptionalDatePicker: View {
     let title: String
     @Binding var date: Date?
     var body: some View { HStack { Toggle(title, isOn: Binding(get: { date != nil }, set: { date = $0 ? Date() : nil })); if let value = date { DatePicker("", selection: Binding(get: { value }, set: { date = $0 }), displayedComponents: .date).labelsHidden() } } }
+}
+
+/// A coloured line saying what a contract needs: red when it's time to act, amber otherwise.
+struct ContractUrgencyChip: View {
+    let urgency: ContractUrgency
+    var large = false
+
+    var body: some View {
+        Label(text, systemImage: symbol)
+            .labelStyle(.titleAndIcon)
+            .font(large ? .subheadline.weight(.semibold) : .caption2.weight(.semibold))
+            .padding(.horizontal, large ? 0 : 6)
+            .padding(.vertical, large ? 0 : 2)
+            .foregroundStyle(tint)
+            .background(large ? Color.clear : tint.opacity(0.12), in: Capsule())
+    }
+
+    private var tint: Color { urgency.tint }
+
+    private var symbol: String {
+        switch urgency {
+        case .giveNoticeBy: "exclamationmark.circle"
+        case .ended: "calendar.badge.exclamationmark"
+        case .noticeMissed, .endingSoon: "calendar.badge.clock"
+        }
+    }
+
+    private var text: String {
+        let date = urgency.date.formatted(.dateTime.day().month(.abbreviated))
+        switch urgency {
+        case .giveNoticeBy(_, let days): return "Give notice by \(date) · \(Self.inDays(days))"
+        case .ended: return "Ended \(date): check what you pay now"
+        case .noticeMissed(_, let days): return "Notice date passed · ends \(Self.inDays(days))"
+        case .endingSoon(_, let days): return "Ends \(date) · \(Self.inDays(days))"
+        }
+    }
+
+    static func inDays(_ days: Int) -> String {
+        switch days {
+        case 0: "today"
+        case 1: "tomorrow"
+        default: "in \(days) days"
+        }
+    }
+}
+
+extension ContractUrgency {
+    /// Red when it's time to act (as for prices going up), amber when it's coming.
+    var tint: Color { isUrgent ? .red : .brandAmber }
 }
