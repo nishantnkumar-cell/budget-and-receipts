@@ -12,6 +12,8 @@ struct SettingsView: View {
     @State private var exportError: String?
     @AppStorage("showGoalsOnHome") private var showGoalsOnHome = true
     @AppStorage("readForeignAmounts") private var readForeignAmounts = true
+    @AppStorage(WidgetBridge.showAmountsKey) private var widgetsShowAmounts = true
+    @AppStorage("askBudgetAI") private var askBudgetAI = true
 
     var body: some View {
         Form {
@@ -86,6 +88,15 @@ struct SettingsView: View {
                 Text("Goals and travel")
             } footer: {
                 Text("Statements often show what a payment abroad cost in the local currency. The app reads it to show the exchange rate and card fees on your trips.")
+            }
+            Section {
+                Toggle("Show amounts in widgets", isOn: Binding(get: { widgetsShowAmounts }, set: { widgetsShowAmounts = $0; WidgetBridge.refreshNow() }))
+                Toggle("Answer questions with Apple Intelligence", isOn: $askBudgetAI)
+                NavigationLink { ApplePayLoggingHelp() } label: { Label("Log Apple Pay Payments", systemImage: "creditcard") }
+            } header: {
+                Text("Widgets, Siri and Ask")
+            } footer: {
+                Text("Widgets hide their amounts while the device is locked. Ask your budget answers on this device with Apple Intelligence; no question or figure is sent anywhere. Say \"Scan a receipt with Duo Budget\" or \"How much budget is left in Duo Budget\" to Siri.")
             }
             Section {
                 Toggle("Payment and renewal reminders", isOn: Binding(get: { settings.remindersEnabled }, set: setReminders))
@@ -225,5 +236,40 @@ struct MonthReportPage: View {
         .padding(40)
         .foregroundStyle(.black)
         .background(.white)
+    }
+}
+
+/// How to log Apple Pay payments as they happen, with a Shortcuts automation.
+struct ApplePayLoggingHelp: View {
+    @EnvironmentObject var store: BudgetStore
+
+    var body: some View {
+        Form {
+            Section {
+                Label("Open the Shortcuts app and tap Automation, then New Automation.", systemImage: "1.circle")
+                Label("Choose Wallet, pick your cards, and turn on Run Immediately.", systemImage: "2.circle")
+                Label("Add the action Duo Budget › Log a Payment. Set Amount, Merchant and Card to the Shortcut Input's Amount, Merchant and Card or Pass.", systemImage: "3.circle")
+            } header: {
+                Text("Set it up once")
+            } footer: {
+                Text("Each Apple Pay tap then shows up in Duo Budget straight away. When your statement brings the same payment in, the two become one line, keeping the category and anything else you added. Nothing is counted twice.")
+            }
+            let waiting = store.waitingLoggedPayments
+            if !waiting.isEmpty {
+                Section {
+                    ForEach(waiting) { payment in
+                        LabeledContent(payment.merchant) {
+                            Text((-payment.amount).money).monospacedDigit()
+                        }
+                    }
+                } header: {
+                    Text("Waiting for their statement line")
+                } footer: {
+                    Text("Delete one from Activity if it was a mistake.")
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Apple Pay")
     }
 }

@@ -18,6 +18,9 @@ public struct BankTransaction: Identifiable, Codable, Hashable, Sendable {
     public var accountID: UUID?
     /// Hidden from a partner the household is shared with. Everything is shared unless marked.
     public var isPrivate: Bool?
+    /// For a payment logged with Apple Pay abroad: the currency its amount is in. It's matched
+    /// to its statement line by shop and date, since the statement shows your own currency.
+    public var loggedCurrency: String?
     /// Free labels, e.g. "Holiday 2026" or "Work expenses", for reports.
     public var tags: [String]?
     /// Where in its category the money went, e.g. "Supermarket" in Groceries. Optional.
