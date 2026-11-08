@@ -5,6 +5,8 @@ public enum ReminderKind: String, Codable, CaseIterable, Sendable {
     case cancellationDeadline
     case renewal
     case fixedPriceEnds
+    /// A fixed term ending without a set renewal date.
+    case contractEnds
 }
 
 /// A reminder the app should show as a local notification.
@@ -29,6 +31,8 @@ public struct ReminderPlanner: Sendable {
     public var paymentLeadDays = 2
     /// Days before a renewal or a fixed price ending to remind.
     public var renewalLeadDays = 14
+    /// Days before a fixed term ends to remind, so there's time to compare deals.
+    public var contractEndLeadDays = 30
     /// Hour of the day to notify, in the calendar's time zone.
     public var hour = 9
 
@@ -55,13 +59,17 @@ public struct ReminderPlanner: Sendable {
                 title: "\(contract.vendor) payment due", body: "\(amount) is due on \(dayText(contract.nextPaymentDueDate)).")
         }
 
+        // Notice is given before the contract renews, or before its term ends (as Home shows).
+        if let deadline = ContractWatch(calendar: calendar).noticeDeadline(contract) {
+            add(.cancellationDeadline, event: deadline, leadDays: 7,
+                title: "Decide on \(contract.vendor)", body: "To cancel or switch before it \(contract.renewalDate == nil ? "ends" : "renews"), give notice by \(dayText(deadline)).")
+        }
         if let renewal = contract.renewalDate {
-            if let notice = contract.cancellationNoticeDays, notice > 0, let deadline = calendar.date(byAdding: .day, value: -notice, to: renewal) {
-                add(.cancellationDeadline, event: deadline, leadDays: 7,
-                    title: "Decide on \(contract.vendor)", body: "To cancel before it renews, give notice by \(dayText(deadline)).")
-            }
             add(.renewal, event: renewal, leadDays: renewalLeadDays,
                 title: "\(contract.vendor) renews soon", body: "It renews on \(dayText(renewal)). Check the price before then.")
+        } else if contract.isContract, let ends = contract.minimumTermEndDate {
+            add(.contractEnds, event: ends, leadDays: contractEndLeadDays,
+                title: "\(contract.vendor) contract ends soon", body: "The term ends on \(dayText(ends)). Look for a better deal before then.")
         }
 
         if let fixedEnd = contract.fixedPriceEndDate, contract.pricing == .fixed || contract.pricing == .introductory {

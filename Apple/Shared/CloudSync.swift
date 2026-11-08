@@ -159,6 +159,9 @@ actor CloudSync: CKSyncEngineDelegate {
     static let recordType = "SealedItem"
     /// Receipt photos are shrunk to stay inside CloudKit's 1 MB record limit.
     static let maxImageBytes = 700_000
+    /// Contract PDFs go up as they are when they fit in a record with room to spare; bigger
+    /// ones stay on the device that has them.
+    static let maxDocumentBytes = 850_000
     /// More deletions than this at once (or more than a fifth of everything) wait for the person.
     static let largeDeletion = 25
 
@@ -781,7 +784,7 @@ actor CloudSync: CKSyncEngineDelegate {
         // waits for the next send, rather than going up without its picture.
         let waiting = pending.filter { change in
             guard case .saveRecord(let id) = change, let name = outgoing[id.recordName]?.fileName else { return false }
-            return Self.imageForUpload(imagesFolder.appendingPathComponent(name)) == nil
+            return Self.fileForUpload(imagesFolder.appendingPathComponent(name)) == nil
                 && FileManager.default.fileExists(atPath: imagesFolder.appendingPathComponent(name).path)
         }
         pending.removeAll { waiting.contains($0) }
@@ -829,7 +832,7 @@ actor CloudSync: CKSyncEngineDelegate {
         record.encryptedValues["collection"] = item.collection
         record.encryptedValues["itemID"] = item.id
         record.encryptedValues["payload"] = item.payload
-        if let name = item.fileName, let image = Self.imageForUpload(imagesFolder.appendingPathComponent(name)) {
+        if let name = item.fileName, let image = Self.fileForUpload(imagesFolder.appendingPathComponent(name)) {
             record.encryptedValues["fileName"] = name
             record.encryptedValues["file"] = image
         }
@@ -854,10 +857,18 @@ actor CloudSync: CKSyncEngineDelegate {
         )
     }
 
-    /// Photo names from iCloud must look like the app's own ("<UUID>.jpg"), so a record can't
-    /// overwrite some other file.
+    /// Photo and document names from iCloud must look like the app's own ("<UUID>.jpg",
+    /// "<UUID>.pdf"), so a record can't overwrite some other file.
     static func isSafeImageName(_ name: String) -> Bool {
-        name.range(of: "^[0-9A-Fa-f-]{36}\\.(jpg|jpeg|png|heic|heif|tif|tiff)$", options: [.regularExpression, .caseInsensitive]) != nil
+        name.range(of: "^[0-9A-Fa-f-]{36}\\.(jpg|jpeg|png|heic|heif|tif|tiff|pdf)$", options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    /// A file for an encrypted field: a contract PDF as it is (nil when too big), or a photo
+    /// via `imageForUpload`.
+    static func fileForUpload(_ url: URL) -> Data? {
+        guard url.pathExtension.lowercased() == "pdf" else { return imageForUpload(url) }
+        guard let data = try? Data(contentsOf: url), data.count <= maxDocumentBytes, data.starts(with: Data("%PDF".utf8)) else { return nil }
+        return data
     }
 
     /// A receipt photo for an encrypted field: re-encoded without metadata (no location or

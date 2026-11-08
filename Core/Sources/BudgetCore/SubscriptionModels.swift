@@ -59,6 +59,8 @@ public struct SubscriptionContract: Identifiable, Codable, Hashable, Sendable {
     /// Subscription or fixed-term contract. Nil for items saved before the two were separate:
     /// see `resolvedKind`.
     public var kind: CommitmentKind? = nil
+    /// Files kept with a contract (the agreement, a summary, photos). Nil for none.
+    public var documents: [ContractDocument]? = nil
 
     public init(
         id: UUID = UUID(),

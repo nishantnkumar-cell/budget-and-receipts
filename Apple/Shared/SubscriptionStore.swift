@@ -14,6 +14,7 @@ final class SubscriptionStore: ObservableObject {
     init(folder: URL = JSONFileStorage.defaultFolder) {
         storage = JSONFileStorage(folder: folder)
         load()
+        removeUnsavedFiles()
     }
 
     private func load() {
@@ -56,7 +57,37 @@ final class SubscriptionStore: ObservableObject {
 
     func delete(_ contract: SubscriptionContract) {
         contracts.removeAll { $0.id == contract.id }
+        removeFiles(contract.documents ?? [])
         persist()
+    }
+
+    var documentFiles: ContractDocumentStore { ContractDocumentStore(dataFolder: storage.folder) }
+
+    /// Deletes stored document files, unless another contract still uses them.
+    func removeFiles(_ documents: [ContractDocument]) {
+        let inUse = Set(contracts.flatMap { $0.documents ?? [] }.map(\.fileName))
+        for document in documents where !inUse.contains(document.fileName) { documentFiles.remove(document) }
+    }
+
+    /// Document files added in an editor that wasn't saved yet. Kept on disk until the next
+    /// launch, then deleted if no contract uses them (the editor was left without saving).
+    private static let unsavedFile = "contract-files-unsaved.json"
+
+    func noteUnsaved(_ document: ContractDocument) {
+        var names: [String] = storage.load(Self.unsavedFile) ?? []
+        names.append(document.fileName)
+        storage.save(names, Self.unsavedFile)
+    }
+
+    private func removeUnsavedFiles() {
+        guard !isWaitingForFiles, let names: [String] = storage.load(Self.unsavedFile), !names.isEmpty else { return }
+        removeFiles(names.map { ContractDocument(fileName: $0, title: "") })
+        storage.save([String](), Self.unsavedFile)
+    }
+
+    /// Contracts that need looking at now: ending, renewing or near the last day to give notice.
+    func needingAttention(now: Date = Date()) -> [ContractAttention] {
+        ContractWatch().needingAttention(contracts, now: now)
     }
 
     private func persist() {
@@ -69,6 +100,20 @@ final class SubscriptionStore: ObservableObject {
 extension SubscriptionStore: SyncSource {
     func syncRecords() -> [SyncRecord] {
         SyncRecord.records(contracts, collection: "contracts", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })
+            + documentRecords()
+    }
+
+    /// Contract documents travel as files, private when their contract is. A PDF too big for an
+    /// iCloud record stays on this device.
+    private func documentRecords() -> [SyncRecord] {
+        let files = documentFiles
+        var used: [String: Bool] = [:]
+        for contract in contracts {
+            for document in contract.documents ?? [] where files.url(for: document) != nil && files.syncs(document) {
+                used[document.fileName] = (used[document.fileName] ?? true) && contract.isPrivate == true
+            }
+        }
+        return used.map { SyncRecord(collection: "contractFiles", id: $0.key, payload: Data(), isPrivate: $0.value, fileName: $0.key) }
     }
 
     @discardableResult
