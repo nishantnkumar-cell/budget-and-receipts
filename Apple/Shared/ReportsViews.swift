@@ -12,6 +12,7 @@ enum ReportKind: String, CaseIterable, Identifiable {
     case categories = "Categories"
     case shops = "Shops"
     case year = "Year"
+    case netWorth = "Net worth"
 
     var id: String { rawValue }
 }
@@ -48,6 +49,26 @@ extension BudgetStore {
         YearInReview.make(viewTransactions, year: year, calculator: calculator)
     }
 
+    /// Net worth over the last few months, for the Me / Partner / Together switch.
+    func netWorthReport(months: Int) -> NetWorthReport {
+        NetWorthReport.make(wealthAccounts, view: householdView, ledger: hasPartner ? ledger : nil, months: months)
+    }
+
+    /// Spending by whose money it was. Only for Together with a partner: the Me and Partner
+    /// views already show one person's share.
+    func ownerSpending(in interval: DateInterval) -> OwnerSpending? {
+        guard hasPartner, householdView == .together else { return nil }
+        return OwnerSpending.make(viewTransactions, from: interval.start, to: interval.end, ledger: ledger, calculator: calculator)
+    }
+
+    func ownerSpending(months: Int) -> OwnerSpending? { ownerSpending(in: reportInterval(months: months)) }
+
+    func ownerSpending(year: Int) -> OwnerSpending? {
+        let months = Reports.months(endingAt: calculator.calendar.date(from: DateComponents(year: year, month: 12, day: 15)) ?? Date(), count: 12, calculator: calculator)
+        guard let first = months.first, let last = months.last else { return nil }
+        return ownerSpending(in: DateInterval(start: calculator.monthInterval(for: first).start, end: calculator.monthInterval(for: last).end))
+    }
+
     /// The payments at one shop in a date range, newest first.
     func payments(at shop: ShopSpending, in interval: DateInterval) -> [BankTransaction] {
         viewTransactions
@@ -77,16 +98,19 @@ struct ReportsView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 controls
-                if store.viewTransactions.isEmpty {
+                if kind == .netWorth {
+                    NetWorthReportSection(report: store.netWorthReport(months: range.rawValue))
+                } else if store.viewTransactions.isEmpty {
                     ContentUnavailableView("No payments yet", systemImage: "chart.bar.xaxis",
                                            description: Text("Import a statement and your reports appear here."))
                         .card()
                 } else {
                     switch kind {
-                    case .cashFlow: CashFlowSection(report: store.cashFlow(months: range.rawValue))
+                    case .cashFlow: CashFlowSection(report: store.cashFlow(months: range.rawValue), owners: store.ownerSpending(months: range.rawValue))
                     case .categories: CategoryTrendsSection(report: store.categoryTrends(months: range.rawValue), months: range.rawValue)
                     case .shops: TopShopsSection(shops: store.topShops(months: range.rawValue), months: range.rawValue)
-                    case .year: YearInReviewSection(review: store.yearInReview(year))
+                    case .year: YearInReviewSection(review: store.yearInReview(year), owners: store.ownerSpending(year: year))
+                    case .netWorth: EmptyView()
                     }
                 }
             }
@@ -107,7 +131,7 @@ struct ReportsView: View {
                     Label("Export", systemImage: "square.and.arrow.up")
                 }
                 .accessibilityLabel("Export report")
-                .disabled(store.viewTransactions.isEmpty)
+                .disabled(kind == .netWorth ? store.wealthAccounts.isEmpty : store.viewTransactions.isEmpty)
             }
         }
         .fileExporter(isPresented: $exportingPDF, document: ExportDocument(data: exportPDF(), type: .pdf), contentType: .pdf,
@@ -137,8 +161,10 @@ struct ReportsView: View {
                     ForEach(ReportRange.allCases) { Text($0.label).tag($0) }
                 }
                 .fixedSize()
-                Spacer()
-                MonthSwitcher()
+                if kind != .netWorth {
+                    Spacer()
+                    MonthSwitcher()
+                }
             }
             Spacer(minLength: 0)
         }
@@ -150,6 +176,7 @@ struct ReportsView: View {
         let who = store.hasPartner ? " (\(store.householdView.label(partnerName: store.couple.partnerName, myName: store.couple.ownerName)))" : ""
         switch kind {
         case .year: return "Year in review \(year)\(who)"
+        case .netWorth: return "Net worth \(Date().formatted(.dateTime.year().month(.twoDigits).day(.twoDigits)))\(who)"
         default: return "\(kind.rawValue) to \(store.selectedMonth.formatted(.dateTime.year().month(.twoDigits)))\(who)"
         }
     }
@@ -160,16 +187,18 @@ struct ReportsView: View {
         case .categories: store.categoryTrends(months: range.rawValue).csv()
         case .shops: TopShops.csv(store.topShops(months: range.rawValue))
         case .year: store.yearInReview(year).cashFlow.csv()
+        case .netWorth: store.netWorthReport(months: range.rawValue).csv()
         }
     }
 
     private func exportPDF() -> Data {
         guard exportingPDF else { return Data() }
         let page: AnyView = switch kind {
-        case .cashFlow: AnyView(CashFlowSection(report: store.cashFlow(months: range.rawValue), printing: true))
+        case .cashFlow: AnyView(CashFlowSection(report: store.cashFlow(months: range.rawValue), owners: store.ownerSpending(months: range.rawValue), printing: true))
         case .categories: AnyView(CategoryTrendsSection(report: store.categoryTrends(months: range.rawValue), months: range.rawValue, printing: true))
         case .shops: AnyView(TopShopsSection(shops: store.topShops(months: range.rawValue, limit: 25), months: range.rawValue, printing: true))
-        case .year: AnyView(YearInReviewSection(review: store.yearInReview(year), printing: true))
+        case .year: AnyView(YearInReviewSection(review: store.yearInReview(year), owners: store.ownerSpending(year: year), printing: true))
+        case .netWorth: AnyView(NetWorthReportSection(report: store.netWorthReport(months: range.rawValue), printing: true))
         }
         return ReportPDF.render(title: exportName, page.environmentObject(store))
     }
@@ -180,6 +209,7 @@ struct ReportsView: View {
 struct CashFlowSection: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     let report: CashFlowReport
+    var owners: OwnerSpending? = nil
     var printing = false
 
     private var compact: Bool { sizeClass == .compact }
@@ -219,6 +249,7 @@ struct CashFlowSection: View {
                 .frame(height: 220)
             }
             .card()
+            if let owners, owners.total > 0 { WhoSpentCard(spending: owners) }
             VStack(spacing: 0) {
                 ForEach(report.months.reversed()) { flow in
                     HStack {
@@ -243,6 +274,7 @@ struct CashFlowSection: View {
 // MARK: Categories
 
 struct CategoryTrendsSection: View {
+    @EnvironmentObject var store: BudgetStore
     let report: CategoryTrendsReport
     let months: Int
     var printing = false
@@ -272,12 +304,13 @@ struct CategoryTrendsSection: View {
                 .card()
                 VStack(spacing: 0) {
                     ForEach(report.categories) { trend in
+                        let shops = topShops(for: trend)
                         if printing {
-                            TrendRow(trend: trend.category, months: report.months)
+                            TrendRow(trend: trend.category, months: report.months, shops: shops)
                             ForEach(trend.subcategories) { TrendRow(trend: $0, months: report.months, indent: true) }
                         } else {
                             NavigationLink { CategoryReportDetail(trend: trend, months: report.months, range: months) } label: {
-                                TrendRow(trend: trend.category, months: report.months, showsChevron: true)
+                                TrendRow(trend: trend.category, months: report.months, shops: shops, showsChevron: true)
                             }
                             .buttonStyle(.plain)
                         }
@@ -288,6 +321,11 @@ struct CategoryTrendsSection: View {
             }
         }
     }
+
+    /// The three shops most of a category's money went to, for its row.
+    private func topShops(for trend: CategoryTrend) -> [ShopSpending] {
+        store.topShops(months: months, category: trend.category.name, limit: 3)
+    }
 }
 
 /// A category or sub-category: its total, a small trend line and how the latest month compares.
@@ -295,6 +333,8 @@ struct TrendRow: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     let trend: SpendingTrend
     let months: [Date]
+    /// The biggest shops in it, named under the monthly average.
+    var shops: [ShopSpending] = []
     var indent = false
     var showsChevron = false
 
@@ -304,6 +344,10 @@ struct TrendRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(trend.name).font(indent ? .subheadline : .body.weight(.semibold))
                 Text("\(trend.average.wholeMoney) a month").font(.caption).foregroundStyle(.secondary)
+                if !shops.isEmpty {
+                    Text(shops.map { "\($0.name) \($0.total.wholeMoney)" }.joined(separator: " · "))
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
             }
             .padding(.leading, indent ? 44 : 0)
             Spacer()
@@ -548,6 +592,7 @@ struct ShopPaymentsView: View {
 
 struct YearInReviewSection: View {
     let review: YearInReview
+    var owners: OwnerSpending? = nil
     var printing = false
 
     var body: some View {
@@ -592,6 +637,7 @@ struct YearInReviewSection: View {
                 .foregroundStyle(.secondary)
             }
             .card()
+            if let owners, owners.total > 0 { WhoSpentCard(spending: owners) }
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .top, spacing: Theme.spacing) { categories; shops }
                 VStack(spacing: Theme.spacing) { categories; shops }
@@ -677,5 +723,191 @@ enum ReportPDF {
             context.closePDF()
         }
         return data as Data
+    }
+}
+
+// MARK: Who spent it
+
+extension MoneyOwner {
+    /// Violet for mine, magenta for the partner's and teal for shared, as everywhere else.
+    var tint: Color {
+        switch self {
+        case .mine: .brandPlum
+        case .partner: .brandPartner
+        case .shared: .brandTeal
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .mine: "person.fill"
+        case .partner: "person"
+        case .shared: "person.2.fill"
+        }
+    }
+}
+
+/// Spending split into mine, the partner's and shared: one bar, then a line for each.
+struct WhoSpentCard: View {
+    @EnvironmentObject var store: BudgetStore
+    let spending: OwnerSpending
+
+    private var owners: [MoneyOwner] { MoneyOwner.allCases.filter { spending[$0] != 0 } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            CardHeader("Whose spending")
+            GeometryReader { proxy in
+                HStack(spacing: 2) {
+                    ForEach(owners, id: \.self) { owner in
+                        Rectangle().fill(owner.tint)
+                            .frame(width: max(2, (proxy.size.width - CGFloat(owners.count - 1) * 2) * max(spending.fraction(owner), 0)))
+                    }
+                }
+                .clipShape(Capsule())
+            }
+            .frame(height: 12)
+            .accessibilityHidden(true)
+            ForEach(owners, id: \.self) { owner in
+                HStack(spacing: 10) {
+                    Image(systemName: owner.systemImage).foregroundStyle(owner.tint).frame(width: 20)
+                    Text(owner.label(partnerName: store.couple.partnerName))
+                    Spacer()
+                    Text(spending.fraction(owner).formatted(.percent.precision(.fractionLength(0)))).foregroundStyle(.secondary)
+                    Text(spending[owner].wholeMoney).monospacedDigit().fontWeight(.semibold).frame(minWidth: 80, alignment: .trailing)
+                }
+                .font(.subheadline)
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .card()
+    }
+}
+
+// MARK: Net worth
+
+/// Net worth over time. Pensions and property get their own tiles and lines, since neither
+/// can be spent, and the total without them is shown next to the full figure.
+struct NetWorthReportSection: View {
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    let report: NetWorthReport
+    var printing = false
+
+    private static let withoutLabel = "Without pensions and property"
+
+    var body: some View {
+        if report.groups.isEmpty {
+            ContentUnavailableView {
+                Label("No accounts yet", systemImage: "building.columns")
+            } description: {
+                Text("Add savings, pensions, your home and mortgage in Net worth, and this report shows how they change.")
+            }
+            .card()
+        } else {
+            VStack(alignment: .leading, spacing: Theme.spacing) {
+                tiles
+                if report.points.count > 1 { chart }
+                breakdown
+            }
+        }
+    }
+
+    @ViewBuilder private var tiles: some View {
+        let first = HStack(spacing: 10) {
+            SummaryTile(title: "Net worth", amount: report.total)
+            SummaryTile(title: "Without pensions and property", amount: report.excludingPensionsAndProperty)
+        }
+        let second = HStack(spacing: 10) {
+            SummaryTile(title: "Pensions", amount: report.pensions)
+            SummaryTile(title: "Home equity", amount: report.homeEquity)
+        }
+        if sizeClass == .compact && !printing {
+            VStack(spacing: 10) { first; second }
+        } else {
+            HStack(spacing: 10) { first; second }
+        }
+    }
+
+    private var chart: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            CardHeader(title: "Over time") {
+                if let change = report.change {
+                    Label(change >= 0 ? "Up \(change.wholeMoney)" : "Down \((-change).wholeMoney)",
+                          systemImage: change >= 0 ? "arrow.up.right" : "arrow.down.right")
+                        .foregroundStyle(change >= 0 ? Color.green : Color.brandPink)
+                }
+            }
+            Chart {
+                ForEach(report.points) { point in
+                    LineMark(x: .value("Month", point.month, unit: .month), y: .value("Amount", point.total.double))
+                        .foregroundStyle(by: .value("Line", "Net worth"))
+                        .interpolationMethod(.monotone)
+                    LineMark(x: .value("Month", point.month, unit: .month),
+                             y: .value("Amount", (point.total - point.amount(.pensions) - point.amount(.property) - point.amount(.mortgage)).double))
+                        .foregroundStyle(by: .value("Line", Self.withoutLabel))
+                        .interpolationMethod(.monotone)
+                    LineMark(x: .value("Month", point.month, unit: .month), y: .value("Amount", point.amount(.pensions).double))
+                        .foregroundStyle(by: .value("Line", "Pensions"))
+                        .interpolationMethod(.monotone)
+                    LineMark(x: .value("Month", point.month, unit: .month), y: .value("Amount", (point.amount(.property) + point.amount(.mortgage)).double))
+                        .foregroundStyle(by: .value("Line", "Home equity"))
+                        .interpolationMethod(.monotone)
+                }
+            }
+            .chartForegroundStyleScale(["Net worth": Color.brandPink, Self.withoutLabel: Color.brandTeal,
+                                        "Pensions": Color.brandPartner, "Home equity": Color.secondary])
+            .chartXAxis { AxisMarks(values: .stride(by: .month)) { _ in AxisValueLabel(format: .dateTime.month(.narrow)) } }
+            .chartYAxis {
+                AxisMarks { value in
+                    AxisGridLine()
+                    AxisValueLabel { if let amount = value.as(Double.self) { Text(amount, format: .currency(code: AppSettings.currency).notation(.compactName)) } }
+                }
+            }
+            .frame(height: 220)
+        }
+        .card()
+    }
+
+    private var breakdown: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            CardHeader("What it's made of").padding(.bottom, 4)
+            ForEach(report.groups, id: \.group) { row in
+                line(row.group.title, systemImage: Self.symbol(for: row.group), amount: row.amount)
+                Divider()
+            }
+            if report.property != 0 || report.mortgage != 0 {
+                line("Home equity (property less mortgage)", systemImage: "house.fill", amount: report.homeEquity, bold: true)
+                Divider()
+            }
+            line(Self.withoutLabel, systemImage: "banknote", amount: report.excludingPensionsAndProperty, bold: true)
+            Divider()
+            line("Net worth", systemImage: "sum", amount: report.total, bold: true)
+        }
+        .card(padding: 12)
+    }
+
+    private func line(_ title: String, systemImage: String, amount: Decimal, bold: Bool = false) -> some View {
+        HStack(spacing: 12) {
+            IconBadge(systemImage: systemImage, size: 28)
+            Text(title).fontWeight(bold ? .semibold : .regular)
+            Spacer()
+            Text(amount.money).monospacedDigit().fontWeight(bold ? .semibold : .regular)
+                .foregroundStyle(amount < 0 ? Color.brandPink : Color.primary)
+        }
+        .font(.subheadline)
+        .padding(.vertical, 8)
+        .accessibilityElement(children: .combine)
+    }
+
+    static func symbol(for group: WealthAccount.Group) -> String {
+        switch group {
+        case .cash: "banknote"
+        case .investments: "chart.line.uptrend.xyaxis"
+        case .pensions: "beach.umbrella"
+        case .property: "house"
+        case .mortgage: "key.horizontal"
+        case .otherDebts: "creditcard"
+        case .other: "square.stack.3d.up"
+        }
     }
 }
