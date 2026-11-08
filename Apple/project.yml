@@ -8,7 +8,9 @@ options:
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    MARKETING_VERSION: "0.1.0"
+    MARKETING_VERSION: "1.0.0"
+    # App Store Connect needs a higher build number on every upload. Scripts/testflight.command
+    # passes a date-and-time build number; this one is only for local builds.
     CURRENT_PROJECT_VERSION: "1"
     CODE_SIGN_STYLE: Automatic
     # Nishant Kumar's Apple Developer team. Tests and CI can still build unsigned with CODE_SIGNING_REQUIRED=NO.
@@ -36,6 +38,10 @@ targets:
       path: iOS/Info.plist
       properties:
         CFBundleDisplayName: Duo Budget
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # Only Apple's own encryption (HTTPS, CloudKit, iCloud Keychain), which is exempt from export rules.
+        ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSCameraUsageDescription: Duo Budget uses the camera to scan receipts and contract documents. Scans stay on your devices and in end-to-end encrypted iCloud.
@@ -95,6 +101,10 @@ targets:
       properties:
         CFBundleDisplayName: Duo Budget
         CFBundleName: Duo Budget
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # Only Apple's own encryption (HTTPS, CloudKit, iCloud Keychain), which is exempt from export rules.
+        ITSAppUsesNonExemptEncryption: false
         LSApplicationCategoryType: public.app-category.finance
         CloudKitContainer: iCloud.com.nishantkumar.budgetreceipts
         CKSharingSupported: true
@@ -147,6 +157,8 @@ targets:
       path: ShareExtension/Info-iOS.plist
       properties:
         CFBundleDisplayName: Duo Budget
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
@@ -172,6 +184,8 @@ targets:
       path: ShareExtension/Info-macOS.plist
       properties:
         CFBundleDisplayName: Duo Budget
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
