@@ -10,12 +10,13 @@ struct BudgetReceiptsApp: App {
     #endif
     // The stores live in AppModel, so a background wake-up (an iCloud push or a background
     // refresh, with no screen) can sync them too.
-    @StateObject private var store = AppModel.store
+    @StateObject private var store = { _ = AppModel.started; return AppModel.store }()
     @StateObject private var subscriptions = AppModel.subscriptions
     @StateObject private var settings = AppModel.settings
     @StateObject private var lock = AppLock()
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var syncStatus = AppModel.syncStatus
+    @StateObject private var navigator = AppNavigator.shared
     /// When the app last stopped being in front, to lock the Mac after a while away.
     @State private var leftAt: Date?
     /// The one-time welcome sheet on a new install.
@@ -53,7 +54,14 @@ struct BudgetReceiptsApp: App {
             .environmentObject(syncStatus)
             // A receipt or statement opened with the app ("Open in", or Open With on the Mac).
             .onOpenURL { url in
+                if AppNavigator.shared.open(url) { return }
                 Task { await SharedReceiptReader.open(url, into: store) }
+            }
+            .environmentObject(navigator)
+            .sheet(isPresented: $navigator.asking) {
+                NavigationStack { AskBudgetView() }
+                    .environmentObject(store)
+                    .environmentObject(subscriptions)
             }
             .task(id: scenePhase) {
                 // Receipts shared from other apps while this one was closed.
@@ -121,7 +129,10 @@ struct BudgetReceiptsApp: App {
             }
             .task(id: ReminderInputs(contracts: subscriptions.contracts, covers: store.covers)) {
                 await ReminderScheduler.reschedule(subscriptions.contracts, covers: store.covers, enabled: settings.remindersEnabled)
+                WidgetBridge.scheduleRefresh()
             }
+            // Widgets move on a day and pick up anything changed while the app was away.
+            .task(id: scenePhase) { if scenePhase == .active { WidgetBridge.scheduleRefresh() } }
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
@@ -169,6 +180,10 @@ enum AppModel {
     static let subscriptions = SubscriptionStore()
     #endif
     static let settings = AppSettings()
+    /// Sets up what has to be ready before any screen (or a Siri request) uses the stores.
+    static let started: Void = {
+        store.didChange = { WidgetBridge.scheduleRefresh() }
+    }()
     static let syncStatus = SyncStatus()
     private(set) static var cloud: CloudSync?
 

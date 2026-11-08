@@ -80,7 +80,8 @@ public struct BudgetCalculator: Sendable {
     /// categories. A credit in a spending category (a refund) reduces that category.
     public func spendingByCategory(_ transactions: [BankTransaction], month: Date) -> [String: Decimal] {
         var totals: [String: Decimal] = [:]
-        for transaction in transactions where isInMonth(transaction.date, month) {
+        // A payment logged abroad has its amount in another currency until its statement line arrives.
+        for transaction in transactions where isInMonth(transaction.date, month) && transaction.loggedCurrency == nil {
             for (category, amount) in allocations(of: transaction) {
                 totals[category, default: 0] += amount
             }

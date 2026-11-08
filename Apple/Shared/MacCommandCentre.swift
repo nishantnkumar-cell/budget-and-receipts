@@ -9,6 +9,7 @@ struct MacRootView: View {
     @EnvironmentObject var store: BudgetStore
     @State private var selection: AppSection? = Self.firstSection
     @State private var showingPalette = false
+    @EnvironmentObject var navigator: AppNavigator
 
     /// Debug builds open on `-Section Reports` (any sidebar name), for screenshots.
     private static var firstSection: AppSection {
@@ -30,10 +31,16 @@ struct MacRootView: View {
                 }
             }
             .toolbar {
+                ToolbarItem(placement: .primaryAction) { AskBudgetButton() }
                 ToolbarItem(placement: .primaryAction) {
                     Button { selection = .scan } label: { Label("Add Receipt", systemImage: "doc.viewfinder") }
                         .help("Scan or choose a receipt")
                 }
+            }
+            .onChange(of: navigator.requested, initial: true) { _, place in
+                guard let place else { return }
+                selection = place
+                navigator.requested = nil
             }
             .background {
                 // ⌘K: jump anywhere or find any payment.
