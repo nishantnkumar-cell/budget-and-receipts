@@ -1,4 +1,5 @@
 import SwiftUI
+import BudgetCore
 
 /// Shown once, on a first launch with no data: currency, names, and the first statement.
 /// Everything here can be changed later in Settings, so the person can also just start.
