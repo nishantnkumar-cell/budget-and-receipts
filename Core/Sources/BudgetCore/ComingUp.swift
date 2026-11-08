@@ -86,20 +86,23 @@ public struct ComingUpPlanner: Sendable {
         return items.sorted { ($0.date, $0.vendor) < ($1.date, $1.vendor) }
     }
 
-    /// Renewals, notice deadlines, fixed prices ending and minimum terms ending, soonest first.
+    /// Contract dates: renewals, notice deadlines, fixed prices ending and terms ending, soonest
+    /// first. Only fixed-term contracts have these; subscriptions only have payments.
     public func contractDates(_ contracts: [SubscriptionContract], from now: Date) -> [UpcomingItem] {
         let start = calendar.startOfDay(for: now)
         guard let end = calendar.date(byAdding: .day, value: contractDays, to: start) else { return [] }
         var items: [UpcomingItem] = []
-        for contract in contracts where contract.status == .active {
+        for contract in contracts where contract.status == .active && contract.isContract {
             func add(_ kind: UpcomingItem.Kind, _ date: Date?) {
                 guard let date, calendar.startOfDay(for: date) >= start, date < end else { return }
                 items.append(item(contract, kind, date, amount: nil))
             }
+            // Notice is given before the contract renews, or before its term ends.
+            if let ends = contract.renewalDate ?? contract.minimumTermEndDate,
+               let notice = contract.cancellationNoticeDays, notice > 0 {
+                add(.cancellationDeadline, calendar.date(byAdding: .day, value: -notice, to: ends))
+            }
             if let renewal = contract.renewalDate {
-                if let notice = contract.cancellationNoticeDays, notice > 0 {
-                    add(.cancellationDeadline, calendar.date(byAdding: .day, value: -notice, to: renewal))
-                }
                 add(.renewal, renewal)
             }
             if contract.pricing == .fixed || contract.pricing == .introductory {

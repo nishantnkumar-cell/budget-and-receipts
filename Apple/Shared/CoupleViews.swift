@@ -96,11 +96,24 @@ struct CoupleSettingsSection: View {
         if store.hasPartner {
             Section {
                 ForEach(settings.rules) { $rule in
-                    Picker(ruleTitle(rule), selection: $rule.owner) {
-                        ForEach(MoneyOwner.allCases, id: \.self) { Text($0.label(partnerName: store.couple.partnerName)).tag($0) }
+                    DeletableRow(onDelete: { settings.wrappedValue.rules.removeAll { $0.id == rule.id } }) {
+                        if case .merchant = rule.match {
+                            TextField("Merchant name contains…", text: Binding(
+                                get: { if case .merchant(let text) = rule.match { text } else { "" } },
+                                set: { rule.match = .merchant($0) }
+                            ))
+                            Picker("Whose", selection: $rule.owner) {
+                                ForEach(MoneyOwner.allCases, id: \.self) { Text($0.label(partnerName: store.couple.partnerName)).tag($0) }
+                            }
+                            .labelsHidden()
+                            .fixedSize()
+                        } else {
+                            Picker(ruleTitle(rule), selection: $rule.owner) {
+                                ForEach(MoneyOwner.allCases, id: \.self) { Text($0.label(partnerName: store.couple.partnerName)).tag($0) }
+                            }
+                        }
                     }
                 }
-                .onDelete { settings.wrappedValue.rules.remove(atOffsets: $0) }
                 HStack {
                     TextField("Merchant name contains…", text: $newMerchant)
                     Button("Add") {
@@ -128,6 +141,22 @@ struct CoupleSettingsSection: View {
                 }
                 if balance.debtor != nil {
                     Button("Mark as Settled Up") { store.settleUp() }
+                }
+                ForEach(store.settlements.sorted { $0.date > $1.date }.prefix(5)) { settlement in
+                    DeletableRow(label: "Undo Settle-up", onDelete: { store.deleteSettlement(settlement) }) {
+                        LabeledContent("Settled \(settlement.date.formatted(date: .abbreviated, time: .omitted))") {
+                            Text(settlement.amount.formatted(.currency(code: AppSettings.currency))).monospacedDigit()
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            if store.householdRole != .member {
+                DeleteSection(title: "Remove Partner",
+                              message: "Your payments, accounts and receipts stay. Shared costs count as yours again until you add a partner.") {
+                    var couple = store.couple
+                    couple.partnerName = ""
+                    store.updateCouple(couple)
                 }
             }
         }

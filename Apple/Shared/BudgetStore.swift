@@ -232,8 +232,21 @@ final class BudgetStore: ObservableObject {
         if let index = budgets.firstIndex(where: { $0.category == category && calendar.isDate($0.month, equalTo: month, toGranularity: .month) }) {
             budgets[index].limit = limit
             budgets[index].rollover = rollover ?? budgets[index].rollover
+            budgets[index].removed = nil
         } else {
             budgets.append(MonthlyBudget(category: category, limit: limit, month: month, rollover: rollover ?? current?.rollover))
+        }
+        persist()
+    }
+
+    /// Takes away a category's limit from `month` on. Earlier months keep theirs; if an earlier
+    /// budget would still carry on, a marker ends it here.
+    func removeBudget(category: String, month: Date = Date()) {
+        let calendar = Calendar.current
+        let monthStart = calendar.dateInterval(of: .month, for: month)?.start ?? month
+        budgets.removeAll { $0.category == category && (calendar.dateInterval(of: .month, for: $0.month)?.start ?? $0.month) >= monthStart }
+        if calculator.budget(for: category, in: budgets, month: month) != nil {
+            budgets.append(MonthlyBudget(category: category, limit: 0, month: monthStart, removed: true))
         }
         persist()
     }
@@ -359,6 +372,12 @@ final class BudgetStore: ObservableObject {
         guard let debtor = balance.debtor else { return }
         settlements.append(Settlement(date: date, from: debtor, amount: balance.amountOwed))
         status = "Settled up."
+        persist()
+    }
+
+    /// Undoes a settle-up recorded by mistake.
+    func deleteSettlement(_ settlement: Settlement) {
+        settlements.removeAll { $0.id == settlement.id }
         persist()
     }
 

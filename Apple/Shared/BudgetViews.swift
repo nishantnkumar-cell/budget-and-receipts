@@ -125,6 +125,11 @@ struct BudgetLimitSheet: View {
             .rollover ?? false
     }
 
+    /// True when you set this category's limit, rather than it being your average.
+    private var hasOwnLimit: Bool {
+        store.calculator.budget(for: line.category, in: store.budgets, month: store.selectedMonth) != nil
+    }
+
     private var limit: Decimal? {
         guard let value = AmountParser.parse(limitText, decimalComma: false), value >= 0 else { return nil }
         return value
@@ -140,6 +145,18 @@ struct BudgetLimitSheet: View {
                     Text("Applies from \(store.selectedMonth.formatted(.dateTime.month(.wide).year())) until you change it. With roll over on, money you don't spend is added to next month's limit.")
                 }
                 SubcategoryBreakdown(category: line.category)
+                if hasOwnLimit {
+                    Section {
+                        Button(role: .destructive) {
+                            store.removeBudget(category: line.category, month: store.selectedMonth)
+                            dismiss()
+                        } label: {
+                            Label("Remove Limit", systemImage: "trash")
+                        }
+                    } footer: {
+                        Text("From \(store.selectedMonth.formatted(.dateTime.month(.wide).year())) on, \(line.category) goes back to a tentative budget from your average. Earlier months keep their limit.")
+                    }
+                }
             }
             .formStyle(.grouped)
             .navigationTitle(line.category)
