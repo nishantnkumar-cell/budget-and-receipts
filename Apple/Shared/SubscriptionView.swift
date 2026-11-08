@@ -51,7 +51,10 @@ struct PlanView: View {
                     }
                 }
             }
+            OwedBackSection()
+            SavingsGoalsSection()
             SetAsidesSection()
+            TripsSection()
             list(.subscription, rises: rises)
             list(.contract, rises: rises)
             spottedSection

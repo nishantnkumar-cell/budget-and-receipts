@@ -24,6 +24,14 @@ public struct BankTransaction: Identifiable, Codable, Hashable, Sendable {
     public var subcategory: String?
     /// You chose the category yourself, so automatic checks such as transfer spotting leave it alone.
     public var categoryChosen: Bool?
+    /// Someone is paying this back (work, a friend), so it isn't your spending.
+    public var reimbursement: Reimbursement?
+    /// For a credit: the payment (by id) this money pays back, so it isn't income.
+    public var repays: String?
+    /// The trip this payment belongs to, set by hand. See `Trip`.
+    public var tripID: UUID?
+    /// What was paid in another currency, from the statement or entered by hand.
+    public var foreign: ForeignAmount?
 
     public init(
         date: Date,
