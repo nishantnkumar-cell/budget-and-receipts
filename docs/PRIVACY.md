@@ -17,9 +17,14 @@ Nothing. Duo Budget has no account, no servers of its own, no analytics, no adve
 ## What runs on your device
 
 - Receipts and statements are read on the device with Apple Vision.
-- Categories and receipt corrections use Apple Intelligence on the device. Nothing is sent to an AI service.
+- Categories, receipt corrections and Ask your budget use Apple Intelligence on the device. Nothing is sent to an AI service.
+- Widgets receive only a small summary (safe to spend, what's left this month and the next bills, never individual payments). Their amounts are hidden while the device is locked, and you can turn amounts off entirely in Settings.
 - Reminders for bills and contracts are local notifications scheduled on the device.
 - Face ID, Touch ID or your passcode can lock the app. The app only learns whether unlocking succeeded.
+
+## Backup files
+
+Settings › Backup can export your data to a `.duobackup` file, encrypted with AES-256-GCM using a key made from a password you choose. The file goes wherever you save it. Without the password nobody can open it, including us, and a lost password can't be recovered. CSV and PDF exports are not encrypted.
 
 ## The one optional online lookup
 
