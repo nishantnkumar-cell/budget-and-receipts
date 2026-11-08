@@ -90,6 +90,12 @@ final class SubscriptionStore: ObservableObject {
         ContractWatch().needingAttention(contracts, now: now)
     }
 
+    /// After a backup is restored: read the contracts again and send them to iCloud.
+    func reloadAfterRestore() {
+        load()
+        persist()
+    }
+
     private func persist() {
         guard !isWaitingForFiles else { return }
         storage.save(contracts, "subscriptions.json")

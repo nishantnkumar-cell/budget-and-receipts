@@ -74,6 +74,9 @@ struct ReceiptView: View {
                 Button("Add Item", systemImage: "plus") { editor.addItem() }
             }
             ReconciliationSection(bankAmount: transaction.amount, splitTotal: editor.splitTotal, balanced: balanced)
+            ReceiptCoverSection(transactionID: transaction.id, shop: editor.merchant.isEmpty ? transaction.merchant : editor.merchant,
+                                date: editor.purchaseDate ?? transaction.date, item: editor.items.max { $0.total < $1.total }?.description ?? "",
+                                price: editor.items.max { $0.total < $1.total }?.total, imagePath: editor.imagePath)
             Section {
                 Toggle("I have checked every item and category", isOn: $reviewed)
                 Text(message).font(.caption).foregroundStyle(.secondary)
