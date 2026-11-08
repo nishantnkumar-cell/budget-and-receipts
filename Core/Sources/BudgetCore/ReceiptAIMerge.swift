@@ -2,7 +2,7 @@ import Foundation
 
 /// What an on-device language model read from a receipt's text. The apps fill this in
 /// from Apple's Foundation Models; it is kept plain here so the checks below can be tested
-/// anywhere, including on Windows.
+/// anywhere, including on Linux.
 public struct ReceiptAIReading: Hashable, Sendable {
     public struct Item: Hashable, Sendable {
         public var name: String
