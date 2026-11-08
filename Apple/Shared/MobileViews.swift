@@ -142,6 +142,10 @@ struct TransactionEditor: View {
             Section("Receipt") {
                 NavigationLink("Scan or review receipt") { ReceiptView(transaction: transaction) }
             }
+            if transaction.amount < 0 {
+                ReceiptCoverSection(transactionID: transaction.id, shop: transaction.merchant, date: transaction.date, price: -transaction.amount,
+                                    imagePath: transaction.pendingSplitDraft?.receipt.imagePath ?? "")
+            }
             Section { MakeRuleButton(transaction: transaction) }
             TransactionTagsSection(tags: Binding(get: { transaction.tags ?? [] }, set: { transaction.tags = $0.isEmpty ? nil : $0 }))
             TransactionNotesSection(transaction: transaction)

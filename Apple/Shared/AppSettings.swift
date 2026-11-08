@@ -135,19 +135,21 @@ enum ReminderScheduler {
     }
 
     /// Replaces every scheduled contract reminder with the current set. Pass an empty list to clear them.
-    static func reschedule(_ contracts: [SubscriptionContract], enabled: Bool, now: Date = Date()) async {
+    static func reschedule(_ contracts: [SubscriptionContract], covers: [ProductCover] = [], enabled: Bool, now: Date = Date()) async {
         let center = UNUserNotificationCenter.current()
         let pending = await center.pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix(prefix) }
         center.removePendingNotificationRequests(withIdentifiers: pending)
         guard enabled else { return }
 
         // iOS keeps at most 64 pending notifications per app; keep the soonest.
-        for reminder in ReminderPlanner().reminders(for: contracts, now: now).prefix(60) {
+        let planner = ReminderPlanner()
+        let all = (planner.reminders(for: contracts, now: now) + planner.reminders(for: covers, now: now)).sorted { $0.fireDate < $1.fireDate }
+        for reminder in all.prefix(60) {
             let content = UNMutableNotificationContent()
             // With the app lock on, the lock screen shouldn't show vendors or amounts.
             let private_ = UserDefaults.standard.bool(forKey: "appLockEnabled")
             content.title = private_ ? "Duo Budget" : reminder.title
-            content.body = private_ ? "You have a payment or contract date coming up." : reminder.body
+            content.body = private_ ? "You have a payment, contract or receipt date coming up." : reminder.body
             content.sound = .default
             let parts = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: reminder.fireDate)
             let request = UNNotificationRequest(identifier: prefix + reminder.identifier, content: content, trigger: UNCalendarNotificationTrigger(dateMatching: parts, repeats: false))

@@ -90,8 +90,9 @@ struct SettingsView: View {
             Section {
                 Toggle("Payment and renewal reminders", isOn: Binding(get: { settings.remindersEnabled }, set: setReminders))
             } footer: {
-                Text("Notifies you 2 days before a payment, 2 weeks before a renewal or fixed price ends, and a week before a cancellation deadline.")
+                Text("Notifies you 2 days before a payment, 2 weeks before a renewal or fixed price ends, a week before a cancellation deadline, 3 days before the last day to return something and 30 days before a warranty ends.")
             }
+            BackupSection()
             Section {
                 NavigationLink { EraseAllDataView() } label: {
                     Label("Erase All Data…", systemImage: "trash").foregroundStyle(.red)
@@ -144,13 +145,13 @@ struct SettingsView: View {
         Task {
             let allowed = on ? await ReminderScheduler.requestPermission() : true
             settings.remindersEnabled = on && allowed
-            await ReminderScheduler.reschedule(subscriptions.contracts, enabled: settings.remindersEnabled)
+            await ReminderScheduler.reschedule(subscriptions.contracts, covers: store.covers, enabled: settings.remindersEnabled)
         }
     }
 }
 
 struct ExportDocument: FileDocument {
-    static let readableContentTypes: [UTType] = [.commaSeparatedText, .pdf]
+    static let readableContentTypes: [UTType] = [.commaSeparatedText, .pdf, .duoBackup]
     let data: Data
     let type: UTType
 
