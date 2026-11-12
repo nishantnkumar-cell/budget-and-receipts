@@ -4,9 +4,11 @@ import Foundation
 public struct BankAccount: Identifiable, Codable, Hashable, Sendable {
     public var id: UUID
     public var name: String
-    /// The account number as the bank's files show it (OFX ACCTID or a CSV column). Only
-    /// the last four digits are needed to recognise it, and only those are shown.
-    public var number: String
+    /// The last four digits of the account number. Only those are needed to recognise it, so
+    /// a longer number (typed in, or from an older version) is cut to them as it's set.
+    public var number: String {
+        didSet { if number.count > 4 { number = Self.lastFour(number) } }
+    }
     /// Last four digits of cards that pay from this account, as printed on receipts.
     public var cardEndings: [String]
     /// Hidden, with its transactions, from a partner the household is shared with.
@@ -21,7 +23,7 @@ public struct BankAccount: Identifiable, Codable, Hashable, Sendable {
     public init(id: UUID = UUID(), name: String, number: String = "", cardEndings: [String] = []) {
         self.id = id
         self.name = name
-        self.number = number
+        self.number = Self.lastFour(number)
         self.cardEndings = cardEndings
     }
 

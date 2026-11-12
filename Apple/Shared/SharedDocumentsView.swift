@@ -61,6 +61,7 @@ struct SharedDocumentDetail: View {
     @Environment(\.dismiss) private var dismiss
     let document: SharedDocument
     @State private var confirmingDelete = false
+    @State private var confirmingUndo = false
 
     private var current: SharedDocument { store.sharedDocuments.first { $0.id == document.id } ?? document }
 
@@ -73,8 +74,11 @@ struct SharedDocumentDetail: View {
             case .statement:
                 Section {
                     NavigationLink("See payments in Activity") { TransactionsView() }
+                    if let added = current.importedPayments, !added.isEmpty {
+                        Button("Undo This Import…", role: .destructive) { confirmingUndo = true }
+                    }
                 } footer: {
-                    Text("Deleting this entry keeps the imported payments.")
+                    Text("Deleting this entry keeps the imported payments. Undo takes out the payments this file added, on your other devices and your partner's too.")
                 }
             case .statementReady:
                 Section {
@@ -111,6 +115,12 @@ struct SharedDocumentDetail: View {
             }
         }
         .navigationTitle(current.fileName)
+        .confirmationDialog("Take out the \(current.importedPayments?.count ?? 0) payments this file added?", isPresented: $confirmingUndo, titleVisibility: .visible) {
+            Button("Undo Import", role: .destructive) { store.undoImport(of: current) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("For a wrong file, such as someone else's statement. Any receipts, splits or comments on those payments go too.")
+        }
         .alert("Remove \(current.fileName) from Shared files?", isPresented: $confirmingDelete) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {

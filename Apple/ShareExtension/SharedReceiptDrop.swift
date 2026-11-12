@@ -26,8 +26,13 @@ enum SharedReceiptDrop {
     /// Nil when the App Group is missing, e.g. in an unsigned test build.
     static var folder: URL? {
         guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup) else { return nil }
-        let folder = container.appendingPathComponent("SharedReceipts", isDirectory: true)
+        var folder = container.appendingPathComponent("SharedReceipts", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        // Statements and receipts wait here: left out of iCloud device Backup, which isn't
+        // end-to-end encrypted unless Advanced Data Protection is on.
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? folder.setResourceValues(values)
         return folder
     }
 

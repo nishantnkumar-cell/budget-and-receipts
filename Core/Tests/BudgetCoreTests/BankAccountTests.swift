@@ -140,4 +140,27 @@ final class BankAccountTests: XCTestCase {
         let third = StatementImporter.prepare(csv, existing: first.newTransactions + second.newTransactions, account: current.id, calendar: calendar)
         XCTAssertTrue(third.newTransactions.isEmpty)
     }
+
+    func testOnlyTheLastFourDigitsAreKept() {
+        var account = BankAccount(name: "Current", number: "12345678")
+        XCTAssertEqual(account.number, "5678")
+        account.number = "00-00-00 87654321"
+        XCTAssertEqual(account.number, "4321")
+        XCTAssertEqual(account.label, "Current ••4321")
+    }
+
+    func testTransfersAreNeverLookedUpOnline() {
+        XCTAssertTrue(MerchantCategories.isPersonTransfer("FPO A PERSON RENT"))
+        XCTAssertTrue(MerchantCategories.isPersonTransfer("OBP Sam Person REF123"))
+        XCTAssertFalse(MerchantCategories.isPersonTransfer("BP PETROL STATION"))
+        XCTAssertFalse(MerchantCategories.isPersonTransfer("COSTA COFFEE"))
+    }
+
+    func testAnUndoneImportSaysSo() {
+        var document = SharedDocument(fileName: "statement.csv", outcome: .statement(imported: 3, alreadyThere: 0, totalsDifference: nil))
+        document.importedPayments = ["a", "b", "c"]
+        XCTAssertTrue(document.summary.hasPrefix("Imported as a statement"))
+        document.importedPayments = []
+        XCTAssertEqual(document.summary, "Import undone: its 3 payments were taken out")
+    }
 }

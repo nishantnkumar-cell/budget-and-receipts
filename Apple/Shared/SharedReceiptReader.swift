@@ -44,10 +44,12 @@ enum SharedReceiptReader {
                 // A statement read again keeps its first result unless it added something new.
                 if case .statement(let imported, _, _) = outcome, imported == 0, case .statement = document.outcome { continue }
                 updated.outcome = outcome
+                if case .statement = outcome { updated.importedPayments = (updated.importedPayments ?? []) + lastImported }
             } else {
                 let text = String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
                 guard let result = try? store.previewImport(text: text, fileName: document.fileName, mapping: nil) else { continue }
                 updated.outcome = importResult(result, fileName: document.fileName, store: store)
+                updated.importedPayments = (updated.importedPayments ?? []) + lastImported
             }
             store.update(updated)
         }
@@ -95,6 +97,7 @@ enum SharedReceiptReader {
                 // Imported straight away: the account comes from the statement, and payments
                 // already in the app are recognised and skipped.
                 document.outcome = importResult(try store.previewImport(text: text, fileName: name, mapping: nil), fileName: name, store: store)
+                document.importedPayments = lastImported
             } catch {
                 document.outcome = .failed(reason: "its columns couldn't be worked out. Use Import Statement to choose them")
             }
@@ -102,6 +105,7 @@ enum SharedReceiptReader {
         }
         if ext == "pdf", let lines = pdfLines(data), PDFStatementParser.looksLikeStatement(lines) {
             document.outcome = importPDF(lines, fileName: name, store: store)
+            if case .statement = document.outcome { document.importedPayments = lastImported }
             return recorded(document, store)
         }
         do {
@@ -138,6 +142,7 @@ enum SharedReceiptReader {
         }
         if var document {
             document.outcome = outcome
+            if case .statement = outcome { document.importedPayments = lastImported }
             store.sharedDocuments.contains { $0.id == document.id } ? store.update(document) : store.record(document)
         }
         store.shareSummary = document.map { "\($0.fileName): \($0.summary)." }
@@ -152,7 +157,11 @@ enum SharedReceiptReader {
         }
     }
 
+    /// The payments the last import added, picked up by the caller for Undo This Import.
+    private static var lastImported: [String] = []
+
     private static func importResult(_ result: StatementImportResult, fileName: String, store: BudgetStore) -> SharedDocument.Outcome {
+        lastImported = result.newTransactions.map(\.fingerprint)
         store.commitImport(result, fileName: fileName)
         return .statement(imported: result.newTransactions.count, alreadyThere: result.duplicates.count, totalsDifference: result.summaryDifference)
     }
