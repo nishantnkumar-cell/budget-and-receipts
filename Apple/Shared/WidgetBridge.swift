@@ -9,13 +9,12 @@ import WidgetKit
 @MainActor
 enum WidgetBridge {
     static let showAmountsKey = "widgetsShowAmounts"
-    /// Amounts show only when Settings allows it and the app lock is off: a widget sits outside
-    /// the lock, so with the lock on it just opens the app.
+    /// Amounts show unless Settings turns them off. The app lock doesn't hide them: every figure
+    /// is marked privacy-sensitive, so iOS blurs it until the phone itself is unlocked.
     static var showsAmounts: Bool { showsAmounts(in: .standard) }
 
     static func showsAmounts(in defaults: UserDefaults) -> Bool {
-        guard !defaults.bool(forKey: "appLockEnabled") else { return false }
-        return defaults.object(forKey: showAmountsKey) as? Bool ?? true
+        defaults.object(forKey: showAmountsKey) as? Bool ?? true
     }
     private static var pending: Task<Void, Never>?
 
