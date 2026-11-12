@@ -27,8 +27,12 @@ public struct ImportRecord: Identifiable, Codable, Hashable, Sendable {
     public var importedAt: Date
     public var transactionCount: Int
     public var status: String
+    /// The account the statement was for, when it was one account. An import of a private
+    /// account's statement is private too. Nil for older imports and mixed files.
+    public var accountID: UUID? = nil
 
-    public init(id: UUID = UUID(), fileName: String, importedAt: Date = Date(), transactionCount: Int, status: String) {
+    public init(id: UUID = UUID(), fileName: String, importedAt: Date = Date(), transactionCount: Int, status: String, accountID: UUID? = nil) {
+        self.accountID = accountID
         self.id = id
         self.fileName = fileName
         self.importedAt = importedAt

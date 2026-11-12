@@ -423,11 +423,15 @@ actor CloudSync: CKSyncEngineDelegate {
         let current = await MainActor.run { sources.flatMap { $0.syncRecords() } }
         var changes = state.changes(to: current)
         // Many deletions at once usually mean something went wrong, not that the person meant it.
-        let tooMany = changes.deletes.count > Self.largeDeletion
-            || (state.entries.count >= 10 && changes.deletes.count * 5 > state.entries.count)
+        // An item moving between private and shared is deleted from one zone and saved in the
+        // other: that is not a deletion, so it never counts or waits.
+        let moving = Set(changes.saves.map(\.key))
+        let removed = changes.deletes.filter { !moving.contains($0.key) }
+        let tooMany = removed.count > Self.largeDeletion
+            || (state.entries.count >= 10 && removed.count * 5 > state.entries.count)
         if tooMany && !allowLargeDeletionOnce {
-            heldDeletes = changes.deletes
-            changes.deletes = []
+            heldDeletes = removed
+            changes.deletes = changes.deletes.filter { moving.contains($0.key) }
         } else {
             heldDeletes = []
         }

@@ -95,4 +95,20 @@ final class RulesTests: XCTestCase {
         XCTAssertEqual(rule.conditions.first?.value, "BIKANERVALA HOUNSLOW")
         XCTAssertTrue(rule.matches(payment("BIKANERVALA HOUNSLOW", -3)))
     }
+
+    func testRulesFromPrivatePaymentsStartPrivate() throws {
+        var secret = payment("GIFT SHOP", -40)
+        secret.isPrivate = true
+        XCTAssertEqual(RulesEngine.rule(from: secret, category: "Shopping", subcategory: nil).isPrivate, true)
+        XCTAssertEqual(RulesEngine.rule(from: payment("GIFT SHOP", -40), category: "Shopping", subcategory: nil, isPrivate: true).isPrivate, true)
+        XCTAssertNil(RulesEngine.rule(from: payment("GIFT SHOP", -40), category: "Shopping", subcategory: nil).isPrivate)
+        // Rules and imports saved before these fields existed still load, as shared.
+        let encoded = try SyncRecord.encoder().encode(CategoryRule(name: "Shop", conditions: [], category: "Shopping"))
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        json["isPrivate"] = nil
+        let old = try SyncRecord.decoder().decode(CategoryRule.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertNil(old.isPrivate)
+        let oldImport = try SyncRecord.decoder().decode(ImportRecord.self, from: Data(#"{"id":"00000000-0000-0000-0000-000000000001","fileName":"a.csv","importedAt":"2026-11-01T00:00:00Z","transactionCount":3,"status":"Imported"}"#.utf8))
+        XCTAssertNil(oldImport.accountID)
+    }
 }
