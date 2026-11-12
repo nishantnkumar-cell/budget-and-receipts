@@ -1540,6 +1540,24 @@ extension BudgetStore: SyncSource {
         return names[record.collection] ?? record.collection
     }
 
+    /// Changes another store received from iCloud (contracts), kept in the same list.
+    func noteRecentChanges(_ changes: [RecentChange]) {
+        let changes = changes.map { change -> RecentChange in
+            var change = change
+            // A deletion doesn't say who made it: in a household, it may well be the partner.
+            if change.kind == .deleted { change.byPartner = householdRole != .solo }
+            return change
+        }
+        recentChanges = (changes + recentChanges).filter { $0.date > Date().addingTimeInterval(-30 * 86_400) }
+        writeFiles()
+    }
+
+    /// Takes a change off the list once another store has put it back.
+    func forget(_ change: RecentChange) {
+        recentChanges.removeAll { $0.id == change.id }
+        writeFiles()
+    }
+
     /// Puts an item back as it was before the change or deletion, everywhere.
     func restore(_ change: RecentChange) {
         merge(saves: [SyncRecord(collection: change.collection, id: change.itemID, payload: change.previous)], deletes: [])

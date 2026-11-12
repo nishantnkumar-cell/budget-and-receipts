@@ -96,6 +96,38 @@ final class SubscriptionStore: ObservableObject {
         persist()
     }
 
+    /// Contracts changed or deleted on another device or by the partner, for Recently changed
+    /// (kept by BudgetStore with everything else, so one list can put any of them back).
+    var didReceiveChanges: (([RecentChange]) -> Void)?
+
+    private func keepRecentChanges(saves: [SyncRecord], deletes: Set<String>) {
+        let before = Dictionary(SyncRecord.records(contracts, collection: "contracts", id: \.id.uuidString).map { ($0.key, $0) },
+                                uniquingKeysWith: { first, _ in first })
+        var kept: [RecentChange] = []
+        for key in deletes {
+            guard let old = before[key] else { continue }
+            kept.append(RecentChange(kind: .deleted, byPartner: false, collection: old.collection, itemID: old.id, previous: old.payload, summary: summary(of: old)))
+        }
+        for save in saves where save.collection == "contracts" {
+            guard let old = before[save.key], old.payload != save.payload else { continue }
+            kept.append(RecentChange(kind: .changed, byPartner: save.byPartner, collection: old.collection, itemID: old.id, previous: old.payload, summary: summary(of: old)))
+        }
+        if !kept.isEmpty { didReceiveChanges?(kept) }
+    }
+
+    private func summary(of record: SyncRecord) -> String {
+        guard let contract = try? SyncRecord.decoder().decode(SubscriptionContract.self, from: record.payload) else { return "A subscription or contract" }
+        return "Contract \(contract.vendor)"
+    }
+
+    /// Puts a contract back as it was before the change or deletion, everywhere.
+    func restore(_ change: RecentChange) {
+        guard change.collection == "contracts" else { return }
+        contracts = SyncMerge.apply(saves: [SyncRecord(collection: change.collection, id: change.itemID, payload: change.previous)], deletes: [],
+                                    to: contracts, collection: "contracts", id: \.id.uuidString)
+        persist()
+    }
+
     private func persist() {
         guard !isWaitingForFiles else { return }
         storage.save(contracts, "subscriptions.json")
@@ -124,6 +156,7 @@ extension SubscriptionStore: SyncSource {
 
     @discardableResult
     func applySync(saves: [SyncRecord], deletes: Set<String>) -> Bool {
+        keepRecentChanges(saves: saves, deletes: deletes)
         contracts = SyncMerge.apply(saves: saves, deletes: deletes, to: contracts, collection: "contracts", id: \.id.uuidString)
         return storage.save(contracts, "subscriptions.json")
     }

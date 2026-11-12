@@ -12,17 +12,52 @@ import UIKit
 import AppKit
 #endif
 
-/// Hands a household invitation, accepted from Messages, Mail or a link, to iCloud sync.
-/// It can arrive before sync has started, so it waits until then.
+/// Hands a household invitation, opened from Messages, Mail or a link, to iCloud sync once
+/// the person has seen who sent it and chosen Join. Anyone with the app can send an invitation
+/// to any Apple ID, so opening one never shares anything by itself. It can arrive before sync
+/// has started, so it waits until then.
 @MainActor
 final class ShareAcceptor {
     static let shared = ShareAcceptor()
     private var pending: CKShare.Metadata?
+    /// The person chose Join; the invitation goes to sync as soon as sync is running.
+    private var confirmed = false
     private var handler: ((CKShare.Metadata) async -> Void)?
 
     func receive(_ metadata: CKShare.Metadata) {
         print("[sync] Household invitation opened")
+        pending = metadata
+        confirmed = false
+        AppModel.syncStatus.invite = .confirming(Self.inviter(metadata))
+    }
+
+    /// Who sent the invitation, as iCloud knows them: name and Apple ID where available.
+    static func inviter(_ metadata: CKShare.Metadata) -> String {
+        let identity = metadata.ownerIdentity
+        let name = identity.nameComponents.map { PersonNameComponentsFormatter().string(from: $0) }.flatMap { $0.isEmpty ? nil : $0 }
+        let contact = identity.lookupInfo?.emailAddress ?? identity.lookupInfo?.phoneNumber
+        switch (name, contact) {
+        case let (name?, contact?): return "\(name) (\(contact))"
+        case let (name?, nil): return name
+        case let (nil, contact?): return contact
+        case (nil, nil): return "Someone whose name iCloud didn't give"
+        }
+    }
+
+    /// The person chose Not Now: nothing is shared.
+    func decline() {
+        pending = nil
+        confirmed = false
+        AppModel.syncStatus.invite = nil
+    }
+
+    /// The person chose Join.
+    func confirm() {
+        guard let metadata = pending else { return }
+        confirmed = true
         if let handler {
+            pending = nil
+            confirmed = false
             AppModel.syncStatus.invite = .joining
             Task { await handler(metadata) }
         } else {
@@ -40,8 +75,9 @@ final class ShareAcceptor {
 
     func setHandler(_ handler: @escaping (CKShare.Metadata) async -> Void) {
         self.handler = handler
-        if let pending {
+        if confirmed, let pending {
             self.pending = nil
+            confirmed = false
             AppModel.syncStatus.invite = .joining
             Task { await handler(pending) }
         }
@@ -99,7 +135,10 @@ struct HouseholdInvite: Transferable {
 
     static var transferRepresentation: some TransferRepresentation {
         CKShareTransferRepresentation { invite in
-            .prepareShare(container: CKContainer(identifier: CloudSync.containerID ?? "")) {
+            // Only the people invited can join (no "Anyone with the link"), and they can make changes.
+            .prepareShare(container: CKContainer(identifier: CloudSync.containerID ?? ""),
+                          allowedSharingOptions: CKAllowedSharingOptions(allowedParticipantPermissionOptions: .readWrite,
+                                                                         allowedParticipantAccessOptions: .specifiedRecipientsOnly)) {
                 try await invite.sync.prepareShare()
             }
         }
@@ -277,6 +316,19 @@ enum QRCode {
 /// Items another device or the partner changed or deleted in the last 30 days, with Restore.
 struct RecentChangesView: View {
     @EnvironmentObject var store: BudgetStore
+    @EnvironmentObject var subscriptions: SubscriptionStore
+    @State private var confirmingRestoreAll = false
+
+    private var deletions: [RecentChange] { store.recentChanges.filter { $0.kind == .deleted } }
+
+    private func restore(_ change: RecentChange) {
+        if change.collection == "contracts" {
+            subscriptions.restore(change)
+            store.forget(change)
+        } else {
+            store.restore(change)
+        }
+    }
 
     var body: some View {
         List {
@@ -289,7 +341,7 @@ struct RecentChangesView: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("Restore") { store.restore(change) }
+                    Button("Restore") { restore(change) }
                         .buttonStyle(.bordered)
                 }
             }
@@ -299,6 +351,20 @@ struct RecentChangesView: View {
                 ContentUnavailableView("Nothing changed elsewhere", systemImage: "clock.arrow.circlepath",
                                        description: Text("Items changed or deleted on another device or by your partner appear here for 30 days."))
             }
+        }
+        .toolbar {
+            // Many items deleted at once (a reset or a mistake on another device) come back in one go.
+            if deletions.count > 1 {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Restore All Deleted") { confirmingRestoreAll = true }
+                }
+            }
+        }
+        .confirmationDialog("Restore \(deletions.count) deleted items?", isPresented: $confirmingRestoreAll, titleVisibility: .visible) {
+            Button("Restore \(deletions.count) Items") { for change in deletions { restore(change) } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("They come back on this device and on every device that shares them.")
         }
         .navigationTitle("Recently changed")
     }

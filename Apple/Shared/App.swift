@@ -99,9 +99,15 @@ struct BudgetReceiptsApp: App {
             // Joining a partner's household says what happened, even when it fails.
             .alert(syncStatus.invite?.title ?? "", isPresented: Binding(
                 get: { syncStatus.invite != nil && syncStatus.invite != .joining && (!settings.appLockEnabled || lock.isUnlocked) },
-                set: { if !$0 { syncStatus.invite = nil } }
+                // Each button sets what comes next itself (Join leads to "Joining…").
+                set: { _ in }
             )) {
-                Button("OK") { syncStatus.invite = nil }
+                if case .confirming = syncStatus.invite {
+                    Button("Join") { ShareAcceptor.shared.confirm() }
+                    Button("Not Now", role: .cancel) { ShareAcceptor.shared.decline() }
+                } else {
+                    Button("OK") { syncStatus.invite = nil }
+                }
             } message: {
                 Text(syncStatus.invite?.message ?? "")
             }
@@ -187,6 +193,7 @@ enum AppModel {
     /// Sets up what has to be ready before any screen (or a Siri request) uses the stores.
     static let started: Void = {
         store.didChange = { WidgetBridge.scheduleRefresh() }
+        subscriptions.didReceiveChanges = { store.noteRecentChanges($0) }
     }()
     static let syncStatus = SyncStatus()
     private(set) static var cloud: CloudSync?
