@@ -919,7 +919,9 @@ final class BudgetStore: ObservableObject {
         transactions.insert(contentsOf: result.newTransactions, at: 0)
         transactions.sort { $0.date > $1.date }
         let status = result.duplicates.isEmpty ? "Imported" : "Imported, \(result.duplicates.count) already present"
-        imports.insert(ImportRecord(fileName: fileName, transactionCount: result.newTransactions.count, status: status), at: 0)
+        let importedAccounts = Set(result.newTransactions.compactMap(\.accountID))
+        imports.insert(ImportRecord(fileName: fileName, transactionCount: result.newTransactions.count, status: status,
+                                    accountID: importedAccounts.count == 1 ? importedAccounts.first : nil), at: 0)
         let joined = reconcileLoggedPayments()
         let matched = matchPendingReceipts()
         if UserDefaults.standard.object(forKey: "readForeignAmounts") as? Bool ?? true {
@@ -1409,23 +1411,30 @@ extension BudgetStore: SyncSource {
         return records.map { $0.isPrivate ? $0 : HouseholdPerspective.flipped($0) }
     }
 
+    /// True when a payment is kept from the partner: marked private, or from a private account.
+    func isPrivate(_ transaction: BankTransaction) -> Bool {
+        transaction.isPrivate == true || transaction.accountID.map { id in accounts.contains { $0.id == id && $0.isPrivate == true } } == true
+    }
+
     /// The items from this device's own point of view.
     private func localRecords() -> [SyncRecord] {
         let privateAccounts = Set(accounts.filter { $0.isPrivate == true }.map(\.id))
         func isPrivate(_ transaction: BankTransaction) -> Bool {
             transaction.isPrivate == true || transaction.accountID.map(privateAccounts.contains) == true
         }
+        // Comments and history about a private payment would tell the partner about it.
+        let privatePayments = Set(transactions.filter(isPrivate).map(\.id))
         return SyncRecord.records(transactions, collection: "transactions", id: \.fingerprint, isPrivate: isPrivate)
-            + SyncRecord.records(changes, collection: "changes", id: \.id.uuidString)
+            + SyncRecord.records(changes, collection: "changes", id: \.id.uuidString, isPrivate: { privatePayments.contains($0.transactionID) })
             + SyncRecord.records(budgets, collection: "budgets", id: \.id.uuidString)
-            + SyncRecord.records(imports, collection: "imports", id: \.id.uuidString)
+            + SyncRecord.records(imports, collection: "imports", id: \.id.uuidString, isPrivate: { $0.accountID.map(privateAccounts.contains) == true })
             + SyncRecord.records([couple], collection: "couple", id: { _ in "settings" })
             + SyncRecord.records(settlements, collection: "settlements", id: \.id.uuidString)
             + SyncRecord.records(pendingReceipts, collection: "pendingReceipts", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })
             + SyncRecord.records(accounts, collection: "accounts", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })
             + SyncRecord.records(wealthAccounts, collection: "wealth", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })
-            + SyncRecord.records(notes, collection: "notes", id: \.id.uuidString)
-            + SyncRecord.records(rules, collection: "rules", id: \.id.uuidString)
+            + SyncRecord.records(notes, collection: "notes", id: \.id.uuidString, isPrivate: { privatePayments.contains($0.transactionID) })
+            + SyncRecord.records(rules, collection: "rules", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })
             + SyncRecord.records(categories, collection: "categories", id: \.id)
             + SyncRecord.records(goals, collection: "goals", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })
             + SyncRecord.records(trips, collection: "trips", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })

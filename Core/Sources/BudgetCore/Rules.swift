@@ -118,6 +118,9 @@ public struct CategoryRule: Identifiable, Codable, Hashable, Sendable {
     public var isEnabled: Bool
     /// Shipped with the app (people can still change or turn it off).
     public var isStarter: Bool
+    /// Kept out of a shared household, e.g. a rule made from a private payment, whose shop
+    /// name would otherwise tell the partner about it. Nil means shared.
+    public var isPrivate: Bool? = nil
 
     public init(id: UUID = UUID(), name: String, conditions: [Condition], matchAll: Bool = true,
                 category: String, subcategory: String? = nil, isEnabled: Bool = true, isStarter: Bool = false) {
@@ -216,11 +219,14 @@ public enum RulesEngine {
     }
 
     /// A rule for payments like this one: its shop name, to the given category.
-    public static func rule(from transaction: BankTransaction, category: String, subcategory: String?) -> CategoryRule {
+    /// A rule made from a private payment starts private (`isPrivate`), so its shop name stays private too.
+    public static func rule(from transaction: BankTransaction, category: String, subcategory: String?, isPrivate: Bool = false) -> CategoryRule {
         let shop = Categoriser.merchantKey(transaction.merchant)
         let name = shop.isEmpty ? transaction.merchant : shop.capitalized
-        return CategoryRule(name: name, conditions: [.init(.description, .contains, shop.isEmpty ? transaction.merchant : shop)],
-                            category: category, subcategory: subcategory)
+        var rule = CategoryRule(name: name, conditions: [.init(.description, .contains, shop.isEmpty ? transaction.merchant : shop)],
+                                category: category, subcategory: subcategory)
+        if isPrivate || transaction.isPrivate == true { rule.isPrivate = true }
+        return rule
     }
 
     /// Payments between the account holders' own accounts: a bank transfer code (OBP online

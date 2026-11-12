@@ -236,12 +236,14 @@ struct CategoryPickers: View {
 
 /// In a payment's detail: turn this payment's category into a rule for the same shop.
 struct MakeRuleButton: View {
+    @EnvironmentObject var store: BudgetStore
     let transaction: BankTransaction
     @State private var draft: CategoryRule?
 
     var body: some View {
         Button {
-            draft = RulesEngine.rule(from: transaction, category: transaction.category == "Uncategorised" ? FinanceCategories.resolve("Groceries") : transaction.category, subcategory: transaction.subcategory)
+            draft = RulesEngine.rule(from: transaction, category: transaction.category == "Uncategorised" ? FinanceCategories.resolve("Groceries") : transaction.category,
+                                     subcategory: transaction.subcategory, isPrivate: store.isPrivate(transaction))
         } label: {
             Label("Make a Rule for Payments Like This", systemImage: "wand.and.stars")
         }
