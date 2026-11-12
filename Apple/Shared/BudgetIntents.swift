@@ -10,12 +10,16 @@ struct BudgetLeftIntent: AppIntent {
     static let title: LocalizedStringResource = "Budget Left"
     static let description = IntentDescription("Says how much is left in this month's budgets, and how much is safe to spend today.")
 
+    /// Figures are read out, so a locked iPhone must be unlocked first.
+    static var authenticationPolicy: IntentAuthenticationPolicy { .requiresAuthentication }
+
     @Parameter(title: "Category", description: "Leave empty for all your budgets.")
     var category: String?
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         _ = AppModel.started
+        if let locked = BudgetAnswers.appLockAnswer { return .result(value: locked, dialog: IntentDialog(stringLiteral: locked)) }
         let answer = BudgetAnswers.left(category: category, store: AppModel.store, subscriptions: AppModel.subscriptions)
         return .result(value: answer, dialog: IntentDialog(stringLiteral: answer))
     }
@@ -37,6 +41,10 @@ struct LogPaymentIntent: AppIntent {
     @Parameter(title: "Card", description: "The card's name from Wallet. It's matched to your accounts by name or last four digits.")
     var card: String?
 
+    /// Allowed while the iPhone is locked, so the Apple Pay automation still works: it only
+    /// adds a payment and repeats back what it was given, never anything already in the app.
+    static var authenticationPolicy: IntentAuthenticationPolicy { .alwaysAllowed }
+
     static var parameterSummary: some ParameterSummary {
         Summary("Log \(\.$amount) at \(\.$merchant)") { \.$card }
     }
@@ -56,12 +64,16 @@ struct AskBudgetIntent: AppIntent {
     static let title: LocalizedStringResource = "Ask Your Budget"
     static let description = IntentDescription("Answers a question about your spending, budgets, bills or goals, on this device.")
 
+    /// Answers are read out, so a locked iPhone must be unlocked first.
+    static var authenticationPolicy: IntentAuthenticationPolicy { .requiresAuthentication }
+
     @Parameter(title: "Question", requestValueDialog: "What would you like to know?")
     var question: String
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         _ = AppModel.started
+        if let locked = BudgetAnswers.appLockAnswer { return .result(value: locked, dialog: IntentDialog(stringLiteral: locked)) }
         let answer = await BudgetAssistant.answer(question, store: AppModel.store, subscriptions: AppModel.subscriptions)
         return .result(value: answer, dialog: IntentDialog(stringLiteral: answer))
     }
@@ -92,6 +104,12 @@ struct DuoBudgetShortcuts: AppShortcutsProvider {
 /// Plain answers worked out from the stores, shared by Siri and the Ask screen.
 @MainActor
 enum BudgetAnswers {
+    /// With the app lock on, Siri and Shortcuts don't read out figures: the app's own lock
+    /// (Face ID inside the app) can't be asked for from Siri.
+    static var appLockAnswer: String? {
+        AppModel.settings.appLockEnabled ? "Duo Budget is locked. Open the app to see your budget." : nil
+    }
+
     static func left(category: String?, store: BudgetStore, subscriptions: SubscriptionStore, today: Date = Date()) -> String {
         let report = store.calculator.report(store.transactions, budgets: store.budgets, month: today)
         if let category = category?.trimmingCharacters(in: .whitespaces), !category.isEmpty {

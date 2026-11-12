@@ -58,7 +58,11 @@ struct BudgetReceiptsApp: App {
                 Task { await SharedReceiptReader.open(url, into: store) }
             }
             .environmentObject(navigator)
-            .sheet(isPresented: $navigator.asking) {
+            // Only once unlocked: a duobudget://ask link must not show figures over the lock.
+            .sheet(isPresented: Binding(
+                get: { navigator.asking && (!settings.appLockEnabled || lock.isUnlocked) },
+                set: { navigator.asking = $0 }
+            )) {
                 NavigationStack { AskBudgetView() }
                     .environmentObject(store)
                     .environmentObject(subscriptions)
