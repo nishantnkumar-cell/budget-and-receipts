@@ -147,7 +147,7 @@ struct NextBillView: View {
             case .accessoryRectangular:
                 VStack(alignment: .leading, spacing: 1) {
                     Label("Next bill", systemImage: "calendar").font(.caption2.weight(.semibold))
-                    Text(next.name).font(.headline).lineLimit(1)
+                    Text(next.name).font(.headline).lineLimit(1).privacySensitive()
                     Text("\(snapshot.money(next.amount)) · \(when(next.date))").font(.caption).privacySensitive()
                 }
             case .systemMedium:
@@ -155,7 +155,7 @@ struct NextBillView: View {
                     Label("Next bills", systemImage: "calendar").font(.caption.weight(.semibold)).foregroundStyle(violet)
                     ForEach(bills.prefix(3), id: \.self) { bill in
                         HStack {
-                            Text(bill.name).lineLimit(1)
+                            Text(bill.name).lineLimit(1).privacySensitive()
                             Spacer()
                             Text(when(bill.date)).foregroundStyle(.secondary)
                             Text(snapshot.money(bill.amount)).fontWeight(.semibold).monospacedDigit().privacySensitive()
@@ -168,7 +168,7 @@ struct NextBillView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Label("Next bill", systemImage: "calendar").font(.caption.weight(.semibold)).foregroundStyle(violet)
                     Spacer(minLength: 0)
-                    Text(next.name).font(.headline).lineLimit(2)
+                    Text(next.name).font(.headline).lineLimit(2).privacySensitive()
                     Text(snapshot.money(next.amount)).font(.system(.title2, design: .rounded).weight(.bold)).privacySensitive()
                     Text(when(next.date)).font(.caption).foregroundStyle(.secondary)
                 }

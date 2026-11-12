@@ -70,12 +70,11 @@ final class IntentsWidgetStoreTests: XCTestCase {
         XCTAssertTrue(hidden.bills.isEmpty)
     }
 
-    func testWidgetsHideAmountsWhileTheAppLockIsOn() throws {
+    func testWidgetsFollowTheirOwnSettingNotTheAppLock() throws {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: "widget-lock-\(UUID())"))
         XCTAssertTrue(WidgetBridge.showsAmounts(in: defaults))
         defaults.set(true, forKey: "appLockEnabled")
-        XCTAssertFalse(WidgetBridge.showsAmounts(in: defaults))
-        defaults.set(false, forKey: "appLockEnabled")
+        XCTAssertTrue(WidgetBridge.showsAmounts(in: defaults))
         defaults.set(false, forKey: WidgetBridge.showAmountsKey)
         XCTAssertFalse(WidgetBridge.showsAmounts(in: defaults))
     }
