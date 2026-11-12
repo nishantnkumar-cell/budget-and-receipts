@@ -43,6 +43,24 @@ final class ContractDocumentTests: XCTestCase {
         XCTAssertNotNil(CloudSync.fileForUpload(store.documentFiles.folder.appendingPathComponent(name)))
     }
 
+    func testContractDeletedElsewhereCanBeRestored() throws {
+        let store = SubscriptionStore(folder: folder)
+        let budget = BudgetStore(folder: folder)
+        budget.householdRole = .owner
+        store.didReceiveChanges = { budget.noteRecentChanges($0) }
+        let item = contract(private: false)
+        store.save(item)
+        store.applySync(saves: [], deletes: [SyncRecord.key("contracts", item.id.uuidString)])
+        XCTAssertTrue(store.contracts.isEmpty)
+        let change = try XCTUnwrap(budget.recentChanges.first { $0.collection == "contracts" })
+        XCTAssertEqual(change.kind, .deleted)
+        XCTAssertTrue(change.byPartner, "In a household a deletion may be the partner's")
+        store.restore(change)
+        budget.forget(change)
+        XCTAssertEqual(store.contracts.map(\.id), [item.id])
+        XCTAssertFalse(budget.recentChanges.contains { $0.id == change.id })
+    }
+
     func testDeletingTheContractDeletesItsFiles() throws {
         let store = SubscriptionStore(folder: folder)
         let name = try store.documentFiles.save(samplePDF(), isPDF: true)

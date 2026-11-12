@@ -53,6 +53,8 @@ final class SyncStatus: ObservableObject {
     @Published var invite: InviteProgress?
 
     enum InviteProgress: Equatable {
+        /// An invitation was opened: who sent it, waiting for Join or Not Now.
+        case confirming(String)
         case joining
         /// The invitation arrived but iCloud sync isn't running, so it waits.
         case waitingForSync(String)
@@ -61,6 +63,7 @@ final class SyncStatus: ObservableObject {
 
         var title: String {
             switch self {
+            case .confirming: "Join this household?"
             case .joining: "Joining the household…"
             case .waitingForSync: "Can't join yet"
             case .joined: "You've joined the household"
@@ -70,6 +73,7 @@ final class SyncStatus: ObservableObject {
 
         var message: String {
             switch self {
+            case .confirming(let inviter): "\(inviter) invited you to share a Duo Budget household. Everything you haven't marked Private, including payments, receipts, budgets and contracts, will be shared with them. Only join if you know this person and expected the invitation."
             case .joining: "Duo Budget is accepting the invitation with iCloud."
             case .waitingForSync(let reason), .failed(let reason): reason
             case .joined(let owner): "You now share everything that isn't private with \(owner). It can take a minute for their items to appear."
@@ -504,7 +508,10 @@ actor CloudSync: CKSyncEngineDelegate {
         let database = container.privateCloudDatabase
         let shareID = CKRecord.ID(recordName: CKRecordNameZoneWideShare, zoneID: Self.householdZone)
         if let existing = try? await database.record(for: shareID) as? CKShare {
-            return existing
+            guard existing.publicPermission != .none else { return existing }
+            // Only invited people may join: close a share that was left open to anyone with the link.
+            existing.publicPermission = .none
+            return (try await database.save(existing) as? CKShare) ?? existing
         }
         let share = CKShare(recordZoneID: Self.householdZone)
         share[CKShare.SystemFieldKey.title] = "Duo Budget household"
@@ -543,8 +550,34 @@ actor CloudSync: CKSyncEngineDelegate {
     }
 
     /// Joins a partner's household from their invitation. Shared items on this device move into it.
+    /// Why an invitation is turned down before anything is shared.
+    enum InviteRefusal: LocalizedError {
+        case openToAnyone, alreadySharing, alreadyMember
+
+        var errorDescription: String? {
+            switch self {
+            case .openToAnyone: "This invitation is open to anyone who has the link, so Duo Budget won't join it. Ask your partner to invite your Apple ID instead."
+            case .alreadySharing: "You already share your own household. Stop sharing it in Settings › Partner before joining another one."
+            case .alreadyMember: "You're already in another household. Leave it in Settings › Partner before joining this one."
+            }
+        }
+    }
+
     func accept(_ metadata: CKShare.Metadata) async throws {
         guard let container else { throw CKError(.notAuthenticated) }
+        let zone = metadata.share.recordID.zoneID
+        guard metadata.share.publicPermission == .none else { throw InviteRefusal.openToAnyone }
+        switch household.role {
+        case .owner:
+            // Owning a household nobody has joined (only invitations made) is fine to give up.
+            let shareID = CKRecord.ID(recordName: CKRecordNameZoneWideShare, zoneID: Self.householdZone)
+            let share = try? await container.privateCloudDatabase.record(for: shareID) as? CKShare
+            if share?.participants.contains(where: { $0.role != .owner && $0.acceptanceStatus != .removed }) ?? false {
+                throw InviteRefusal.alreadySharing
+            }
+        case .member where household.zoneName != zone.zoneName || household.zoneOwner != zone.ownerName: throw InviteRefusal.alreadyMember
+        case .member, .solo: break
+        }
         log("Accepting household invitation from zone \(metadata.share.recordID.zoneID.zoneName), status \(metadata.participantStatus.rawValue)")
         do {
             _ = try await container.accept(metadata)
@@ -553,7 +586,6 @@ actor CloudSync: CKSyncEngineDelegate {
             throw error
         }
         log("Accepted household invitation")
-        let zone = metadata.share.recordID.zoneID
         household = HouseholdLink(role: .member, zoneName: zone.zoneName, zoneOwner: zone.ownerName,
                                   sharedBy: metadata.ownerIdentity.nameComponents.map { PersonNameComponentsFormatter().string(from: $0) } ?? "your partner")
         saveHousehold()
