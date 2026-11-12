@@ -3,34 +3,34 @@ import XCTest
 
 final class AccountHolderTests: XCTestCase {
     func testStatementInThePartnersNameIsTheirs() {
-        XCTAssertEqual(AccountHolders.owner(holders: ["SHWETA KUMAR"], myName: "Nishant", partnerName: "Shweta"), .partner)
-        XCTAssertEqual(AccountHolders.owner(holders: ["NISHANT KUMAR"], myName: "Nishant Kumar", partnerName: "Shweta"), .mine)
-        XCTAssertEqual(AccountHolders.owner(holders: ["NISHANT KUMAR", "SHWETA KUMAR"], myName: "Nishant", partnerName: "Shweta"), .shared)
+        XCTAssertEqual(AccountHolders.owner(holders: ["SARA PATEL"], myName: "Neil", partnerName: "Sara"), .partner)
+        XCTAssertEqual(AccountHolders.owner(holders: ["NEIL PATEL"], myName: "Neil Patel", partnerName: "Sara"), .mine)
+        XCTAssertEqual(AccountHolders.owner(holders: ["NEIL PATEL", "SARA PATEL"], myName: "Neil", partnerName: "Sara"), .shared)
     }
 
     func testInitialsOnTheStatement() {
-        XCTAssertEqual(AccountHolders.owner(holders: ["S KUMAR"], myName: "Nishant", partnerName: "Shweta Kumar"), .partner)
-        XCTAssertNil(AccountHolders.owner(holders: ["S KUMAR"], myName: "Sam", partnerName: "Shweta"), "Same initial: can't tell")
+        XCTAssertEqual(AccountHolders.owner(holders: ["S PATEL"], myName: "Neil", partnerName: "Sara Patel"), .partner)
+        XCTAssertNil(AccountHolders.owner(holders: ["S PATEL"], myName: "Sam", partnerName: "Sara"), "Same initial: can't tell")
     }
 
     func testWithoutYourNameAnyoneButYourPartnerIsYou() {
-        XCTAssertEqual(AccountHolders.owner(holders: ["SHWETA KUMAR"], myName: nil, partnerName: "Shweta"), .partner)
-        XCTAssertEqual(AccountHolders.owner(holders: ["NISHANT KUMAR", "SHWETA KUMAR"], myName: "", partnerName: "Shweta"), .shared)
-        XCTAssertEqual(AccountHolders.owner(holders: ["NISHANT KUMAR"], myName: nil, partnerName: "Shweta"), .mine)
+        XCTAssertEqual(AccountHolders.owner(holders: ["SARA PATEL"], myName: nil, partnerName: "Sara"), .partner)
+        XCTAssertEqual(AccountHolders.owner(holders: ["NEIL PATEL", "SARA PATEL"], myName: "", partnerName: "Sara"), .shared)
+        XCTAssertEqual(AccountHolders.owner(holders: ["NEIL PATEL"], myName: nil, partnerName: "Sara"), .mine)
     }
 
     func testSomeoneElseOrNobody() {
-        XCTAssertNil(AccountHolders.owner(holders: ["JOHN SMITH"], myName: "Nishant", partnerName: "Shweta"))
-        XCTAssertNil(AccountHolders.owner(holders: [], myName: "Nishant", partnerName: "Shweta"))
-        XCTAssertFalse(AccountHolders.matches(holder: "SHWETA SINGH", person: "Shweta Kumar"), "A different surname is someone else")
-        XCTAssertTrue(AccountHolders.matches(holder: "MRS SHWETA KUMAR", person: "shweta"))
+        XCTAssertNil(AccountHolders.owner(holders: ["JOHN SMITH"], myName: "Neil", partnerName: "Sara"))
+        XCTAssertNil(AccountHolders.owner(holders: [], myName: "Neil", partnerName: "Sara"))
+        XCTAssertFalse(AccountHolders.matches(holder: "SARA SINGH", person: "Sara Patel"), "A different surname is someone else")
+        XCTAssertTrue(AccountHolders.matches(holder: "MRS SARA PATEL", person: "sara"))
     }
 
     func testHoldersFromTheAddress() {
-        XCTAssertEqual(PDFStatementParser.holderNames(in: ["Your HSBC Credit Card statement", "Mrs Shweta Kumar", "1 High Street"]), ["SHWETA KUMAR"])
-        XCTAssertEqual(PDFStatementParser.holderNames(in: ["MR N KUMAR & MRS S. KUMAR", "1 High Street"]), ["N KUMAR", "S. KUMAR"])
-        XCTAssertEqual(PDFStatementParser.holderNames(in: ["Mr Kumar", "03 Oct DR MARTENS 12.00"]), [], "One word, or a payment line, isn't a holder")
+        XCTAssertEqual(PDFStatementParser.holderNames(in: ["Your HSBC Credit Card statement", "Mrs Sara Patel", "1 High Street"]), ["SARA PATEL"])
+        XCTAssertEqual(PDFStatementParser.holderNames(in: ["MR N PATEL & MRS S. PATEL", "1 High Street"]), ["N PATEL", "S. PATEL"])
+        XCTAssertEqual(PDFStatementParser.holderNames(in: ["Mr Patel", "03 Oct DR MARTENS 12.00"]), [], "One word, or a payment line, isn't a holder")
         // The line next to the sort code wins over the address.
-        XCTAssertEqual(PDFStatementParser.holderNames(in: ["Mrs Shweta Kumar", "MR NISHANT KUMAR 40-47-60 51385429"]), ["NISHANT KUMAR"])
+        XCTAssertEqual(PDFStatementParser.holderNames(in: ["Mrs Sara Patel", "MR NEIL PATEL 11-22-33 11112222"]), ["NEIL PATEL"])
     }
 }

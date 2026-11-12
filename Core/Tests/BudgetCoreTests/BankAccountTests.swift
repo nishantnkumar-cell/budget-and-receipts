@@ -33,9 +33,9 @@ final class BankAccountTests: XCTestCase {
         XCTAssertEqual(PDFStatementParser.accountName(in: ["Your HSBC Premier Credit Card Statement"]), "HSBC credit card")
         XCTAssertEqual(PDFStatementParser.accountName(in: ["first direct", "HSBC UK Bank plc"]), "first direct")
         XCTAssertEqual(PDFStatementParser.accountName(in: ["Capital One credit card statement"]), "Capital One")
-        XCTAssertEqual(PDFStatementParser.accountNumber(in: ["Mrs A Person 40-25-02 61831674 536"]), "61831674")
-        XCTAssertEqual(PDFStatementParser.accountNumber(in: ["MR A PERSON xxxx-xxxxxx-83007 05/09/26"]), "83007")
-        XCTAssertEqual(PDFStatementParser.accountNumber(in: ["Statement Date 21 August 2026 Card number 5434 58** **** 9801"]), "9801")
+        XCTAssertEqual(PDFStatementParser.accountNumber(in: ["Mrs A Person 44-55-66 33334444 536"]), "33334444")
+        XCTAssertEqual(PDFStatementParser.accountNumber(in: ["MR A PERSON xxxx-xxxxxx-12345 05/09/26"]), "12345")
+        XCTAssertEqual(PDFStatementParser.accountNumber(in: ["Statement Date 21 August 2026 Card number 1234 56** **** 4321"]), "4321")
     }
 
     func testLabelsShowOnlyTheLastFourDigits() {

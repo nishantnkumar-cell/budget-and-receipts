@@ -6,7 +6,7 @@ public enum AccountHolders {
     /// The owner the holders point to: only you is mine, only your partner is theirs, both of you
     /// is a joint (shared) account. Nil when the statement names nobody, or nobody it can tell apart.
     /// - Parameters:
-    ///   - holders: names as the statement prints them, e.g. ["SHWETA KUMAR"] or ["MRS S KUMAR"].
+    ///   - holders: names as the statement prints them, e.g. ["SARA PATEL"] or ["MRS S PATEL"].
     ///   - myName: your name from Settings; a first name alone is enough. Without it, a holder
     ///     who isn't your partner is taken to be you, so a joint account still reads as joint.
     ///   - partnerName: your partner's name from Settings; empty for a single-person budget.

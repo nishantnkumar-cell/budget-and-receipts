@@ -345,8 +345,8 @@ public enum PDFStatementParser {
     }
 
     /// The account holders on a statement, titles removed. First from the line that shows the
-    /// name next to the sort code ("MR NISHANT KUMAR & MRS SHWETA KUMAR 40-47-60 51385429"),
-    /// else from the address at the top, which starts with a title ("Mrs Shweta Kumar").
+    /// name next to the sort code ("MR NEIL PATEL & MRS SARA PATEL 11-22-33 11112222"),
+    /// else from the address at the top, which starts with a title ("Mrs Sara Patel").
     public static func holderNames(in lines: [String]) -> [String] {
         if let regex = try? NSRegularExpression(pattern: "^(.+?)\\s+\\d{2}-\\d{2}-\\d{2}\\s+\\d{8}\\b") {
             for line in lines.prefix(80) {
@@ -356,7 +356,7 @@ public enum PDFStatementParser {
                 if !found.isEmpty { return found }
             }
         }
-        // The addressee: a title, then only letters, e.g. "Mrs Shweta Kumar" or "MR N KUMAR & MRS S KUMAR".
+        // The addressee: a title, then only letters, e.g. "Mrs Sara Patel" or "MR N PATEL & MRS S PATEL".
         let title = "(?:MR|MRS|MS|MISS|DR|MX)\\.?"
         let addressee = "(?i)^\\s*\(title)\\s+[A-Z][A-Z' .-]*(?:\\s*(?:&|AND)\\s*\(title)\\s+[A-Z][A-Z' .-]*)?\\s*$"
         guard let regex = try? NSRegularExpression(pattern: addressee) else { return [] }
@@ -367,7 +367,7 @@ public enum PDFStatementParser {
         return []
     }
 
-    /// "MR NISHANT KUMAR & MRS SHWETA KUMAR" as ["NISHANT KUMAR", "SHWETA KUMAR"].
+    /// "MR NEIL PATEL & MRS SARA PATEL" as ["NEIL PATEL", "SARA PATEL"].
     static func people(in text: String) -> [String] {
         let titles: Set<String> = ["MR", "MRS", "MS", "MISS", "DR", "MX"]
         return text.uppercased()
@@ -406,15 +406,15 @@ public enum PDFStatementParser {
     static func accountNumber(in lines: [String]) -> String? {
         let patterns = [
             "(?i)account\\s*(?:number|no\\.?)\\s*:?\\s*([0-9][0-9 ]{3,})",
-            // UK sort code then account number, e.g. "40-25-02 12345678", or the other way round.
+            // UK sort code then account number, e.g. "00-00-00 12345678", or the other way round.
             "(?:^|\\s)\\d{2}-\\d{2}-\\d{2}\\s+(\\d{8})\\b",
             "\\b(\\d{8})\\s+\\d{2}-\\d{2}-\\d{2}\\b",
             "(?:[*xX•]{4}[ -]?){2,}(\\d{4})\\b",
-            // Amex membership numbers, masked like "xxxx-xxxxxx-83007".
+            // Amex membership numbers, masked like "xxxx-xxxxxx-12345".
             "[*xX•]{4}-[*xX•]{6}-(\\d{5})\\b",
             // A full card number: only its last four digits are kept.
             "(?i)card number\\s*\\d{4} \\d{4} \\d{4} (\\d{4})\\b",
-            // A card number with its middle masked, e.g. "Card number 5434 58** **** 9801", also
+            // A card number with its middle masked, e.g. "Card number 1234 56** **** 4321", also
             // when it sits on a line of its own.
             "(?i)card number\\s*\\d{4}\\s?[\\d*xX•]{4}\\s?[\\d*xX•]{4}\\s?(\\d{4})\\b",
             "^\\d{4}\\s?[\\d*xX•]{4}\\s?[\\d*xX•]{4}\\s?(\\d{4})$",

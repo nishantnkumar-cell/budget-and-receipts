@@ -64,7 +64,7 @@ final class EverydayInsightsTests: XCTestCase {
 
     func testJointAccountMakesItsPaymentsShared() {
         let joint = UUID()
-        var ledger = CoupleLedger(settings: CoupleSettings(partnerName: "Shweta"))
+        var ledger = CoupleLedger(settings: CoupleSettings(partnerName: "Sara"))
         ledger.accountOwners = [joint: .shared]
         var rent = BankTransaction(date: day(11, 1), merchant: "LANDLORD", amount: -1000, fingerprint: "r")
         rent.accountID = joint

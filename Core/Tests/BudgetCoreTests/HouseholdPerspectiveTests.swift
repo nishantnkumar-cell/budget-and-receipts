@@ -23,13 +23,13 @@ final class HouseholdPerspectiveTests: XCTestCase {
     }
 
     func testTurningTwiceGivesTheOriginal() {
-        let couple = CoupleSettings(partnerName: "Shweta", myShare: Decimal(string: "0.6")!, rules: [OwnerRule(match: .merchant("Netflix"), owner: .mine)], defaultOwner: .shared)
+        let couple = CoupleSettings(partnerName: "Sara", myShare: Decimal(string: "0.6")!, rules: [OwnerRule(match: .merchant("Netflix"), owner: .mine)], defaultOwner: .shared)
         var withOwner = couple
-        withOwner.ownerName = "Nishant"
+        withOwner.ownerName = "Neil"
         let once = HouseholdPerspective.flipped(record(withOwner, "couple"))
         let seen = decode(once, as: CoupleSettings.self)
-        XCTAssertEqual(seen.partnerName, "Nishant")
-        XCTAssertEqual(seen.ownerName, "Shweta")
+        XCTAssertEqual(seen.partnerName, "Neil")
+        XCTAssertEqual(seen.ownerName, "Sara")
         XCTAssertEqual(seen.myShare, Decimal(string: "0.4"))
         XCTAssertEqual(seen.rules.first?.owner, .partner)
         XCTAssertEqual(decode(HouseholdPerspective.flipped(once), as: CoupleSettings.self), withOwner)

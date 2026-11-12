@@ -37,7 +37,7 @@ final class HouseholdStoreTests: XCTestCase {
     func testPartnerCantChangeCoupleSettingsOrOwnersAccounts() {
         let store = BudgetStore(folder: folder)
         store.householdRole = .owner
-        store.updateCouple(CoupleSettings(partnerName: "Shweta"))
+        store.updateCouple(CoupleSettings(partnerName: "Sara"))
         let mine = store.addAccount(name: "My current")
         var hijacked = mine
         hijacked.name = "Changed by partner"
@@ -47,7 +47,7 @@ final class HouseholdStoreTests: XCTestCase {
         coupleRecord.byPartner = true
         store.applySync(saves: [accountRecord, coupleRecord], deletes: [])
         XCTAssertEqual(store.accounts.first?.name, "My current")
-        XCTAssertEqual(store.couple.partnerName, "Shweta")
+        XCTAssertEqual(store.couple.partnerName, "Sara")
         XCTAssertEqual(store.rejectedKeys([]), [accountRecord.key, coupleRecord.key])
     }
 

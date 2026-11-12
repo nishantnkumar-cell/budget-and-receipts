@@ -80,13 +80,13 @@ final class RulesTests: XCTestCase {
 
     func testPaymentsBetweenAccountHoldersAreTransfers() {
         let names = PDFStatementParser.holderNames(in: ["Account Name Sortcode Account Number Sheet Number",
-                                                        "MR NISHANT KUMAR & MRS SHWETA KUMAR 40-47-60 51385429 488"])
-        XCTAssertEqual(names, ["NISHANT KUMAR", "SHWETA KUMAR"])
-        XCTAssertEqual(PDFStatementParser.holderNames(in: ["Mrs Shweta Kumar 40-25-02 61831674 540"]), ["SHWETA KUMAR"])
+                                                        "MR NEIL PATEL & MRS SARA PATEL 11-22-33 11112222 488"])
+        XCTAssertEqual(names, ["NEIL PATEL", "SARA PATEL"])
+        XCTAssertEqual(PDFStatementParser.holderNames(in: ["Mrs Sara Patel 44-55-66 33334444 540"]), ["SARA PATEL"])
         let rule = RulesEngine.selfTransferRule(names: names)!
-        XCTAssertTrue(rule.matches(payment("OBP Nishant Kumar OBA7Q7O9LS62", -50)))
+        XCTAssertTrue(rule.matches(payment("OBP Neil Patel OBA3X5K8PQ21", -50)))
         XCTAssertFalse(rule.matches(payment("OBP John Smith", -50)), "Paying someone else is spending")
-        XCTAssertFalse(rule.matches(payment("NISHANT KUMAR BOOKS", -5)), "A name alone isn't a transfer")
+        XCTAssertFalse(rule.matches(payment("NEIL PATEL BOOKS", -5)), "A name alone isn't a transfer")
         XCTAssertNil(RulesEngine.selfTransferRule(names: []))
     }
 

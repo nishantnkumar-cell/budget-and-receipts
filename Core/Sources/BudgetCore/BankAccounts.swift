@@ -14,8 +14,8 @@ public struct BankAccount: Identifiable, Codable, Hashable, Sendable {
     /// Whose account it is: a partner's account makes its spending theirs (and paid by them),
     /// a joint account makes it shared. Nil or mine changes nothing.
     public var owner: MoneyOwner?
-    /// The account holders' names from its statements, e.g. ["NISHANT KUMAR", "SHWETA KUMAR"],
-    /// so a payment to one of you ("OBP NISHANT KUMAR") is known to be a transfer.
+    /// The account holders' names from its statements, e.g. ["NEIL PATEL", "SARA PATEL"],
+    /// so a payment to one of you ("OBP NEIL PATEL") is known to be a transfer.
     public var holderNames: [String]?
 
     public init(id: UUID = UUID(), name: String, number: String = "", cardEndings: [String] = []) {

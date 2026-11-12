@@ -45,7 +45,7 @@ final class NetWorthTests: XCTestCase {
         let owners = calculator.byOwner(accounts, on: day(2026, 10, 20))
         XCTAssertEqual(owners[.shared], 200_000)
         XCTAssertEqual(owners[.mine], 3_000)
-        let ledger = CoupleLedger(settings: CoupleSettings(partnerName: "Shweta"))
+        let ledger = CoupleLedger(settings: CoupleSettings(partnerName: "Sara"))
         XCTAssertEqual(calculator.total(accounts, for: .me, ledger: ledger, on: day(2026, 10, 20)), 3_000 + 100_000)
     }
 

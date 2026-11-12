@@ -20,7 +20,7 @@ final class TransferStoreTests: XCTestCase {
         let firstDirect = store.addAccount(name: "first direct")
         var out = BankTransaction(date: Date(), merchant: "OnLine Transaction FP 06", amount: -800, category: "Savings & investments", fingerprint: "out")
         out.accountID = natwest.id
-        var into = BankTransaction(date: Date(), merchant: "CR KUMAR N", amount: 800, category: "Income", fingerprint: "in")
+        var into = BankTransaction(date: Date(), merchant: "CR PATEL N", amount: 800, category: "Income", fingerprint: "in")
         into.accountID = firstDirect.id
         var amex = BankTransaction(date: Date(), merchant: "DD AMERICAN EXPRESS", amount: -300, category: "Shopping", fingerprint: "amex")
         amex.categoryChosen = true

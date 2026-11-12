@@ -20,7 +20,7 @@ final class TransferTests: XCTestCase {
         return transaction
     }
 
-    private func detect(_ transactions: [BankTransaction], names: [String] = ["NISHANT KUMAR", "SHWETA KUMAR"]) -> [String: TransferDetector.Change] {
+    private func detect(_ transactions: [BankTransaction], names: [String] = ["NEIL PATEL", "SARA PATEL"]) -> [String: TransferDetector.Change] {
         TransferDetector.detect(transactions, accounts: [current, savings, amex], names: names, calendar: calendar)
     }
 
@@ -50,20 +50,20 @@ final class TransferTests: XCTestCase {
     }
 
     func testYourOwnNamesTheWaysBanksWriteThem() {
-        let rows = [tx(1, "CR KUMAR N NISHANT/FDACC", "3000", "Income", current), tx(2, "SO KUMAR N&S FAMILY", "-2500", "Shopping", nil),
-                    tx(3, "CR FAMILY KUMAR S", "2500", "Income", nil), tx(4, "BP Mani Builder Nishant Hampton", "-1500", "Uncategorised", current),
-                    tx(5, "HCL PAYROLL NISHANT KUMAR", "6000", "Income", current)]
+        let rows = [tx(1, "CR PATEL N NEIL/FDACC", "3000", "Income", current), tx(2, "SO PATEL N&S FAMILY", "-2500", "Shopping", nil),
+                    tx(3, "CR FAMILY PATEL S", "2500", "Income", nil), tx(4, "BP Ace Builder Neil Smith", "-1500", "Uncategorised", current),
+                    tx(5, "ACME PAYROLL NEIL PATEL", "6000", "Income", current)]
         let found = detect(rows)
         XCTAssertEqual(found[rows[0].id]?.category, "Internal transfer")
         XCTAssertEqual(found[rows[1].id]?.category, "Internal transfer")
         XCTAssertEqual(found[rows[2].id]?.category, "Internal transfer")
-        XCTAssertNil(found[rows[3].id], "A builder called Nishant isn't you")
+        XCTAssertNil(found[rows[3].id], "A builder called Neil isn't you")
         XCTAssertNil(found[rows[4].id], "Pay mentioning your name is still pay")
     }
 
     func testTopUpsAndSavings() {
-        let rows = [tx(1, "MAS Revolut**2890 London", "-100", "Shopping", current), tx(2, "SO NS AND I 338149777", "-50", "Shopping", current),
-                    tx(3, "SO NS&I 3272107262", "-150", "Shopping", current)]
+        let rows = [tx(1, "MAS Revolut**1234 London", "-100", "Shopping", current), tx(2, "SO NS AND I 123456789", "-50", "Shopping", current),
+                    tx(3, "SO NS&I 1234567890", "-150", "Shopping", current)]
         let found = detect(rows)
         XCTAssertEqual(found[rows[0].id]?.category, "Internal transfer")
         XCTAssertEqual(found[rows[1].id]?.category, "Savings & investments")
@@ -118,11 +118,11 @@ final class TransferTests: XCTestCase {
     }
 
     func testSomeoneWithYourInitialAndSurnameIsntYou() {
-        let plumber = tx(1, "FPO N KUMAR PLUMBING", "-120", "Uncategorised", current)
-        let aunt = tx(2, "S KUMAR BIRTHDAY", "50", "Uncategorised", current)
-        let joint = tx(3, "SO KUMAR N&S", "-500", "Uncategorised", current)
+        let plumber = tx(1, "FPO N PATEL PLUMBING", "-120", "Uncategorised", current)
+        let aunt = tx(2, "S PATEL BIRTHDAY", "50", "Uncategorised", current)
+        let joint = tx(3, "SO PATEL N&S", "-500", "Uncategorised", current)
         let found = detect([plumber, aunt, joint])
-        XCTAssertNil(found[plumber.id], "N KUMAR is how a payee you typed reads")
+        XCTAssertNil(found[plumber.id], "N PATEL is how a payee you typed reads")
         XCTAssertNil(found[aunt.id])
         XCTAssertEqual(found[joint.id]?.category, "Internal transfer", "Surname then initials is how banks print a holder")
     }
@@ -152,17 +152,17 @@ final class TransferTests: XCTestCase {
     // MARK: Between the two of you, and cards not imported
 
     func testTransferToYourPartnersAccountIsBetweenYou() {
-        var hers = BankAccount(name: "Shweta first direct")
+        var hers = BankAccount(name: "Sara first direct")
         hers.owner = .partner
         var joint = BankAccount(name: "Joint")
         joint.owner = .shared
-        let toHer = tx(1, "OBP SHWETA KUMAR", "-200", "Uncategorised", current)
-        var arrived = tx(1, "CR KUMAR N", "200", "Uncategorised", nil)
+        let toHer = tx(1, "OBP SARA PATEL", "-200", "Uncategorised", current)
+        var arrived = tx(1, "CR PATEL N", "200", "Uncategorised", nil)
         arrived.accountID = hers.id
         let toJoint = tx(5, "SO JOINT ACCOUNT", "-500", "Uncategorised", current)
-        var intoJoint = tx(5, "CR KUMAR N", "500", "Uncategorised", nil)
+        var intoJoint = tx(5, "CR PATEL N", "500", "Uncategorised", nil)
         intoJoint.accountID = joint.id
-        let found = TransferDetector.detect([toHer, arrived, toJoint, intoJoint], accounts: [current, hers, joint], names: ["NISHANT KUMAR", "SHWETA KUMAR"], calendar: calendar)
+        let found = TransferDetector.detect([toHer, arrived, toJoint, intoJoint], accounts: [current, hers, joint], names: ["NEIL PATEL", "SARA PATEL"], calendar: calendar)
         XCTAssertEqual(found[toHer.id]?.subcategory, "Between you")
         XCTAssertEqual(found[arrived.id]?.subcategory, "Between you")
         XCTAssertEqual(found[toJoint.id]?.subcategory, "Between accounts", "Paying into the joint account isn't settling up")

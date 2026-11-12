@@ -3,7 +3,7 @@ import Foundation
 /// Finds money moving between your own accounts, so it never counts as spending or income:
 /// - the two sides of one transfer (£800 out of NatWest, £800 into first direct a day later),
 /// - credit card bills paid from the bank ("DD AMERICAN EXPRESS", "DD HSBC CARD PYMT"),
-/// - payments to or from your own names ("CR KUMAR N", "SO KUMAR N&S FAMILY"),
+/// - payments to or from your own names ("CR PATEL N", "SO PATEL N&S FAMILY"),
 /// - top-ups of your own Revolut or Monzo, and money put into savings such as NS&I.
 /// A category you chose yourself is never changed.
 public enum TransferDetector {
@@ -46,7 +46,7 @@ public enum TransferDetector {
     /// The transfers among `transactions`, by fingerprint, with the category each should have.
     /// Payments already in the right category are left out.
     /// - Parameters:
-    ///   - names: the account holders' names, e.g. "NISHANT KUMAR".
+    ///   - names: the account holders' names, e.g. "NEIL PATEL".
     public static func detect(_ transactions: [BankTransaction], accounts: [BankAccount], names: [String], calendar: Calendar = .current) -> [String: Change] {
         let candidates = transactions.filter { $0.categoryChosen != true && $0.splits.isEmpty && $0.amount != 0 }
         let people = names.compactMap(Person.init)
@@ -154,8 +154,8 @@ public enum TransferDetector {
         return phrases.contains { phrase in text.contains(" " + Categoriser.words(phrase).joined(separator: " ") + " ") }
     }
 
-    /// An account holder, recognised the ways banks write a holder's name: "NISHANT KUMAR",
-    /// "KUMAR N", or "KUMAR N&S" for a joint account. "N KUMAR" alone is not enough: that is
+    /// An account holder, recognised the ways banks write a holder's name: "NEIL PATEL",
+    /// "PATEL N", or "PATEL N&S" for a joint account. "N PATEL" alone is not enough: that is
     /// how a payee you typed reads, and many people share a surname and an initial.
     struct Person {
         let first: String
