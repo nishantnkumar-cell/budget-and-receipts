@@ -20,7 +20,7 @@ final class PDFStatementTests: XCTestCase {
     /// Text as PDFKit extracts it from a typical UK current account statement.
     private let current = [
         "Your Current Account statement",
-        "Mrs A Kumar",
+        "Mrs A Patel",
         "Account number 12345678   Sort code 12-34-56",
         "1 October 2026 to 31 October 2026",
         "Date Description Paid out Paid in Balance",

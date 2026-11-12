@@ -84,7 +84,7 @@ final class RulesTests: XCTestCase {
         XCTAssertEqual(names, ["NEIL PATEL", "SARA PATEL"])
         XCTAssertEqual(PDFStatementParser.holderNames(in: ["Mrs Sara Patel 44-55-66 33334444 540"]), ["SARA PATEL"])
         let rule = RulesEngine.selfTransferRule(names: names)!
-        XCTAssertTrue(rule.matches(payment("OBP Nishant Kumar OBA3X5K8PQ21", -50)))
+        XCTAssertTrue(rule.matches(payment("OBP Neil Patel OBA3X5K8PQ21", -50)))
         XCTAssertFalse(rule.matches(payment("OBP John Smith", -50)), "Paying someone else is spending")
         XCTAssertFalse(rule.matches(payment("NEIL PATEL BOOKS", -5)), "A name alone isn't a transfer")
         XCTAssertNil(RulesEngine.selfTransferRule(names: []))

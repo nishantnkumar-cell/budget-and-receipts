@@ -57,7 +57,7 @@ final class TransferTests: XCTestCase {
         XCTAssertEqual(found[rows[0].id]?.category, "Internal transfer")
         XCTAssertEqual(found[rows[1].id]?.category, "Internal transfer")
         XCTAssertEqual(found[rows[2].id]?.category, "Internal transfer")
-        XCTAssertNil(found[rows[3].id], "A builder called Nishant isn't you")
+        XCTAssertNil(found[rows[3].id], "A builder called Neil isn't you")
         XCTAssertNil(found[rows[4].id], "Pay mentioning your name is still pay")
     }
 
