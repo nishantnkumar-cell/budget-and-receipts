@@ -35,7 +35,7 @@ final class SharedReceiptTests: XCTestCase {
 
         await SharedReceiptReader.readDropped(into: store, folder: drop)
 
-        // Imported straight away (Nishant: imports should be automatic), and matched.
+        // Imported straight away (Neil: imports should be automatic), and matched.
         XCTAssertEqual(store.transactions.count, 1)
         XCTAssertTrue(SharedReceiptDrop.waitingFiles(in: drop).isEmpty, "Shared copies are removed once read")
         XCTAssertEqual(store.sharedDocuments.first?.summary, "Imported as a statement: 1 payment")
