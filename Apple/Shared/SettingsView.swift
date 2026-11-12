@@ -56,6 +56,7 @@ struct SettingsView: View {
             AccountsSettingsSection()
             Section {
                 Toggle("Lock with \(AppLock().methodName)", isOn: $settings.appLockEnabled)
+                    .onChange(of: settings.appLockEnabled) { WidgetBridge.refreshNow() }
             } header: {
                 Text("Privacy")
             } footer: {
@@ -90,13 +91,14 @@ struct SettingsView: View {
                 Text("Statements often show what a payment abroad cost in the local currency. The app reads it to show the exchange rate and card fees on your trips.")
             }
             Section {
-                Toggle("Show amounts in widgets", isOn: Binding(get: { widgetsShowAmounts }, set: { widgetsShowAmounts = $0; WidgetBridge.refreshNow() }))
+                Toggle("Show amounts in widgets", isOn: Binding(get: { widgetsShowAmounts && !settings.appLockEnabled }, set: { widgetsShowAmounts = $0; WidgetBridge.refreshNow() }))
+                    .disabled(settings.appLockEnabled)
                 Toggle("Answer questions with Apple Intelligence", isOn: $askBudgetAI)
                 NavigationLink { ApplePayLoggingHelp() } label: { Label("Log Apple Pay Payments", systemImage: "creditcard") }
             } header: {
                 Text("Widgets, Siri and Ask")
             } footer: {
-                Text("Widgets hide their amounts while the device is locked. Ask your budget answers on this device with Apple Intelligence; no question or figure is sent anywhere. Say \"Scan a receipt with Duo Budget\" or \"How much budget is left in Duo Budget\" to Siri.")
+                Text((settings.appLockEnabled ? "The app lock is on, so widgets show no amounts and Siri asks you to open the app. " : "Widgets hide their amounts while the device is locked. ") + "Ask your budget answers on this device with Apple Intelligence; no question or figure is sent anywhere. Say \"Scan a receipt with Duo Budget\" or \"How much budget is left in Duo Budget\" to Siri.")
             }
             Section {
                 Toggle("Payment and renewal reminders", isOn: Binding(get: { settings.remindersEnabled }, set: setReminders))
