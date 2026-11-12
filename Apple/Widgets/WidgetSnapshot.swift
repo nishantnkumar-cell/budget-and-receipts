@@ -43,7 +43,13 @@ struct WidgetSnapshot: Codable, Equatable {
         #else
         let options: Data.WritingOptions = [.atomic]
         #endif
-        return (try? data.write(to: url, options: options)) != nil
+        guard (try? data.write(to: url, options: options)) != nil else { return false }
+        // Bill names and amounts: left out of iCloud device Backup, like the app's own files.
+        var saved = url
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? saved.setResourceValues(values)
+        return true
     }
 
     func money(_ value: Decimal) -> String {

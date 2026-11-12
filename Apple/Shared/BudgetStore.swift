@@ -1155,6 +1155,22 @@ final class BudgetStore: ObservableObject {
         persist()
     }
 
+    /// Takes out the payments a shared statement added, on every device. Returns how many.
+    @discardableResult
+    func undoImport(of document: SharedDocument) -> Int {
+        let fingerprints = Set(document.importedPayments ?? [])
+        guard !fingerprints.isEmpty else { return 0 }
+        let before = transactions.count
+        transactions.removeAll { fingerprints.contains($0.fingerprint) }
+        var undone = document
+        undone.importedPayments = []
+        if let index = sharedDocuments.firstIndex(where: { $0.id == document.id }) { sharedDocuments[index] = undone }
+        persist()
+        let removed = before - transactions.count
+        status = "Took out \(removed) payment\(removed == 1 ? "" : "s") from \(document.fileName)."
+        return removed
+    }
+
     func update(_ document: SharedDocument) {
         guard let index = sharedDocuments.firstIndex(where: { $0.id == document.id }) else { return }
         sharedDocuments[index] = document
@@ -1541,7 +1557,9 @@ extension BudgetStore: SyncSource {
         couple = SyncMerge.apply(saves: saves, deletes: [], to: [couple], collection: "couple", id: { _ in "settings" }).last ?? couple
         settlements = SyncMerge.apply(saves: saves, deletes: deletes, to: settlements, collection: "settlements", id: \.id.uuidString)
         pendingReceipts = SyncMerge.apply(saves: saves, deletes: deletes, to: pendingReceipts, collection: "pendingReceipts", id: \.id.uuidString)
+        // Accounts from an older version may carry the whole number: keep only the last four.
         accounts = SyncMerge.apply(saves: saves, deletes: deletes, to: accounts, collection: "accounts", id: \.id.uuidString)
+            .map { account in var trimmed = account; trimmed.number = BankAccount.lastFour(account.number); return trimmed }
         wealthAccounts = SyncMerge.apply(saves: saves, deletes: deletes, to: wealthAccounts, collection: "wealth", id: \.id.uuidString)
         notes = SyncMerge.apply(saves: saves, deletes: deletes, to: notes, collection: "notes", id: \.id.uuidString)
         rules = Self.withNewStarterRules(SyncMerge.apply(saves: saves, deletes: deletes, to: rules, collection: "rules", id: \.id.uuidString))

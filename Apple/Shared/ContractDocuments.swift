@@ -21,9 +21,12 @@ struct ContractDocumentStore {
     /// and returns the stored file name.
     func save(_ data: Data, isPDF: Bool) throws -> String {
         if isPDF {
-            guard PDFDocument(data: data) != nil else { throw CocoaError(.fileReadCorruptFile) }
+            guard let document = PDFDocument(data: data) else { throw CocoaError(.fileReadCorruptFile) }
+            // Without its author, title, software and dates, like photos without their location.
+            document.documentAttributes = [:]
+            let clean = document.dataRepresentation() ?? data
             let name = "\(UUID().uuidString).pdf"
-            try data.write(to: folder.appendingPathComponent(name), options: ReceiptImageStore.writeOptions)
+            try clean.write(to: folder.appendingPathComponent(name), options: ReceiptImageStore.writeOptions)
             return name
         }
         guard ReceiptImageStore.withoutMetadata(data) != nil else { throw CocoaError(.fileReadCorruptFile) }

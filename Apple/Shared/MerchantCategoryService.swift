@@ -69,6 +69,8 @@ enum MerchantCategoryService {
 
     /// The kind of business Apple Maps finds for the merchant's name, as a category.
     static func mapsCategory(for merchant: String) async -> String? {
+        // Bank transfers name people ("FPO A PERSON RENT"), not shops: never sent to Maps.
+        guard !MerchantCategories.isPersonTransfer(merchant) else { return nil }
         let query = MerchantCategories.searchText(merchant)
         guard query.count >= 3 else { return nil }
         let request = MKLocalSearch.Request()

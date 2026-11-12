@@ -20,6 +20,9 @@ public struct SharedDocument: Identifiable, Codable, Hashable, Sendable {
     public var outcome: Outcome
     /// A copy of the original file kept in the app, so it can be read again another way.
     public var storedFile: String?
+    /// The payments a statement added (their fingerprints), so the import can be undone.
+    /// Nil for older entries; empty once undone.
+    public var importedPayments: [String]? = nil
 
     public init(id: UUID = UUID(), fileName: String, receivedAt: Date = Date(), outcome: Outcome, storedFile: String? = nil) {
         self.id = id
@@ -33,6 +36,7 @@ public struct SharedDocument: Identifiable, Codable, Hashable, Sendable {
     public var summary: String {
         switch outcome {
         case .statement(let imported, let alreadyThere, let difference):
+            if importedPayments?.isEmpty == true, imported > 0 { return "Import undone: its \(imported) payment\(imported == 1 ? " was" : "s were") taken out" }
             var text = "Imported as a statement: \(imported) payment\(imported == 1 ? "" : "s")"
             if alreadyThere > 0 { text += ", \(alreadyThere) already there" }
             if difference != nil { text += ". Totals don't match the statement, so check it" }

@@ -53,6 +53,14 @@ public enum MerchantCategories {
     /// The words worth searching for a merchant: card wording and reference numbers dropped,
     /// up to five words kept ("CARD PAYMENT TO SADDA SUPERSTORE LTD HOUNSLOW 1234" →
     /// "SADDA SUPERSTORE LTD HOUNSLOW").
+    /// A bank transfer or standing order, whose description is usually a person's name.
+    /// Such lines are never looked up online.
+    public static func isPersonTransfer(_ merchant: String) -> Bool {
+        let codes: Set<String> = ["FPO", "FPI", "OBP", "TFR", "TRANSFER", "STO", "SO", "BGC", "MOB", "BACS", "CHAPS"]
+        guard let first = Categoriser.words(merchant).first else { return false }
+        return codes.contains(first)
+    }
+
     public static func searchText(_ merchant: String) -> String {
         let noise: Set<String> = ["CARD", "PAYMENT", "TO", "POS", "CONTACTLESS", "PURCHASE", "DEBIT", "VISA", "VIS", "DD", "SO", "BP", "CD", "TRANSACTION", "GB", "GBR", "UK", "ENG", "IAP"]
         let words = Categoriser.words(merchant).filter { !noise.contains($0) && !$0.contains(where: \.isNumber) }
