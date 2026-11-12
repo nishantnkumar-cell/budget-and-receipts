@@ -9,7 +9,14 @@ import WidgetKit
 @MainActor
 enum WidgetBridge {
     static let showAmountsKey = "widgetsShowAmounts"
-    static var showsAmounts: Bool { UserDefaults.standard.object(forKey: showAmountsKey) as? Bool ?? true }
+    /// Amounts show only when Settings allows it and the app lock is off: a widget sits outside
+    /// the lock, so with the lock on it just opens the app.
+    static var showsAmounts: Bool { showsAmounts(in: .standard) }
+
+    static func showsAmounts(in defaults: UserDefaults) -> Bool {
+        guard !defaults.bool(forKey: "appLockEnabled") else { return false }
+        return defaults.object(forKey: showAmountsKey) as? Bool ?? true
+    }
     private static var pending: Task<Void, Never>?
 
     /// The widgets' figures for today: this month's safe to spend (the whole household) and the next bills.
