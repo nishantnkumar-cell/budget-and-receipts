@@ -55,7 +55,7 @@ final class AccountStoreTests: XCTestCase {
     func testStatementInThePartnersNameIsTheirs() throws {
         let store = BudgetStore(folder: folder)
         var couple = CoupleSettings(partnerName: "Sara")
-        couple.ownerName = "Nishant"
+        couple.ownerName = "Neil"
         store.updateCouple(couple)
         let preview = try store.previewImport(pdfLines: partnersStatement)
         XCTAssertEqual(preview.holderOwner, .partner)
