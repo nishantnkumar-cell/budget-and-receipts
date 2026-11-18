@@ -87,9 +87,57 @@ final class AppLock: ObservableObject {
         }
     }
 
-    func lock() { isUnlocked = false }
+    /// True while a Face ID, Touch ID or password prompt is showing, so two never stack up.
+    @Published private(set) var isAuthenticating = false
+    /// The lock asks on its own once each time it locks. After that (say the person cancelled)
+    /// it waits for the Unlock button, so a cancelled prompt doesn't keep coming back.
+    private var askedSinceLocked = false
+    #if os(macOS)
+    /// Why the Mac isn't in front of the person right now (screen locked or asleep, another
+    /// user logged in). Set by MacLockWatcher. The lock never asks while any of these hold.
+    private var awayReasons: Set<String> = []
+    #endif
+
+    func lock() {
+        isUnlocked = false
+        askedSinceLocked = false
+    }
+
+    #if os(macOS)
+    /// The Mac's screen locked or slept, or the session switched away: lock, and don't ask
+    /// until the person is back.
+    func macWentAway(_ reason: String) {
+        awayReasons.insert(reason)
+        lock()
+    }
+
+    /// The person is back at the Mac. Ask only if Duo Budget is the app in front.
+    func macCameBack(_ reason: String) {
+        awayReasons.remove(reason)
+        Task {
+            // Give the login window a moment to go, so the prompt lands on the desktop.
+            try? await Task.sleep(for: .milliseconds(600))
+            await unlockIfInFront()
+        }
+    }
+    #endif
+
+    /// Asks to unlock on its own, but only when the person is looking at the app: on the Mac,
+    /// Duo Budget must be the active app and the screen unlocked. Otherwise it waits, and the
+    /// lock screen asks again when the app comes to the front. The figures stay hidden either way.
+    func unlockIfInFront() async {
+        guard !isUnlocked, !isAuthenticating, !askedSinceLocked else { return }
+        #if os(macOS)
+        guard NSApp.isActive, awayReasons.isEmpty else { return }
+        #else
+        guard UIApplication.shared.applicationState == .active else { return }
+        #endif
+        askedSinceLocked = true
+        await unlock()
+    }
 
     func unlock() async {
+        guard !isUnlocked, !isAuthenticating else { return }
         let context = LAContext()
         var error: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
@@ -98,17 +146,48 @@ final class AppLock: ObservableObject {
             message = error?.localizedDescription
             return
         }
+        isAuthenticating = true
+        defer { isAuthenticating = false }
         do {
-            isUnlocked = try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock your budget")
+            isUnlocked = try await Self.authenticate(context)
+            message = nil
+        } catch let error as LAError where error.code == .systemCancel || error.code == .appCancel {
+            // The system took the prompt away (the app lost focus or the screen locked):
+            // that isn't the person saying no, so ask again next time the app is in front.
+            askedSinceLocked = false
+        } catch let error as LAError where error.code == .userCancel {
             message = nil
         } catch {
             message = error.localizedDescription
         }
     }
+
+    /// Face ID or Touch ID first. The device password or passcode is only the fallback: when
+    /// biometrics aren't set up or available (a closed MacBook lid, say), are locked out, or the
+    /// person picks "Use Password".
+    private static func authenticate(_ context: LAContext) async throws -> Bool {
+        #if os(macOS)
+        let reason = "unlock your budget"
+        if context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil) {
+            context.localizedFallbackTitle = "Use Password…"
+            do {
+                return try await context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason)
+            } catch let error as LAError where error.code == .userFallback || error.code == .biometryLockout || error.code == .biometryNotAvailable {
+                // Fall through to the password.
+            }
+        }
+        // A fresh context, so the password prompt doesn't reuse the failed biometric attempt.
+        return try await LAContext().evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)
+        #else
+        // iOS already tries Face ID or Touch ID first and offers the passcode after.
+        return try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock your budget")
+        #endif
+    }
 }
 
 struct LockScreen: View {
     @ObservedObject var lock: AppLock
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         VStack(spacing: 16) {
@@ -116,13 +195,20 @@ struct LockScreen: View {
             Text("Duo Budget is locked").font(.title2.bold())
             Button("Unlock with \(lock.methodName)") { Task { await lock.unlock() } }
                 .buttonStyle(.borderedProminent)
+                .disabled(lock.isAuthenticating)
             if let message = lock.message {
                 Text(message).font(.caption).foregroundStyle(.secondary)
             }
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task { await lock.unlock() }
+        // Asks only once the app is in front; see AppLock.unlockIfInFront.
+        .task(id: scenePhase) { await lock.unlockIfInFront() }
+        #if os(macOS)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await lock.unlockIfInFront() }
+        }
+        #endif
     }
 }
 

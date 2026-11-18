@@ -498,14 +498,22 @@ final class MacLockWatcher {
     func watch(_ lock: AppLock) {
         guard observers.isEmpty else { return }
         let center = NSWorkspace.shared.notificationCenter
-        for name in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
-            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { _ in
-                Task { @MainActor in lock.lock() }
+        let distributed = DistributedNotificationCenter.default()
+        // Each pair: what makes the Mac "away", and what brings it back.
+        let pairs: [(NotificationCenter, Notification.Name, Notification.Name, String)] = [
+            (center, NSWorkspace.screensDidSleepNotification, NSWorkspace.screensDidWakeNotification, "screenSleep"),
+            (center, NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification, "sleep"),
+            (center, NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.sessionDidBecomeActiveNotification, "session"),
+            (distributed, .init("com.apple.screenIsLocked"), .init("com.apple.screenIsUnlocked"), "screenLock"),
+        ]
+        for (nc, away, back, reason) in pairs {
+            observers.append(nc.addObserver(forName: away, object: nil, queue: .main) { _ in
+                Task { @MainActor in lock.macWentAway(reason) }
+            })
+            observers.append(nc.addObserver(forName: back, object: nil, queue: .main) { _ in
+                Task { @MainActor in lock.macCameBack(reason) }
             })
         }
-        observers.append(DistributedNotificationCenter.default().addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { _ in
-            Task { @MainActor in lock.lock() }
-        })
     }
 }
 #endif
