@@ -30,7 +30,7 @@ struct BudgetLeftIntent: AppIntent {
 /// payment in, the two become one.
 struct LogPaymentIntent: AppIntent {
     static let title: LocalizedStringResource = "Log a Payment"
-    static let description = IntentDescription("Adds a card payment now. When your statement brings it in, it joins that line instead of showing twice. Use it in a Shortcuts automation for Apple Pay (Wallet › Transaction).")
+    static let description = IntentDescription("Adds a card payment now. When your statement brings it in, it joins that line instead of showing twice. Use it in a Shortcuts automation that runs when you pay with your phone (Wallet › Transaction).")
 
     @Parameter(title: "Amount")
     var amount: IntentCurrencyAmount
