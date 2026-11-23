@@ -32,7 +32,8 @@ struct OverviewPanel<Content: View, Accessory: View>: View {
             content
         }
         .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // On the Mac a panel fills the height its dashboard row gives it.
+        .frame(maxWidth: .infinity, maxHeight: isPhone ? nil : .infinity, alignment: .topLeading)
         .background(Color.cardBackground, in: RoundedRectangle(cornerRadius: isPhone ? 18 : 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: isPhone ? 18 : 12, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
     }
@@ -60,6 +61,8 @@ struct OverviewKeyNumbers: View {
     @EnvironmentObject var store: BudgetStore
     @EnvironmentObject var subscriptions: SubscriptionStore
     let report: MonthlyBudgetReport
+    /// Mac dashboard: show just this one tile.
+    var only: DashboardWidgetKind?
 
     var body: some View {
         #if os(iOS)
@@ -74,22 +77,36 @@ struct OverviewKeyNumbers: View {
             }
         }
         #else
-        Grid(horizontalSpacing: 12) {
-            GridRow {
-                tiles
-                if !store.wealthAccounts.isEmpty { netWorthTile }
+        if let only {
+            switch only {
+            case .spend: spendTile
+            case .safeToSpend: safeTile
+            case .balanceOrIncome: partnerOrIncomeTile
+            case .bills: billsTile
+            default: netWorthTile
+            }
+        } else {
+            Grid(horizontalSpacing: 12) {
+                GridRow {
+                    tiles
+                    if !store.wealthAccounts.isEmpty { netWorthTile }
+                }
             }
         }
         #endif
     }
 
     @ViewBuilder private var tiles: some View {
+        spendTile
+        safeTile
+        partnerOrIncomeTile
+        billsTile
+    }
+
+    @ViewBuilder var spendTile: some View {
         let budgeted = report.lines.compactMap(\.limit).reduce(0, +)
         let spentInBudgets = report.lines.filter { $0.limit != nil }.reduce(0) { $0 + $1.spent }
-        let safe = store.safeToSpend(contracts: subscriptions.contracts)
         let pace = SpendingPacePanel.cumulative(store.viewTransactions, month: store.selectedMonth, calculator: store.calculator)
-        let due = SubscriptionTracker().dueSoon(store.bills(subscriptions.contracts), from: Date(), days: 30)
-        let dueTotal = due.filter { $0.currency == AppSettings.currency }.reduce(0) { $0 + $1.expectedAmount }
         if budgeted > 0 {
             KeyNumberTile(title: "Left to spend", symbol: "banknote", value: (budgeted - spentInBudgets).money,
                           caption: isPhone ? "of \(budgeted.money)" : "of \(budgeted.money) budgeted", tint: .brandIndigo,
@@ -98,11 +115,18 @@ struct OverviewKeyNumbers: View {
             KeyNumberTile(title: "Spent", symbol: "banknote", value: report.spending.money,
                           caption: "Income \(report.income.money)", tint: .brandIndigo, trend: pace)
         }
+    }
+
+    @ViewBuilder var safeTile: some View {
+        let safe = store.safeToSpend(contracts: subscriptions.contracts)
         KeyNumberTile(title: isPhone ? "Safe today" : "Safe to spend today", symbol: "gauge.with.dots.needle.33percent",
                       value: safe?.today.money ?? "–",
                       caption: safe.map { "\($0.daysLeft) days to go" }
                          ?? (Calendar.current.isDate(store.selectedMonth, equalTo: Date(), toGranularity: .month) ? (isPhone ? "Set a budget" : "Set a budget to see this") : (isPhone ? "This month only" : "Only for the current month")),
                       tint: .brandPink)
+    }
+
+    @ViewBuilder var partnerOrIncomeTile: some View {
         if store.hasPartner {
             let balance = store.coupleBalance
             KeyNumberTile(title: balance.debtor == .me ? "You owe \(store.couple.partnerName)" : "\(store.couple.partnerName) owes you",
@@ -113,13 +137,18 @@ struct OverviewKeyNumbers: View {
             KeyNumberTile(title: "Income", symbol: "arrow.down.circle", value: report.income.money,
                           caption: "this month", tint: .green)
         }
+    }
+
+    @ViewBuilder var billsTile: some View {
+        let due = SubscriptionTracker().dueSoon(store.bills(subscriptions.contracts), from: Date(), days: 30)
+        let dueTotal = due.filter { $0.currency == AppSettings.currency }.reduce(0) { $0 + $1.expectedAmount }
         KeyNumberTile(title: isPhone ? "Bills, 30 days" : "Bills, next 30 days", symbol: "calendar", value: dueTotal.money,
                       caption: subscriptions.contracts.isEmpty ? (isPhone ? "Add them in Plan" : "Add your bills in Plan") : (due.count == 1 ? "1 payment" : "\(due.count) payments"), tint: .brandAmber)
     }
 
-    private var netWorthTile: some View {
+    var netWorthTile: some View {
         KeyNumberTile(title: "Net worth", symbol: "chart.line.uptrend.xyaxis", value: store.netWorth.wholeMoney,
-                      caption: netWorthCaption, tint: .brandTeal)
+                      caption: store.wealthAccounts.isEmpty ? "Add accounts in Net worth" : netWorthCaption, tint: .brandTeal)
     }
 }
 
