@@ -97,4 +97,13 @@ final class IntentsWidgetStoreTests: XCTestCase {
         XCTAssertTrue(navigator.asking)
         XCTAssertFalse(navigator.open(URL(fileURLWithPath: "/tmp/statement.pdf")))
     }
+
+    /// App Store Connect rejects an App Intent description that contains "apple" (ITMS-90626).
+    func testIntentDescriptionsAvoidTheWordApple() {
+        let descriptions = [BudgetLeftIntent.description, LogPaymentIntent.description, AskBudgetIntent.description]
+        for description in descriptions {
+            let text = String(localized: description.descriptionText)
+            XCTAssertFalse(text.localizedCaseInsensitiveContains("apple"), text)
+        }
+    }
 }
