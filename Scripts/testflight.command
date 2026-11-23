@@ -14,7 +14,8 @@ echo "== Build number $BUILD"
 
 OUT=.build/testflight/$BUILD
 mkdir -p "$OUT"
-PLATFORMS=(${1:-ios macos})
+PLATFORMS=("$@")
+(( $# )) || PLATFORMS=(ios macos)
 
 for platform in $PLATFORMS; do
   case $platform in
