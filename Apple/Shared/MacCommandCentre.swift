@@ -305,28 +305,16 @@ struct MacOverview: View {
     @EnvironmentObject var store: BudgetStore
     @EnvironmentObject var subscriptions: SubscriptionStore
     @Binding var selection: AppSection?
+    @StateObject private var layoutStore = DashboardLayoutStore()
+    @State private var editing = false
     @State private var query = ""
 
     var body: some View {
-        let report = store.monthReport
-        VStack(spacing: 16) {
-            if store.selectedMonthIsEmpty {
-                EmptyMonthNotice()
-            } else {
-                OverviewKeyNumbers(report: report)
-            }
-            HStack(alignment: .top, spacing: 16) {
-                SpendingPacePanel(report: report)
-                VStack(spacing: 16) {
-                    NeedsYouPanel(open: { selection = $0 })
-                    NextDaysPanel()
-                }
-                .frame(width: 340)
-            }
-            .frame(height: 330)
-            MacRecentActivity(query: query, selection: $selection)
+        ScrollView {
+            MacDashboard(layoutStore: layoutStore, report: store.monthReport, query: query,
+                         editing: editing, selection: $selection)
+                .padding(20)
         }
-        .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color.screenBackground)
         // The same "Finding categories…" note the iPhone shows on Home.
@@ -345,6 +333,7 @@ struct MacOverview: View {
                 ToolbarItem(placement: .principal) { HouseholdSwitcher().frame(width: 260) }
             }
             ToolbarItem(placement: .primaryAction) { SyncStatusButton() }
+            DashboardToolbar(layoutStore: layoutStore, editing: $editing)
         }
     }
 }
