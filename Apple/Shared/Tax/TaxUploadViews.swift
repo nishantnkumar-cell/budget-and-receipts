@@ -44,6 +44,13 @@ struct LettingImportView: View {
         var include: Bool
     }
 
+    /// What importing would do now.
+    private struct Preview {
+        var book: PropertyBook
+        /// The statement each chosen file would add, by the file's row.
+        var added: [UUID: AgentStatement] = [:]
+    }
+
     @EnvironmentObject var store: BudgetStore
     @EnvironmentObject var tax: TaxStore
     @Environment(\.dismiss) private var dismiss
@@ -52,9 +59,9 @@ struct LettingImportView: View {
     @State private var problems: [String] = []
 
     var body: some View {
-        // What importing would do now, worked out on a copy.
+        // Worked out on a copy.
         let preview = adding(to: tax.book)
-        let new = preview.statements.filter { statement in !tax.book.statements.contains { $0.id == statement.id } }
+        let count = preview.added.count
         Form {
             Section {
                 Button("Choose Statements", systemImage: "doc.badge.plus") { choosing = true }
@@ -87,8 +94,18 @@ struct LettingImportView: View {
                     if there {
                         Text("Already entered: it will be skipped.").foregroundStyle(.secondary)
                     } else {
+                        if let same = tax.book.lookalike(of: statement, propertyID: item.propertyID, in: store.transactions) {
+                            Label("Looks like the statement of \(PropertyLedger.day(same.date)) already entered. Importing it would count the rent twice.", systemImage: "doc.on.doc")
+                                .foregroundStyle(.orange).font(.callout)
+                        }
                         Toggle("Import this statement", isOn: $item.include)
-                        if item.include { link(statement, propertyID: item.propertyID, in: new) }
+                        if item.include {
+                            if let added = preview.added[item.id] {
+                                link(added)
+                            } else {
+                                Text("The same as another file chosen here: it will be added once.").foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 } header: {
                     Text("\(PropertyLedger.day(statement.date)) · \(item.fileName)")
@@ -96,11 +113,11 @@ struct LettingImportView: View {
             }
             if !found.isEmpty {
                 Section {
-                    Button("Import \(new.count) Statement\(new.count == 1 ? "" : "s")") {
-                        tax.change { $0 = adding(to: $0) }
+                    Button("Import \(count) Statement\(count == 1 ? "" : "s")") {
+                        tax.change { $0 = adding(to: $0).book }
                         dismiss()
                     }
-                    .disabled(new.isEmpty)
+                    .disabled(count == 0)
                 } footer: {
                     Text("You can change any figure or bank payment afterwards in Pay and Statements.")
                 }
@@ -112,11 +129,8 @@ struct LettingImportView: View {
                       allowsMultipleSelection: true) { load($0) }
     }
 
-    @ViewBuilder private func link(_ statement: LettingStatement, propertyID: String, in new: [AgentStatement]) -> some View {
-        let added = new.first {
-            $0.propertyID == propertyID && $0.grossRent == statement.grossRent && TaxYear.calendar.isDate($0.date, inSameDayAs: statement.date)
-        }
-        if let payment = added?.bankFingerprint.flatMap({ id in store.transactions.first { $0.fingerprint == id } }) {
+    @ViewBuilder private func link(_ added: AgentStatement) -> some View {
+        if let payment = added.bankFingerprint.flatMap({ id in store.transactions.first { $0.fingerprint == id } }) {
             Label("Links to \(payment.amount.money) from \(payment.merchant) on \(PropertyLedger.day(payment.date)), so the rent isn't counted twice.", systemImage: "link")
                 .font(.callout)
         } else {
@@ -126,11 +140,13 @@ struct LettingImportView: View {
         }
     }
 
-    private func adding(to book: PropertyBook) -> PropertyBook {
-        var result = book
+    private func adding(to book: PropertyBook) -> Preview {
+        var result = Preview(book: book)
         // All together, oldest first, so two statements never claim the same bank payment.
         for item in found.filter(\.include).sorted(by: { $0.statement.date < $1.statement.date }) {
-            result.add([item.statement], propertyID: item.propertyID, payments: store.transactions)
+            if result.book.add([item.statement], propertyID: item.propertyID, payments: store.transactions) == 1 {
+                result.added[item.id] = result.book.statements.last
+            }
         }
         return result
     }
@@ -157,7 +173,10 @@ struct LettingImportView: View {
                     let named = tax.book.properties.first { property in
                         statement.propertyName.map { property.name.caseInsensitiveCompare($0) == .orderedSame } ?? false
                     }
-                    found.append(Found(fileName: name, statement: statement, propertyID: (named ?? first).id, include: !statement.needsAttention))
+                    let property = (named ?? first).id
+                    let again = tax.book.lookalike(of: statement, propertyID: property, in: store.transactions) != nil
+                    found.append(Found(fileName: name, statement: statement, propertyID: property,
+                                       include: !statement.needsAttention && !again))
                 }
             } catch let error as LettingStatementError {
                 problems.append("\(name): \(error.explanation)")
@@ -178,6 +197,8 @@ struct PayslipImportView: View {
         let fileName: String
         var pay: String
         var deducted: String
+        /// Overwrite figures typed in by hand.
+        var replaceTyped = false
     }
 
     @EnvironmentObject var store: BudgetStore
@@ -188,6 +209,8 @@ struct PayslipImportView: View {
     @State private var problems: [String] = []
     @State private var person = Person.me
     @State private var employer = ""
+    /// The employer name filled in for you, which may be filled in again.
+    @State private var suggested = ""
 
     var body: some View {
         let name = employer.trimmingCharacters(in: .whitespaces)
@@ -221,7 +244,9 @@ struct PayslipImportView: View {
                 Section {
                     TaxAmountField(title: "Taxable pay to date", text: $item.pay)
                     TaxAmountField(title: "Tax deducted to date", text: $item.deducted)
-                    if item.slip.isChecked {
+                    // Only while the figures are still the ones read.
+                    if item.slip.isChecked, TaxMoney.parse(item.pay) == item.slip.taxablePayToDate,
+                       TaxMoney.parse(item.deducted) == item.slip.taxToDate {
                         Label("The payslip's figures agree with each other. Still compare these two.", systemImage: "checkmark.circle")
                             .foregroundStyle(.green).font(.callout)
                     }
@@ -235,6 +260,11 @@ struct PayslipImportView: View {
                             Text("A later payslip (\(PropertyLedger.day(later))) is already recorded: nothing to change.").foregroundStyle(.secondary)
                         } else {
                             Text("Replaces \(TaxMoney.format(current.taxablePay)) pay and \(TaxMoney.format(current.taxDeducted)) tax.").foregroundStyle(.secondary)
+                            if current.payslipDate == nil {
+                                Text("Those were typed in, perhaps from a P60, which covers the whole year.").foregroundStyle(.orange)
+                                Toggle("Replace the figures typed in", isOn: $item.replaceTyped)
+                            }
+                            if current.isShared { Text("This entry is shown to your partner, and stays shown.").foregroundStyle(.secondary) }
                         }
                     }
                     if !others.isEmpty {
@@ -251,14 +281,15 @@ struct PayslipImportView: View {
                         tax.change { book in
                             for item in ready {
                                 book.record(payslipDated: item.slip.payDate, taxablePay: TaxMoney.parse(item.pay)!,
-                                            taxDeducted: TaxMoney.parse(item.deducted)!, person: person, employer: name)
+                                            taxDeducted: TaxMoney.parse(item.deducted)!, person: person, employer: name,
+                                            replacingTyped: item.replaceTyped)
                             }
                         }
                         dismiss()
                     }
                     .disabled(ready.isEmpty)
                 } footer: {
-                    Text("Pay is private unless you choose to show it to your partner. A pension you pay yourself isn't read: add it to the entry if you have one.")
+                    Text("A new entry is private unless you choose to show it to your partner. A pension you pay yourself isn't read: add it to the entry if you have one.")
                 }
             }
         }
@@ -271,14 +302,18 @@ struct PayslipImportView: View {
     private func canSave(_ item: Year, employer: String) -> Bool {
         guard !employer.isEmpty, TaxMoney.parse(item.pay) != nil, TaxMoney.parse(item.deducted) != nil else { return false }
         var copy = tax.book
-        return copy.record(payslipDated: item.slip.payDate, taxablePay: 0, taxDeducted: 0, person: person, employer: employer)
+        return copy.record(payslipDated: item.slip.payDate, taxablePay: 0, taxDeducted: 0, person: person, employer: employer,
+                           replacingTyped: item.replaceTyped)
     }
 
     /// The employer already entered for these years, when there is just one.
     private func suggestEmployer() {
         let covered = Set(years.map(\.id))
         let names = Set(tax.book.pay.filter { $0.person == person && covered.contains($0.taxYear) }.map(\.employer))
-        if names.count == 1 { employer = names.first! }
+        // A name you typed is left alone.
+        guard employer.isEmpty || employer == suggested else { return }
+        suggested = names.count == 1 ? names.first! : ""
+        employer = suggested
     }
 
     private func load(_ result: Result<[URL], Error>) {

@@ -118,6 +118,21 @@ final class LettingStatementTests: XCTestCase {
         XCTAssertEqual(ledger.lines.filter { $0.category == .rent }.map(\.amount), [1_200])
     }
 
+    func testATypedStatementImportedAgainIsNoticedAndBlocksFiling() throws {
+        let found = try LettingStatementReader.read(texts: [Self.remittance])
+        let payments = [payment("rent", 996, 20)]
+        let typed = AgentStatement(id: "typed", propertyID: "flat", date: TaxYear.day(2025, 6, 20), grossRent: 1_200,
+                                   fees: 144, repairs: 60, bankFingerprint: "rent")
+        var book = PropertyBook(properties: [RentalProperty(id: "flat", name: "Flat")], statements: [typed])
+        XCTAssertFalse(book.has(found, propertyID: "flat"))
+        XCTAssertEqual(book.lookalike(of: found, propertyID: "flat", in: payments)?.id, "typed")
+        // A second payment of the same amount means it is another statement.
+        XCTAssertNil(book.lookalike(of: found, propertyID: "flat", in: payments + [payment("next", 996, 27)]))
+        book.add([found], propertyID: "flat", payments: payments)
+        let ledger = PropertyLedger.build(transactions: payments, book: book, year: TaxYear(startYear: 2025))
+        XCTAssertTrue(ledger.issues.contains { $0.blocksFiling && $0.message.contains("looks the same") })
+    }
+
     func testDocumentsAreToldApartFromBankStatements() {
         XCTAssertEqual(TaxDocument.recognise(Self.remittance), .lettingStatement)
         XCTAssertEqual(TaxDocument.recognise(Self.management), .lettingStatement)

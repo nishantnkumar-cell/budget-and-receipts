@@ -196,6 +196,16 @@ extension PropertyBook {
         }
     }
 
+    /// A statement already here that this one is probably a second copy of: the same property
+    /// and amount paid within two weeks, with no other bank payment left for this one.
+    public func lookalike(of statement: LettingStatement, propertyID: String, in payments: [BankTransaction]) -> AgentStatement? {
+        guard bankPayment(for: statement, in: payments) == nil else { return nil }
+        return statements.first {
+            $0.propertyID == propertyID && $0.net == statement.paidToYou
+                && abs($0.date.timeIntervalSince(statement.date)) <= 14.5 * 86_400
+        }
+    }
+
     /// The bank payment a statement explains: money in of exactly what the agent paid, from a
     /// few days before the statement to two weeks after, that no other statement has.
     public func bankPayment(for statement: LettingStatement, in payments: [BankTransaction], excluding: Set<String> = []) -> BankTransaction? {

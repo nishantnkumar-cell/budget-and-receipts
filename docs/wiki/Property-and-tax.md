@@ -25,7 +25,7 @@ Both are in **Pay and Statements**. Files are read on your device, and you see w
 
 **Agent statements:** PDFs headed “Remittance Advice” or “Management Statement”, or a CSV with columns for property, gross rent, management fee, deductions, net payment and date, in that order. Import your bank statement first: each agent statement is then linked to the payment of the same amount, so the rent isn't counted twice. A remittance advice is checked against the amount it says was paid; a management statement shows nothing to check against, so compare it yourself. Passwords must be removed first.
 
-**Payslips:** PDF payslips showing “Total Taxable Pay”, “PAYE Net Pay” and figures to date. The latest payslip in each tax year sets that year's taxable pay and tax deducted for the employer name you give. Compare both figures with the payslip before saving.
+**Payslips:** PDF payslips showing “Total Taxable Pay”, “PAYE Net Pay” and figures to date. The latest payslip in each tax year sets that year's taxable pay and tax deducted for the employer name you give; figures you typed in, such as from a P60, are only replaced if you switch that on. Choose files holding one payslip each. Compare both figures with the payslip before saving.
 
 ## How nothing is counted twice
 

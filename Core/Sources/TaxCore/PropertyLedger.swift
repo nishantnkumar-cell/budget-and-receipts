@@ -175,6 +175,15 @@ public struct PropertyLedger: Sendable {
             if clash {
                 block("\(name(statement)) isn't linked, and rent from the bank is counted in the same month. Link them.")
             }
+            // The same figures close together, one explaining no payment: entered twice, say
+            // typed in and then imported.
+            let twice = book.statements.contains {
+                $0.id != statement.id && $0.propertyID == statement.propertyID && $0.grossRent == statement.grossRent
+                    && $0.net == statement.net && abs($0.date.timeIntervalSince(statement.date)) <= 14.5 * 86_400
+            }
+            if twice {
+                block("\(name(statement)) looks the same as another one near that date. Remove one, or link each to its own bank payment.")
+            }
         }
 
         var certificates = Set<String>()
