@@ -37,7 +37,7 @@ final class BackupStoreTests: XCTestCase {
         // Later changes are replaced by the backup.
         store.add(BankTransaction(date: Date(), merchant: "Added later", amount: -5, fingerprint: "later"))
         try FileManager.default.removeItem(at: folder.appendingPathComponent("Receipts/photo.jpg"))
-        try store.restore(contents, subscriptions: subscriptions, tax: TaxStore(folder: folder), held: HeldItemsStore(folder: store.dataFolder, known: []))
+        try store.restore(contents, subscriptions: subscriptions, tax: TaxStore(folder: folder), india: IndiaStore(folder: folder), held: HeldItemsStore(folder: store.dataFolder, known: []))
         XCTAssertEqual(store.transactions.map(\.fingerprint), ["keep"])
         XCTAssertEqual(store.transactions.first?.amount, Decimal(string: "-12.34")!)
         XCTAssertEqual(store.covers.first?.item, "Kettle")

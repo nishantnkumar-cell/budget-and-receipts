@@ -14,6 +14,7 @@ struct BudgetReceiptsApp: App {
     @StateObject private var store = { _ = AppModel.started; return AppModel.store }()
     @StateObject private var subscriptions = AppModel.subscriptions
     @StateObject private var tax = AppModel.tax
+    @StateObject private var india = AppModel.india
     @StateObject private var settings = AppModel.settings
     @StateObject private var lock = AppLock()
     @Environment(\.scenePhase) private var scenePhase
@@ -42,6 +43,7 @@ struct BudgetReceiptsApp: App {
                                 .environmentObject(store)
                                 .environmentObject(subscriptions)
                                 .environmentObject(tax)
+                                .environmentObject(india)
                                 .environmentObject(settings)
                                 .environmentObject(syncStatus)
                         }
@@ -54,6 +56,7 @@ struct BudgetReceiptsApp: App {
             .environmentObject(store)
             .environmentObject(subscriptions)
             .environmentObject(tax)
+            .environmentObject(india)
             .environmentObject(settings)
             .environmentObject(syncStatus)
             // A receipt or statement opened with the app ("Open in", or Open With on the Mac).
@@ -71,6 +74,7 @@ struct BudgetReceiptsApp: App {
                     .environmentObject(store)
                     .environmentObject(subscriptions)
                     .environmentObject(tax)
+                    .environmentObject(india)
             }
             .task(id: scenePhase) {
                 // Receipts shared from other apps while this one was closed.
@@ -194,11 +198,13 @@ enum AppModel {
     #endif
     /// Synced items from a newer version, kept untouched until this app understands them.
     static let held = HeldItemsStore(folder: store.dataFolder,
-                                     known: store.collections.union(subscriptions.collections).union(TaxItems.collections))
+                                     known: store.collections.union(subscriptions.collections).union(TaxItems.collections).union(IndiaItems.collections))
     #if DEBUG
     static let tax = SampleData.isOn ? SampleData.taxStore(for: store) : TaxStore(folder: store.dataFolder)
+    static let india = SampleData.isOn ? SampleData.indiaStore() : IndiaStore(folder: store.dataFolder)
     #else
     static let tax = TaxStore(folder: store.dataFolder)
+    static let india = IndiaStore(folder: store.dataFolder)
     #endif
     static let settings = AppSettings()
     /// Sets up what has to be ready before any screen (or a Siri request) uses the stores.
@@ -206,16 +212,19 @@ enum AppModel {
         store.didChange = { WidgetBridge.scheduleRefresh() }
         subscriptions.didReceiveChanges = { store.noteRecentChanges($0) }
         tax.didReceiveChanges = { store.noteRecentChanges($0) }
+        india.didReceiveChanges = { store.noteRecentChanges($0) }
         tax.paymentPrivacy = { store.paymentPrivacy }
         store.didChangePrivacy = { tax.privacyChanged($0) }
         store.didReplacePayment = { old, new in tax.change { $0.replacePayment(old, with: new) } }
     }()
     static var isWaitingForFiles: Bool {
-        store.isWaitingForFiles || subscriptions.isWaitingForFiles || tax.isWaitingForFiles || held.isWaitingForFiles
+        store.isWaitingForFiles || subscriptions.isWaitingForFiles || tax.isWaitingForFiles || india.isWaitingForFiles
+            || held.isWaitingForFiles
     }
     /// Reads any files that were locked at launch. True when all are now readable.
     static func reloadIfWaiting() -> Bool {
-        let ready = [store.reloadIfWaiting(), subscriptions.reloadIfWaiting(), tax.reloadIfWaiting(), held.reloadIfWaiting()]
+        let ready = [store.reloadIfWaiting(), subscriptions.reloadIfWaiting(), tax.reloadIfWaiting(), india.reloadIfWaiting(),
+                     held.reloadIfWaiting()]
         return !ready.contains(false)
     }
     static let syncStatus = SyncStatus()
@@ -231,8 +240,10 @@ enum AppModel {
                 subscriptions.didPersist = nil
                 held.didPersist = nil
                 tax.didPersist = nil
+                india.didPersist = nil
                 store.resetAllData()
                 tax.resetAllData()
+                india.resetAllData()
                 subscriptions.resetAllData()
                 held.resetAllData()
             }
@@ -252,10 +263,11 @@ enum AppModel {
             subscriptions.didPersist = nil
             held.didPersist = nil
             tax.didPersist = nil
+            india.didPersist = nil
             return
         }
         guard cloud == nil else { return }
-        let sync = CloudSync(sources: [store, subscriptions, tax, held], imagesFolder: store.imagesFolder, stateFolder: JSONFileStorage.defaultFolder, status: syncStatus)
+        let sync = CloudSync(sources: [store, subscriptions, tax, india, held], imagesFolder: store.imagesFolder, stateFolder: JSONFileStorage.defaultFolder, status: syncStatus)
         cloud = sync
         syncStatus.sync = sync
         ShareAcceptor.shared.setHandler { metadata in
@@ -272,6 +284,7 @@ enum AppModel {
         subscriptions.didPersist = { Task { await sync.localDataChanged() } }
         held.didPersist = { Task { await sync.localDataChanged() } }
         tax.didPersist = { Task { await sync.localDataChanged() } }
+        india.didPersist = { Task { await sync.localDataChanged() } }
         await sync.start()
     }
 

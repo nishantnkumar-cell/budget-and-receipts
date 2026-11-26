@@ -10,6 +10,7 @@ final class AppSettings: ObservableObject {
 
     /// Whether the Property & Tax screens show. Off by default; the data syncs either way.
     nonisolated static let taxEnabledKey = "propertyTaxEnabled"
+    nonisolated static let indiaEnabledKey = "indiaAccountsEnabled"
 
     /// The currency code views format money with. Read directly so formatting code stays simple.
     nonisolated static var currency: String {

@@ -70,10 +70,11 @@ struct CommandPalette: View {
     @FocusState private var focused: Bool
 
     @AppStorage(AppSettings.taxEnabledKey) private var taxEnabled = false
+    @AppStorage(AppSettings.indiaEnabledKey) private var indiaEnabled = false
 
     private var places: [AppSection] {
-        [AppSection.home, .activity, .inbox, .budgets, .reports, .plan, .netWorth, .tax, .scan, .settings].filter {
-            $0 != .tax || taxEnabled
+        [AppSection.home, .activity, .inbox, .budgets, .reports, .plan, .netWorth, .tax, .india, .scan, .settings].filter {
+            ($0 != .tax || taxEnabled) && ($0 != .india || indiaEnabled)
         }.filter {
             query.isEmpty || $0.macTitle.localizedCaseInsensitiveContains(query) || $0.rawValue.localizedCaseInsensitiveContains(query)
         }
@@ -157,11 +158,12 @@ struct MacSidebar: View {
     @EnvironmentObject var store: BudgetStore
     @Binding var selection: AppSection?
     @AppStorage(AppSettings.taxEnabledKey) private var taxEnabled = false
+    @AppStorage(AppSettings.indiaEnabledKey) private var indiaEnabled = false
 
     var body: some View {
         List(selection: $selection) {
             Section {
-                ForEach([AppSection.home, .activity, .inbox, .budgets, .reports, .plan, .netWorth] + (taxEnabled ? [.tax] : [])) { section in
+                ForEach([AppSection.home, .activity, .inbox, .budgets, .reports, .plan, .netWorth] + (taxEnabled ? [.tax] : []) + (indiaEnabled ? [.india] : [])) { section in
                     Label(section.macTitle, systemImage: section.macSymbol)
                         .badge(badge(for: section))
                         .tag(section)

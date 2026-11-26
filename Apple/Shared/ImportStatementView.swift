@@ -32,6 +32,11 @@ struct ImportStatementView: View {
 
     private var isCSV: Bool { pdfLines == nil && StatementFormat(fileName: fileName) == .csv }
 
+    /// Headings only Indian banks use.
+    private var looksLikeRupees: Bool {
+        AppSettings.currency != "INR" && ["(INR", "IFSC", "IFS Code"].contains { text.range(of: $0, options: .caseInsensitive) != nil }
+    }
+
     var body: some View {
         Form {
             Section {
@@ -81,6 +86,13 @@ struct ImportStatementView: View {
                     }
                 } footer: {
                     Text("If the file includes account numbers, those are used instead and new accounts are added for you.")
+                }
+            }
+
+            if looksLikeRupees {
+                Section {
+                    Label("This looks like a rupee statement. Import it under India Accounts (switch it on in Settings), or its amounts will be counted as your budget's currency.", systemImage: "indianrupeesign.circle")
+                        .foregroundStyle(Color.brandPink)
                 }
             }
 

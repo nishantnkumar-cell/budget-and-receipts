@@ -328,9 +328,21 @@ struct RecentChangesView: View {
         } else if AppModel.tax.collections.contains(change.collection) {
             AppModel.tax.restore(change)
             store.forget(change)
+        } else if AppModel.india.collections.contains(change.collection) {
+            AppModel.india.restore([change])
+            store.forget(change)
         } else {
             store.restore(change)
         }
+    }
+
+    private func restoreAll() {
+        let all = deletions
+        // India items go together, so accounts come back before their lines.
+        let india = all.filter { AppModel.india.collections.contains($0.collection) }
+        AppModel.india.restore(india)
+        for change in india { store.forget(change) }
+        for change in all where !AppModel.india.collections.contains(change.collection) { restore(change) }
     }
 
     var body: some View {
@@ -364,7 +376,7 @@ struct RecentChangesView: View {
             }
         }
         .confirmationDialog("Restore \(deletions.count) deleted items?", isPresented: $confirmingRestoreAll, titleVisibility: .visible) {
-            Button("Restore \(deletions.count) Items") { for change in deletions { restore(change) } }
+            Button("Restore \(deletions.count) Items") { restoreAll() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("They come back on this device and on every device that shares them.")
@@ -469,6 +481,7 @@ struct EraseAllDataView: View {
         store.resetAllData()
         subscriptions.resetAllData()
         AppModel.tax.resetAllData()
+        AppModel.india.resetAllData()
         AppModel.held.resetAllData()
         if let drop = SharedReceiptDrop.folder {
             for file in (try? FileManager.default.contentsOfDirectory(at: drop, includingPropertiesForKeys: nil)) ?? [] {

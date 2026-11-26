@@ -40,7 +40,7 @@ public enum CSVExporter {
         }
     }
 
-    static func escape(_ field: String) -> String {
+    package static func escape(_ field: String) -> String {
         // A leading = + - @ (or a tab or carriage return before one) makes spreadsheets run the
         // cell as a formula; neutralise it.
         var value = field

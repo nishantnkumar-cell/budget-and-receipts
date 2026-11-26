@@ -35,7 +35,8 @@ final class HeldItemsStoreTests: XCTestCase {
         let budget = SampleData.budgetStore()
         let subscriptions = SampleData.subscriptionStore()
         let tax = SampleData.taxStore(for: budget)
-        for source in [budget, subscriptions, tax] as [SyncSource] {
+        let india = SampleData.indiaStore()
+        for source in [budget, subscriptions, tax, india] as [SyncSource] {
             let sent = Set(source.syncRecords().map(\.collection))
             XCTAssertFalse(sent.isEmpty)
             XCTAssertEqual(sent.subtracting(source.collections), [])
@@ -82,7 +83,7 @@ final class HeldItemsStoreTests: XCTestCase {
         held.resetAllData()
         XCTAssertTrue(held.syncRecords().isEmpty)
         let subscriptions = SubscriptionStore(folder: folder)
-        try store.restore(EncryptedBackup.open(backup, password: "long enough"), subscriptions: subscriptions, tax: TaxStore(folder: folder), held: held)
+        try store.restore(EncryptedBackup.open(backup, password: "long enough"), subscriptions: subscriptions, tax: TaxStore(folder: folder), india: IndiaStore(folder: folder), held: held)
         XCTAssertEqual(held.syncRecords(), [newer])
     }
 
@@ -93,7 +94,7 @@ final class HeldItemsStoreTests: XCTestCase {
         let backup = try EncryptedBackup.make(folder: folder, password: "long enough", device: "", appVersion: "")
         let held = HeldItemsStore(folder: folder, known: store.collections)
         held.applySync(saves: [newer], deletes: [])
-        try store.restore(EncryptedBackup.open(backup, password: "long enough"), subscriptions: subscriptions, tax: TaxStore(folder: folder), held: held)
+        try store.restore(EncryptedBackup.open(backup, password: "long enough"), subscriptions: subscriptions, tax: TaxStore(folder: folder), india: IndiaStore(folder: folder), held: held)
         XCTAssertEqual(held.syncRecords(), [newer])
         XCTAssertEqual(HeldItemsStore(folder: folder, known: []).syncRecords(), [newer])
     }
