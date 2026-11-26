@@ -962,9 +962,18 @@ final class BudgetStore: ObservableObject {
         }
     }
 
-    /// Removes an account. Its transactions stay, without an account.
+    /// Removes an account. Its transactions stay, without an account, and those of a private
+    /// account stay private.
     func deleteAccount(_ account: BankAccount) {
         reportingPrivacyChanges {
+            if accounts.contains(where: { $0.id == account.id && $0.isPrivate == true }) {
+                for index in transactions.indices where transactions[index].accountID == account.id {
+                    transactions[index].isPrivate = true
+                }
+                for index in imports.indices where imports[index].accountID == account.id {
+                    imports[index].isPrivate = true
+                }
+            }
             accounts.removeAll { $0.id == account.id }
             for index in transactions.indices where transactions[index].accountID == account.id {
                 transactions[index].accountID = nil
@@ -1482,7 +1491,7 @@ extension BudgetStore: SyncSource {
         return SyncRecord.records(transactions, collection: "transactions", id: \.fingerprint, isPrivate: isPrivate)
             + SyncRecord.records(changes, collection: "changes", id: \.id.uuidString, isPrivate: { privatePayments.contains($0.transactionID) })
             + SyncRecord.records(budgets, collection: "budgets", id: \.id.uuidString)
-            + SyncRecord.records(imports, collection: "imports", id: \.id.uuidString, isPrivate: { $0.accountID.map(privateAccounts.contains) == true })
+            + SyncRecord.records(imports, collection: "imports", id: \.id.uuidString, isPrivate: { $0.isPrivate == true || $0.accountID.map(privateAccounts.contains) == true })
             + SyncRecord.records([couple], collection: "couple", id: { _ in "settings" })
             + SyncRecord.records(settlements, collection: "settlements", id: \.id.uuidString)
             + SyncRecord.records(pendingReceipts, collection: "pendingReceipts", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })

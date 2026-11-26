@@ -147,7 +147,7 @@ struct AccountEditor: View {
             Section {
                 Button("Delete Account", role: .destructive) { confirmingDelete = true }
             } footer: {
-                Text("Its transactions are kept, without an account.")
+                Text(account.isPrivate == true ? "Its transactions are kept, without an account, and stay private." : "Its transactions are kept, without an account.")
             }
         }
         .formStyle(.grouped)
