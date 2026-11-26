@@ -40,7 +40,8 @@ final class SubscriptionStore: ObservableObject {
     /// the contract as it is now. A deleted one stays deleted.
     func save(_ draft: SubscriptionContract, editedFrom original: SubscriptionContract) {
         guard let current = contracts.first(where: { $0.id == draft.id }) else { return }
-        save(EditMerge.apply(draft, editedFrom: original, onto: current))
+        save(EditMerge.apply(draft, editedFrom: original, onto: current,
+                             together: [["billingPeriod", "customIntervalDays"], ["pricing", "fixedPriceEndDate"]]))
     }
 
     func save(_ contract: SubscriptionContract) {

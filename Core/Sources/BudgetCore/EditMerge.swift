@@ -7,8 +7,8 @@ public enum EditMerge {
     /// `draft` is the edited copy, `original` the copy as it was when editing began, and
     /// `current` what's saved now. Fields are taken one at a time. Fields named together in
     /// `groups` only make sense as a set, such as an amount and its split: if the edit
-    /// touched any of them, all of them come from the draft. Lists of items with ids are
-    /// merged item by item.
+    /// touched any of them, all of them come from the draft. Lists are merged item by item
+    /// when items can be told apart: by id, by date, or by value for plain words.
     public static func apply<T: Codable>(_ draft: T, editedFrom original: T, onto current: T, together groups: [[String]] = []) -> T {
         // Property lists keep dates and decimals exactly.
         guard let edited = fields(draft), let before = fields(original), var result = fields(current) else { return draft }
@@ -17,7 +17,8 @@ public enum EditMerge {
         for group in groups where !changed.isDisjoint(with: group) { whole.formUnion(group) }
         for key in Set(changed).union(whole) {
             if !whole.contains(key), let merged = items(edited[key], before[key], result[key]) {
-                result[key] = merged
+                // An optional list that was cleared and has nothing new stays cleared.
+                result[key] = merged.isEmpty && edited[key] == nil ? nil : merged
             } else {
                 result[key] = edited[key]
             }
@@ -42,22 +43,32 @@ public enum EditMerge {
     }
 
     /// The three versions of a list merged item by item: what the edit added, removed or
-    /// changed is applied to the saved list. Nil unless every item has an id.
+    /// changed is applied to the saved list. A missing list counts as empty. Nil when any of
+    /// them isn't a list of items that can be told apart.
     private static func items(_ edited: Any?, _ before: Any?, _ current: Any?) -> [Any]? {
-        func list(_ value: Any?) -> [(id: String, item: [String: Any])]? {
+        func identity(_ element: Any) -> String? {
+            if let item = element as? [String: Any] {
+                if let id = item["id"] as? String { return "id " + id }
+                if let date = item["date"] as? Date { return "date \(date.timeIntervalSinceReferenceDate)" }
+                return nil
+            }
+            return (element as? String).map { "word " + $0 }
+        }
+        func list(_ value: Any?) -> [(id: String, item: Any)]? {
             guard let value else { return [] }
             guard let array = value as? [Any] else { return nil }
-            var result: [(String, [String: Any])] = []
+            var result: [(String, Any)] = []
             for element in array {
-                guard let item = element as? [String: Any], let id = item["id"] as? String else { return nil }
-                result.append((id, item))
+                guard let id = identity(element) else { return nil }
+                result.append((id, element))
             }
             return result
         }
-        guard edited != nil, let edited = list(edited), let before = list(before), let current = list(current) else { return nil }
+        guard edited != nil || before != nil,
+              let edited = list(edited), let before = list(before), let current = list(current) else { return nil }
         let old = Dictionary(before.map { ($0.id, $0.item) }, uniquingKeysWith: { first, _ in first })
         let new = Dictionary(edited.map { ($0.id, $0.item) }, uniquingKeysWith: { first, _ in first })
-        var result: [[String: Any]] = []
+        var result: [Any] = []
         var present = Set<String>()
         for (id, item) in current {
             if old[id] != nil && new[id] == nil { continue }

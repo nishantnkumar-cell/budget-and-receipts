@@ -358,6 +358,8 @@ actor CloudSync: CKSyncEngineDelegate {
         let flag = stateFolder.appendingPathComponent(Self.refetchFlag)
         guard FileManager.default.fileExists(atPath: flag.path), let container else { return }
         let shared = household.role == .member ? (container.sharedCloudDatabase, householdZoneID) : (container.privateCloudDatabase, Self.householdZone)
+        let marked = state.unreadable ?? []
+        var stillThere = Set<String>()
         do {
             for (database, zone) in [(container.privateCloudDatabase, Self.privateZone), shared] {
                 var token: CKServerChangeToken?
@@ -370,6 +372,7 @@ actor CloudSync: CKSyncEngineDelegate {
                               let collection = record.encryptedValues["collection"] as? String,
                               var item = syncRecord(from: record) else { continue }
                         let wasUnreadable = state.unreadable?.contains(item.key) == true
+                        if wasUnreadable { stillThere.insert(item.key) }
                         guard !knownCollections.contains(collection) || wasUnreadable else { continue }
                         item.byPartner = record.lastModifiedUserRecordID.map { $0.recordName != CKCurrentUserDefaultName } ?? false
                         let arrived = item
@@ -381,14 +384,20 @@ actor CloudSync: CKSyncEngineDelegate {
                                 : sources.compactMap { $0 as? HeldItemsStore }.allSatisfy { $0.applySync(saves: [arrived], deletes: []) }
                         }
                         guard kept else { return }
+                        let refused = wasUnreadable
+                            ? await MainActor.run { sources.reduce(into: Set<String>()) { $0.formUnion($1.rejectedKeys([arrived])) } }
+                            : []
                         names[item.key] = record.recordID.recordName
                         systemFields[record.recordID.recordName] = encodeSystemFields(record)
-                        state.recordSaved(item)
+                        // Not the partner's to change: our version is sent back.
+                        if refused.contains(item.key) { state.recordDeleted(item.key) } else { state.recordSaved(item) }
                     }
                     token = changes.changeToken
                     more = changes.moreComing
                 }
             }
+            // Marked before this pass and no longer in iCloud at all.
+            for key in marked.subtracting(stillThere) { state.recordDeleted(key) }
             saveState()
             try? FileManager.default.removeItem(at: flag)
         } catch {
@@ -702,7 +711,7 @@ actor CloudSync: CKSyncEngineDelegate {
         saveHousehold()
         if !wasMember { await dropSharedHeldItems() }
         // Everything shared is sent again, into the partner's household.
-        resetLocalSyncState()
+        resetLocalSyncState(sameHousehold: false)
         privateEngine?.state.add(pendingDatabaseChanges: [.deleteZone(Self.householdZone)])
         startSharedEngine()
         await publishHousehold()
@@ -730,7 +739,7 @@ actor CloudSync: CKSyncEngineDelegate {
         household = HouseholdLink()
         saveHousehold()
         if wasMember { await dropSharedHeldItems() }
-        resetLocalSyncState()
+        resetLocalSyncState(sameHousehold: !wasMember)
         privateEngine?.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: Self.householdZone))])
         await publishHousehold()
         await localDataChanged()
@@ -771,8 +780,8 @@ actor CloudSync: CKSyncEngineDelegate {
         case .accountChange(let change):
             log("Account change: \(change.changeType).")
             if case .signOut = change.changeType { await report("Signed out of iCloud") }
-            if case .switchAccounts = change.changeType { resetLocalSyncState() }
-            if case .signOut = change.changeType { resetLocalSyncState() }
+            if case .switchAccounts = change.changeType { resetLocalSyncState(sameHousehold: false) }
+            if case .signOut = change.changeType { resetLocalSyncState(sameHousehold: false) }
 
         case .fetchedRecordZoneChanges(let changes):
             await applyFetched(changes, syncEngine: syncEngine)
@@ -808,8 +817,7 @@ actor CloudSync: CKSyncEngineDelegate {
                         }
                         // Nor one of a known kind that it can't read.
                         if let item = syncRecord(from: server), await MainActor.run(body: { !sources.unreadableKeys([item]).isEmpty }) {
-                            outgoing[name] = nil
-                            state.recordUnreadable(item.key)
+                            holdUnreadable(item.key, at: server.recordID)
                             continue
                         }
                     }
@@ -846,7 +854,7 @@ actor CloudSync: CKSyncEngineDelegate {
                 saveHousehold()
                 sharedEngine = nil
                 await dropSharedHeldItems()
-                resetLocalSyncState()
+                resetLocalSyncState(sameHousehold: false)
                 privateEngine?.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: Self.householdZone))])
                 await publishHousehold()
                 await report("Your partner stopped sharing the household")
@@ -917,7 +925,7 @@ actor CloudSync: CKSyncEngineDelegate {
         for (record, item) in fetchedRecords {
             systemFields[record.recordID.recordName] = encodeSystemFields(record)
             if rejected.unreadable.contains(item.key) {
-                state.recordUnreadable(item.key)
+                holdUnreadable(item.key, at: record.recordID)
             } else if rejected.rejected.contains(item.key) {
                 // Not the partner's to change: our version is sent back.
                 state.recordDeleted(item.key)
@@ -928,7 +936,7 @@ actor CloudSync: CKSyncEngineDelegate {
         for key in deletes { state.recordDeleted(key) }
         saveState()
         await report("Received \(saves.count + deletes.count) change\(saves.count + deletes.count == 1 ? "" : "s")")
-        if !rejected.rejected.isEmpty { await localDataChanged() }
+        if !rejected.rejected.isEmpty || !rejected.unreadable.isEmpty { await localDataChanged() }
     }
 
     func nextRecordZoneChangeBatch(_ context: CKSyncEngine.SendChangesContext, syncEngine: CKSyncEngine) async -> CKSyncEngine.RecordZoneChangeBatch? {
@@ -942,7 +950,8 @@ actor CloudSync: CKSyncEngineDelegate {
             let current = await MainActor.run { sources.flatMap { $0.syncRecords() } }
             let byKey = Dictionary(current.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
             orphans.removeAll { change in
-                guard case .saveRecord(let id) = change, let key = keysByName[id.recordName], let record = byKey[key] else { return false }
+                guard case .saveRecord(let id) = change, let key = keysByName[id.recordName], let record = byKey[key],
+                      !state.blocks(record) else { return false }
                 outgoing[id.recordName] = record
                 return true
             }
@@ -1182,12 +1191,33 @@ actor CloudSync: CKSyncEngineDelegate {
 
     /// Everything is compared and sent again from scratch (after an account change, joining or
     /// leaving a household, or a restore). Record names are kept so nothing is duplicated.
-    private func resetLocalSyncState() {
-        // What can't be read stays untouched through a fresh start.
-        state = SyncState(unreadable: state.unreadable)
+    private func resetLocalSyncState(sameHousehold: Bool = true) {
+        state = state.startingAgain(sameHousehold: sameHousehold)
+        if state.unreadable != nil {
+            // The next start checks they're still in iCloud.
+            FileManager.default.createFile(atPath: stateFolder.appendingPathComponent(Self.refetchFlag).path, contents: Data())
+        }
         systemFields = [:]
         outgoing = [:]
         saveState()
+    }
+
+    /// An item whose copy in iCloud can't be read: whatever was queued to go over that copy
+    /// is dropped. A copy queued for the other zone stays, and a move to private that loses
+    /// its deletion here is queued again by the next send.
+    private func holdUnreadable(_ key: String, at id: CKRecord.ID) {
+        let isPrivate = id.zoneID.zoneName == Self.privateZone.zoneName
+        state.recordUnreadable(key, isPrivate: isPrivate)
+        if outgoing[id.recordName]?.isPrivate == isPrivate { outgoing[id.recordName] = nil }
+        for engine in [privateEngine, sharedEngine].compactMap({ $0 }) {
+            let queued = engine.state.pendingRecordZoneChanges.filter { change in
+                switch change {
+                case .saveRecord(let other), .deleteRecord(let other): other == id
+                @unknown default: false
+                }
+            }
+            if !queued.isEmpty { engine.state.remove(pendingRecordZoneChanges: queued) }
+        }
     }
 
     /// Makes the next start fetch everything from iCloud again.

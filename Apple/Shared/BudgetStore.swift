@@ -249,7 +249,8 @@ final class BudgetStore: ObservableObject {
 
     func saveCover(_ draft: ProductCover, editedFrom original: ProductCover) {
         guard let current = covers.first(where: { $0.id == draft.id }) else { return }
-        saveCover(EditMerge.apply(draft, editedFrom: original, onto: current))
+        // A cover needs one of its two dates, so they're taken together.
+        saveCover(EditMerge.apply(draft, editedFrom: original, onto: current, together: [["returnBy", "warrantyEnds"]]))
     }
 
     func saveCover(_ cover: ProductCover) {
