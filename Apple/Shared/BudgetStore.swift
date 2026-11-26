@@ -247,11 +247,12 @@ final class BudgetStore: ObservableObject {
 
     /// Replaces everything with a backup's data, then reloads, so iCloud sync makes the other
     /// devices match. Contracts are reloaded too (they live in the same folder).
-    func restore(_ contents: EncryptedBackup.Contents, subscriptions: SubscriptionStore) throws {
+    func restore(_ contents: EncryptedBackup.Contents, subscriptions: SubscriptionStore, held: HeldItemsStore) throws {
         try EncryptedBackup.replace(folder: storage.folder, with: contents)
         unreadableFiles = []
         loadAll()
         subscriptions.reloadAfterRestore()
+        held.reloadAfterRestore()
         persist()
     }
 
@@ -1419,6 +1420,16 @@ struct RecentChange: Identifiable, Codable, Hashable {
 }
 
 extension BudgetStore: SyncSource {
+    var collections: Set<String> {
+        ["transactions", "changes", "budgets", "imports", "couple", "settlements", "pendingReceipts", "accounts",
+         "wealth", "notes", "rules", "categories", "goals", "trips", "covers", "images"]
+    }
+
+    func setHouseholdRole(_ role: HouseholdLink.Role) {
+        guard householdRole != role else { return }
+        householdRole = role
+    }
+
     /// Every item as an iCloud record. An item is private when marked, or when its account is.
     /// On a partner's device shared items are turned to the owner's point of view as they go.
     func syncRecords() -> [SyncRecord] {

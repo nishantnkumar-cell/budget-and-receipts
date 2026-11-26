@@ -465,6 +465,7 @@ struct EraseAllDataView: View {
     private func erase() {
         store.resetAllData()
         subscriptions.resetAllData()
+        AppModel.held.resetAllData()
         if let drop = SharedReceiptDrop.folder {
             for file in (try? FileManager.default.contentsOfDirectory(at: drop, includingPropertiesForKeys: nil)) ?? [] {
                 try? FileManager.default.removeItem(at: file)
