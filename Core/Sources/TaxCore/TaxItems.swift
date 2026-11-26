@@ -7,7 +7,7 @@ import Foundation
 public struct TaxItems: Sendable {
     public enum Kind: String, CaseIterable, Sendable {
         case property = "taxProperties", rule = "taxRules", payment = "taxPayments", statement = "taxStatements"
-        case interest = "taxInterest", pay = "taxPay", carried = "taxCarried"
+        case interest = "taxInterest", pay = "taxPay", figures = "taxFigures"
     }
 
     public static let collections = Set(Kind.allCases.map(\.rawValue))
@@ -39,7 +39,7 @@ public struct TaxItems: Sendable {
             statements: statements.sorted { ($0.date, $0.id) < ($1.date, $1.id) },
             interest: all(.interest),
             pay: pay.sorted { ($0.employer.lowercased(), $0.id) < ($1.employer.lowercased(), $1.id) },
-            carried: all(.carried))
+            figures: all(.figures))
     }
 
     public var unreadableCount: Int {
@@ -47,28 +47,58 @@ public struct TaxItems: Sendable {
         return records.count - Self.records(for: book, isPrivatePayment: { _ in false }).count
     }
 
-    /// One record per item. An item about a payment kept from the partner is private too.
-    static func records(for book: PropertyBook, isPrivatePayment: (String) -> Bool) -> [SyncRecord] {
+    /// One record per item. An item about a payment kept from the partner is private too, and
+    /// so is one whose payment isn't here to ask about (`nil`).
+    static func records(for book: PropertyBook, isPrivatePayment: (String) -> Bool?) -> [SyncRecord] {
         func make<T: Encodable & Identifiable>(_ items: [T], _ kind: Kind, isPrivate: (T) -> Bool = { _ in false }) -> [SyncRecord]
         where T.ID == String {
             SyncRecord.records(items, collection: kind.rawValue, id: \.id, isPrivate: isPrivate)
         }
         return make(book.properties, .property)
             + make(book.rules, .rule, isPrivate: \.isPrivate)
-            + make(book.assignments, .payment, isPrivate: { isPrivatePayment($0.fingerprint) })
-            + make(book.statements, .statement, isPrivate: { $0.bankFingerprint.map(isPrivatePayment) ?? false })
+            + make(book.assignments, .payment, isPrivate: { isPrivatePayment($0.fingerprint) ?? true })
+            + make(book.statements, .statement, isPrivate: { $0.bankFingerprint.map { isPrivatePayment($0) ?? true } ?? false })
             + make(book.interest, .interest)
             + make(book.pay, .pay, isPrivate: { !$0.isShared })
-            + make(book.carried, .carried, isPrivate: { !$0.isShared })
+            + make(book.figures, .figures, isPrivate: { !$0.isShared })
     }
 
     /// Saves what the person changed. Items they didn't touch stay exactly as stored,
     /// including anything a newer version added to them.
-    public mutating func update(from old: PropertyBook, to new: PropertyBook, isPrivatePayment: (String) -> Bool) {
-        let before = Dictionary(Self.records(for: old, isPrivatePayment: isPrivatePayment).map { ($0.key, $0) }, uniquingKeysWith: { _, last in last })
-        let after = Dictionary(Self.records(for: new, isPrivatePayment: isPrivatePayment).map { ($0.key, $0) }, uniquingKeysWith: { _, last in last })
+    public mutating func update(from old: PropertyBook, to new: PropertyBook, isPrivatePayment: (String) -> Bool?) {
+        func index(_ book: PropertyBook) -> [String: SyncRecord] {
+            Dictionary(Self.records(for: book, isPrivatePayment: isPrivatePayment).map { ($0.key, $0) }, uniquingKeysWith: { _, last in last })
+        }
+        let before = index(old), after = index(new)
         for key in before.keys where after[key] == nil { byKey[key] = nil }
-        for (key, record) in after where before[key] != record { byKey[key] = record }
+        for (key, record) in after where before[key] != record {
+            var record = record
+            // The payment isn't here to ask about: keep who could see the item before.
+            if let stored = byKey[key], let fingerprint = Self.fingerprint(of: record), isPrivatePayment(fingerprint) == nil {
+                record.isPrivate = stored.isPrivate
+            }
+            byKey[key] = record
+        }
+    }
+
+    /// The payment an item is about, when it is about one.
+    private static func fingerprint(of record: SyncRecord) -> String? {
+        let decoder = SyncRecord.decoder()
+        return switch Kind(rawValue: record.collection) {
+        case .payment: (try? decoder.decode(TaxAssignment.self, from: record.payload))?.fingerprint
+        case .statement: (try? decoder.decode(AgentStatement.self, from: record.payload))?.bankFingerprint
+        default: nil
+        }
+    }
+
+    /// You changed who can see these payments: their items follow. This is the only way an
+    /// item about a payment goes from private to shared.
+    public mutating func followPrivacy(of fingerprints: Set<String>, isPrivatePayment: (String) -> Bool?) {
+        for (key, record) in byKey {
+            guard let fingerprint = Self.fingerprint(of: record), fingerprints.contains(fingerprint),
+                  let isPrivate = isPrivatePayment(fingerprint) else { continue }
+            byKey[key]?.isPrivate = isPrivate
+        }
     }
 
     /// Takes in what arrived from your other devices or your partner.
@@ -84,26 +114,33 @@ public struct TaxItems: Sendable {
     }
 
     /// Puts an earlier version of an item back, with the privacy its contents call for.
-    public mutating func restore(_ record: SyncRecord, isPrivatePayment: (String) -> Bool) {
+    public mutating func restore(_ record: SyncRecord, isPrivatePayment: (String) -> Bool?) {
         let restored = Self.records(for: Self([record]).book, isPrivatePayment: isPrivatePayment)
         var record = record
         record.isPrivate = restored.first { $0.key == record.key }?.isPrivate ?? record.isPrivate
         byKey[record.key] = record
     }
 
-    /// The items to send: private ones follow their payment's privacy as it is now. An item
-    /// whose payment isn't here keeps the privacy it had.
+    /// The items to send. One about a payment that is private now goes privately at once; one
+    /// held as private stays so until you change the payment (see `followPrivacy`), so a
+    /// device that hasn't caught up can't share it.
     public func syncRecords(privacy: (String) -> Bool?) -> [SyncRecord] {
-        let decoder = SyncRecord.decoder()
-        return records.map { record in
+        records.map { record in
             var record = record
-            let fingerprint: String? = switch Kind(rawValue: record.collection) {
-            case .payment: (try? decoder.decode(TaxAssignment.self, from: record.payload))?.fingerprint
-            case .statement: (try? decoder.decode(AgentStatement.self, from: record.payload))?.bankFingerprint
-            default: nil
-            }
-            if let fingerprint, let isPrivate = privacy(fingerprint) { record.isPrivate = isPrivate }
+            if let fingerprint = Self.fingerprint(of: record), privacy(fingerprint) == true { record.isPrivate = true }
             return record
+        }
+    }
+
+    /// True when this item was typed in by the person using this device, so a partner's
+    /// change to it is turned down.
+    public func isMyOwnEntry(_ key: String) -> Bool {
+        guard let record = byKey[key] else { return false }
+        let decoder = SyncRecord.decoder()
+        return switch Kind(rawValue: record.collection) {
+        case .pay: (try? decoder.decode(TaxPay.self, from: record.payload))?.enteredBy == .me
+        case .figures: (try? decoder.decode(YearFigures.self, from: record.payload))?.enteredBy == .me
+        default: false
         }
     }
 
@@ -120,8 +157,8 @@ public struct TaxItems: Sendable {
         }
         return switch Kind(rawValue: record.collection) {
         case .property: change(RentalProperty.self) { $0.myShare = 1 - $0.myShare }
-        case .pay: change(TaxPay.self) { $0.person = $0.person.other }
-        case .carried: change(CarriedForward.self) { $0.person = $0.person.other }
+        case .pay: change(TaxPay.self) { $0.person = $0.person.other; $0.enteredBy = $0.enteredBy.other }
+        case .figures: change(YearFigures.self) { $0.person = $0.person.other; $0.enteredBy = $0.enteredBy.other }
         default: record
         }
     }

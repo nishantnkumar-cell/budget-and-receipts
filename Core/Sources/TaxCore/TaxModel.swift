@@ -44,19 +44,45 @@ public struct RentalProperty: Codable, Hashable, Sendable, Identifiable {
     public var id: String
     /// Tag a payment "Property: <name>" to attach it to this property.
     public var name: String
-    /// My share of income and costs, 0 to 1. The rest is my spouse's.
+    /// My share of income and costs, 0 to 1. The rest is my spouse's. 1 or 0 means the
+    /// property is in one name only.
     public var myShare: Decimal
-    /// True once HMRC has a Form 17 for an unequal split of a jointly owned property.
-    public var form17: Bool
+    /// The date on the Form 17 sent to HMRC for an unequal split of a jointly owned property.
+    /// It only applies to income from that date.
+    public var form17From: Date?
 
-    public init(id: String = UUID().uuidString, name: String, myShare: Decimal = Decimal(1) / 2, form17: Bool = false) {
+    public init(id: String = UUID().uuidString, name: String, myShare: Decimal = Decimal(1) / 2, form17From: Date? = nil) {
         self.id = id
         self.name = name
         self.myShare = myShare
-        self.form17 = form17
+        self.form17From = form17From
     }
 
-    public func share(of person: Person) -> Decimal { person == .me ? myShare : 1 - myShare }
+    /// Owned together in unequal shares, which a married couple is only taxed on with a Form 17.
+    public var isUnequalJoint: Bool { myShare > 0 && myShare < 1 && myShare != Decimal(1) / 2 }
+
+    /// The share taxed on a person for money on a date. Without a date (a yearly figure), the
+    /// year's shares weighted by days.
+    public func share(of person: Person, on date: Date?, in year: TaxYear) -> Decimal {
+        var mine = myShare
+        if isUnequalJoint {
+            let half = Decimal(1) / 2
+            if let from = form17From {
+                if let date {
+                    mine = date < from ? half : myShare
+                } else {
+                    let length = year.end.timeIntervalSince(year.start)
+                    let before = min(max(from.timeIntervalSince(year.start), 0), length)
+                    let days = Decimal(Int((length / 86_400).rounded()))
+                    let daysBefore = Decimal(Int((before / 86_400).rounded(.down)))
+                    mine = (half * daysBefore + myShare * (days - daysBefore)) / days
+                }
+            } else {
+                mine = half
+            }
+        }
+        return person == .me ? mine : 1 - mine
+    }
 }
 
 /// "Payments to this shop or person are this kind of cost for this property."
@@ -69,7 +95,8 @@ public struct PropertyRule: Codable, Hashable, Sendable, Identifiable {
     /// Made from a payment kept from the partner, so the shop's name stays private too.
     public var isPrivate: Bool
 
-    public var id: String { merchantContains.lowercased() }
+    /// A private rule and a shared one for the same shop are two different items.
+    public var id: String { (isPrivate ? "private|" : "") + merchantContains.lowercased() }
 
     public init(merchantContains: String, propertyID: String, category: PropertyCategory,
                 added: Double = 0, isPrivate: Bool = false) {
@@ -162,9 +189,13 @@ public struct TaxPay: Codable, Hashable, Sendable, Identifiable {
     public var reliefAtSourcePension: Decimal
     /// Pay is private unless you choose to show your partner.
     public var isShared: Bool
+    /// Who typed it in. Only they can change it.
+    public var enteredBy: Person
 
     public init(id: String = UUID().uuidString, person: Person, taxYear: String, employer: String,
-                taxablePay: Decimal, taxDeducted: Decimal, reliefAtSourcePension: Decimal = 0, isShared: Bool = false) {
+                taxablePay: Decimal, taxDeducted: Decimal, reliefAtSourcePension: Decimal = 0, isShared: Bool = false,
+                enteredBy: Person = .me) {
+        self.enteredBy = enteredBy
         self.id = id
         self.person = person
         self.taxYear = taxYear
@@ -176,24 +207,38 @@ public struct TaxPay: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
-/// Amounts from last year's return that carry into this one.
-public struct CarriedForward: Codable, Hashable, Sendable, Identifiable {
+/// One person's other figures for a year: amounts from last year's return, advance payments
+/// already made, and Gift Aid.
+public struct YearFigures: Codable, Hashable, Sendable, Identifiable {
     public var id: String
     public var person: Person
     public var taxYear: String
+    /// Property losses brought forward.
     public var losses: Decimal
+    /// Unused residential finance costs brought forward.
     public var financeCosts: Decimal
+    /// Payments on account already made towards this year's bill.
+    public var advancePaid: Decimal
+    /// Gift Aid donations including the basic-rate tax added by the charity.
+    public var giftAid: Decimal
     public var isShared: Bool
+    public var enteredBy: Person
 
     public init(id: String = UUID().uuidString, person: Person, taxYear: String, losses: Decimal = 0,
-                financeCosts: Decimal = 0, isShared: Bool = false) {
+                financeCosts: Decimal = 0, advancePaid: Decimal = 0, giftAid: Decimal = 0, isShared: Bool = false,
+                enteredBy: Person = .me) {
         self.id = id
         self.person = person
         self.taxYear = taxYear
         self.losses = losses
         self.financeCosts = financeCosts
+        self.advancePaid = advancePaid
+        self.giftAid = giftAid
         self.isShared = isShared
+        self.enteredBy = enteredBy
     }
+
+    public var isBlank: Bool { losses == 0 && financeCosts == 0 && advancePaid == 0 && giftAid == 0 }
 }
 
 /// Everything entered for tax. The payments themselves are the budget's own and only read.
@@ -204,17 +249,17 @@ public struct PropertyBook: Hashable, Sendable {
     public var statements: [AgentStatement]
     public var interest: [MortgageInterest]
     public var pay: [TaxPay]
-    public var carried: [CarriedForward]
+    public var figures: [YearFigures]
 
     public init(properties: [RentalProperty] = [], rules: [PropertyRule] = [], assignments: [TaxAssignment] = [],
                 statements: [AgentStatement] = [], interest: [MortgageInterest] = [],
-                pay: [TaxPay] = [], carried: [CarriedForward] = []) {
+                pay: [TaxPay] = [], figures: [YearFigures] = []) {
         self.properties = properties
         self.rules = rules
         self.assignments = assignments
         self.statements = statements
         self.interest = interest
         self.pay = pay
-        self.carried = carried
+        self.figures = figures
     }
 }

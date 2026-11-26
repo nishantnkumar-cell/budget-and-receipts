@@ -17,7 +17,7 @@ For UK rental property and Self Assessment. It uses the payments already in Duo 
 
 1. **Properties and Rules:** add each property and your share of it. A married couple's joint property is taxed half each unless HMRC has a Form 17.
 2. **Property Payments:** choose a payment, its property and what kind of money it is. Turn on **Always treat … this way** to make a rule. For a split payment, choose each part. You can also do this from the payment's own screen.
-3. **Pay and Statements:** enter each P60, any letting agent statements, and the lender's yearly interest figure.
+3. **Pay and Statements:** enter each P60, any letting agent statements, the lender's interest paid between 6 April and 5 April, losses brought forward, payments on account already made and Gift Aid.
 
 ## How nothing is counted twice
 
@@ -31,8 +31,10 @@ For UK rental property and Self Assessment. It uses the payments already in Duo 
 
 ## Sharing with your partner
 
-Property details are shared. Pay is private unless you turn on **Show to** your partner. Choices about payments you keep private stay private, so your figures may then differ from your partner's.
+Property details are shared. Pay is private unless you turn on **Show to** your partner, and only the person who typed it in can change it. Choices about payments you keep private stay private, so your figures may then differ from your partner's.
 
 ## What isn't covered
 
-Savings and dividend income, foreign income, capital gains, Scottish rates, student loans, Child Benefit charge, pension annual allowance, the property income allowance, stamp duty, and tax years from 2027-28.
+Savings and dividend income, foreign income, capital gains, Scottish rates, student loans, Child Benefit charge, pension annual allowance, the property income allowance, accruals accounting, limits on interest where loans exceed the property's value, stamp duty, and tax years from 2027-28.
+
+Figures use the cash basis: money counts when it's received or paid. Rent a letting agent holds counts when the agent receives it, so check statements dated around 5 April. If your rent is high enough for **Making Tax Digital**, the app says so; it doesn't send quarterly updates.

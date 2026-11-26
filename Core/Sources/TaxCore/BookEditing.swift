@@ -32,7 +32,7 @@ extension PropertyBook {
                                  isPrivate: Bool = false, now: Date = Date()) {
         let text = payment.merchant.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return assign(payment, to: propertyID, as: category) }
-        rules.removeAll { $0.merchantContains.compare(text, options: .caseInsensitive) == .orderedSame }
+        rules.removeAll { $0.isPrivate == isPrivate && $0.merchantContains.compare(text, options: .caseInsensitive) == .orderedSame }
         let newest = max(now.timeIntervalSince1970.rounded(), (rules.map(\.added).max() ?? 0) + 1)
         rules.insert(PropertyRule(merchantContains: text, propertyID: propertyID, category: category,
                                   added: newest, isPrivate: isPrivate), at: 0)

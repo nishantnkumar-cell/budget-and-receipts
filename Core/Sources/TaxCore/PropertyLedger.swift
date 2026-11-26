@@ -55,9 +55,14 @@ public struct PropertyLedger: Sendable {
             if property.myShare < 0 || property.myShare > 1 {
                 block("\(property.name): the ownership share must be between 0 and 1.")
             }
-            let joint = property.myShare > 0 && property.myShare < 1
-            if joint && property.myShare != Decimal(string: "0.5")! && !property.form17 {
-                block("\(property.name): a married couple's joint property is taxed 50/50 unless HMRC has a Form 17.")
+            if property.isUnequalJoint {
+                if let from = property.form17From {
+                    if from > year.start && from < year.end {
+                        note("\(property.name): split half each until \(day(from)), the Form 17 date, then by your shares.")
+                    }
+                } else {
+                    block("\(property.name): a married couple's joint property is taxed 50/50 unless HMRC has a Form 17.")
+                }
             }
         }
 
@@ -203,6 +208,26 @@ public struct PropertyLedger: Sendable {
             if Set(jobs.map { "\($0.taxablePay)|\($0.taxDeducted)" }).count < jobs.count {
                 note("The same pay is entered twice for \(person == .me ? "you" : "your spouse") in \(year). Remove one.")
             }
+        }
+        for person in [Person.me, .partner] {
+            let name = person == .me ? "you" : "your spouse"
+            if book.figures.filter({ $0.person == person && $0.taxYear == year.description }).count > 1 {
+                block("Other figures for \(name) are entered more than once for \(year). Remove the extra ones.")
+            }
+            let gross = ledger.lines.filter { $0.category.isIncome }.reduce(Decimal(0)) { total, line in
+                total + line.amount * (properties[line.propertyID]?.share(of: person, on: line.date, in: year) ?? 0)
+            }
+            if gross > 150_000 {
+                block("Rent for \(name) is over £150,000, where the cash basis used here doesn't apply.")
+            }
+            // Making Tax Digital goes by each person's rent before costs.
+            let (limit, from): (Decimal, Int) = year.startYear == 2025 ? (30_000, 2027) : (20_000, 2028)
+            if gross > limit {
+                note("Rent for \(name) is over \(TaxMoney.format(limit)) in \(year): Making Tax Digital is expected to apply from April \(from), with quarterly updates.")
+            }
+        }
+        if year.startYear > 2025 {
+            note("The \(year) return form isn't published yet. Box numbers are from 2025-26 and may change.")
         }
         if !book.properties.isEmpty {
             ledger.issues += coverage(transactions: transactions, year: year, asOf: asOf)

@@ -191,6 +191,9 @@ struct TaxAssignView: View {
     }
 
     private func save() {
+        // As the payment is now: it may have synced a change while this was open.
+        let payment = store.transactions.first { $0.id == payment.id } ?? payment
+        let isSplit = !payment.splits.isEmpty
         tax.change { book in
             if isSplit {
                 for split in payment.splits {

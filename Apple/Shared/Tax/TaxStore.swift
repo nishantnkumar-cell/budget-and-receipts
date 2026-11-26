@@ -26,6 +26,8 @@ final class TaxStore: ObservableObject, SyncSource {
     var paymentPrivacy: () -> [String: Bool] = { [:] }
 
     let collections = TaxItems.collections
+    /// A partner's changes to entries typed in here, turned down in the last arrivals.
+    private var lastRejected: Set<String> = []
 
     init(folder: URL = JSONFileStorage.defaultFolder) {
         storage = JSONFileStorage(folder: folder)
@@ -49,8 +51,20 @@ final class TaxStore: ObservableObject, SyncSource {
         guard next != book else { return }
         let privacy = paymentPrivacy()
         var updated = items
-        updated.update(from: book, to: next) { privacy[$0] ?? false }
+        updated.update(from: book, to: next) { privacy[$0] }
         replace(with: updated)
+        save()
+        didPersist?()
+    }
+
+    /// You made these payments private, or shared them: the items about them follow.
+    func privacyChanged(_ fingerprints: Set<String>) {
+        guard !isWaitingForFiles, !fingerprints.isEmpty else { return }
+        let privacy = paymentPrivacy()
+        var next = items
+        next.followPrivacy(of: fingerprints) { privacy[$0] }
+        guard next.records != items.records else { return }
+        replace(with: next)
         save()
         didPersist?()
     }
@@ -125,8 +139,12 @@ final class TaxStore: ObservableObject, SyncSource {
 
     @discardableResult
     func applySync(saves: [SyncRecord], deletes: Set<String>) -> Bool {
+        lastRejected = []
         guard !isWaitingForFiles else { return false }
         var mine = saves.filter { collections.contains($0.collection) }
+        // Pay and yearly figures can only be changed by the person who typed them in.
+        lastRejected = Set(mine.filter { $0.byPartner && items.isMyOwnEntry($0.key) }.map(\.key))
+        mine.removeAll { lastRejected.contains($0.key) }
         if role == .member { mine = mine.map { $0.isPrivate ? $0 : TaxItems.flipped($0) } }
         var next = items
         guard next.apply(saves: mine, deletes: deletes) else { return true }
@@ -141,10 +159,12 @@ final class TaxStore: ObservableObject, SyncSource {
         return true
     }
 
+    func rejectedKeys(_ saves: [SyncRecord]) -> Set<String> { lastRejected }
+
     /// What arrivals are about to change or delete. Pay is left out: when someone stops
     /// sharing theirs, the other person mustn't be able to put it back.
     private func recentChanges(saves: [SyncRecord], deletes: Set<String>) -> [RecentChange] {
-        let hidden: Set<String> = [TaxItems.Kind.pay.rawValue, TaxItems.Kind.carried.rawValue]
+        let hidden: Set<String> = [TaxItems.Kind.pay.rawValue, TaxItems.Kind.figures.rawValue]
         let before = Dictionary(items.records.filter { !hidden.contains($0.collection) }.map { ($0.key, $0) },
                                 uniquingKeysWith: { first, _ in first })
         var kept: [RecentChange] = []
@@ -175,7 +195,7 @@ final class TaxStore: ObservableObject, SyncSource {
         guard !isWaitingForFiles, collections.contains(change.collection) else { return }
         let privacy = paymentPrivacy()
         var next = items
-        next.restore(SyncRecord(collection: change.collection, id: change.itemID, payload: change.previous)) { privacy[$0] ?? false }
+        next.restore(SyncRecord(collection: change.collection, id: change.itemID, payload: change.previous)) { privacy[$0] }
         replace(with: next)
         save()
         didPersist?()

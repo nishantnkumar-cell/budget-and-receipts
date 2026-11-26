@@ -47,6 +47,9 @@ struct TaxReturnView: View {
                 LabeledContent("Less finance cost relief", value: TaxMoney.format(result.financeReduction))
                 LabeledContent("Tax for the year", value: TaxMoney.format(result.liability))
                 LabeledContent("Already deducted from pay", value: TaxMoney.format(result.taxDeducted))
+                if result.advancePaid > 0 {
+                    LabeledContent("Advance payments made", value: TaxMoney.format(result.advancePaid))
+                }
                 LabeledContent(result.balance < 0 ? "Refund due" : "Still to pay", value: TaxMoney.format(abs(result.balance)))
                 if let advance = result.paymentOnAccount {
                     LabeledContent("Plus two advance payments, each", value: TaxMoney.format(advance))

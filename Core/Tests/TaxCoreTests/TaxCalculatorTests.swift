@@ -78,6 +78,31 @@ final class TaxCalculatorTests: XCTestCase {
         XCTAssertEqual(result.paymentOnAccount, 1_743)
     }
 
+    func testAdvancePaymentsAlreadyMadeComeOffTheBalance() {
+        var paid = input(rent: 30_000)
+        paid.advancePaid = 3_486
+        let result = TaxCalculator.estimate(paid)
+        XCTAssertEqual(result.balance, 0)
+        XCTAssertEqual(result.paymentOnAccount, 1_743)
+    }
+
+    func testGiftAidRestoresTheAllowance() {
+        var giving = input(pay: 105_000)
+        giving.giftAid = 4_000
+        let result = TaxCalculator.estimate(giving)
+        XCTAssertEqual(result.personalAllowance, 12_070)
+        XCTAssertEqual(result.liability, 28_832)
+    }
+
+    func testARefundBiggerThanTheCostsIsIncome() {
+        var refunded = input(rent: 1_000)
+        refunded.property[.repairs] = -100
+        let pages = TaxCalculator.pages(refunded)
+        XCTAssertEqual(pages.repairs, 0)
+        XCTAssertEqual(pages.income, 1_100)
+        XCTAssertEqual(pages.taxableProfit, 1_100)
+    }
+
     func testBoxesRoundInTheTaxpayersFavour() {
         let pages = TaxCalculator.pages(input(rent: Decimal(string: "1000.99")!, expenses: Decimal(string: "10.01")!))
         XCTAssertEqual(pages.income, 1_000)
