@@ -79,6 +79,8 @@ struct SavingsGoalEditor: View {
     @EnvironmentObject var store: BudgetStore
     @Environment(\.dismiss) private var dismiss
     @State var goal: SavingsGoal
+    /// The item as this screen opened it, so saving writes only what was changed here.
+    @State private var opened: SavingsGoal?
     @State private var adding: Decimal?
     @State private var addingBy: Person = .me
     @State private var editingContribution: SavingsGoal.Contribution?
@@ -152,12 +154,13 @@ struct SavingsGoalEditor: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { if opened == nil, !isNew { opened = goal } }
         .navigationTitle(isNew ? "New goal" : goal.name)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
                     goal.name = goal.name.trimmingCharacters(in: .whitespaces)
-                    store.saveGoal(goal)
+                    if let opened { store.saveGoal(goal, editedFrom: opened) } else { store.saveGoal(goal) }
                     dismiss()
                 }
                 .disabled(goal.name.trimmingCharacters(in: .whitespaces).isEmpty || goal.target <= 0)
@@ -517,6 +520,8 @@ struct TripEditor: View {
     @EnvironmentObject var store: BudgetStore
     @Environment(\.dismiss) private var dismiss
     @State var trip: Trip
+    /// The item as this screen opened it, so saving writes only what was changed here.
+    @State private var opened: Trip?
 
     private var isNew: Bool { !store.trips.contains { $0.id == trip.id } }
     static let currencies = ["EUR", "USD", "CHF", "JPY", "AUD", "CAD", "NZD", "SEK", "NOK", "DKK", "PLN", "CZK", "TRY", "AED", "INR", "THB", "SGD", "HKD", "ZAR", "MXN", "GBP"]
@@ -549,13 +554,14 @@ struct TripEditor: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { if opened == nil, !isNew { opened = trip } }
         .navigationTitle(isNew ? "New trip" : trip.name)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
                     if trip.end < trip.start { trip.end = trip.start }
-                    store.saveTrip(trip)
+                    if let opened { store.saveTrip(trip, editedFrom: opened) } else { store.saveTrip(trip) }
                     dismiss()
                 }
                 .disabled(trip.name.trimmingCharacters(in: .whitespaces).isEmpty)

@@ -36,6 +36,13 @@ final class SubscriptionStore: ObservableObject {
         return !isWaitingForFiles
     }
 
+    /// Saves a contract edited on its own screen: only what was changed there is written, onto
+    /// the contract as it is now. A deleted one stays deleted.
+    func save(_ draft: SubscriptionContract, editedFrom original: SubscriptionContract) {
+        guard let current = contracts.first(where: { $0.id == draft.id }) else { return }
+        save(EditMerge.apply(draft, editedFrom: original, onto: current))
+    }
+
     func save(_ contract: SubscriptionContract) {
         if let index = contracts.firstIndex(where: { $0.id == contract.id }) {
             contracts[index] = contract
@@ -140,6 +147,10 @@ extension SubscriptionStore: SyncSource {
 
     /// Contracts read the same from both sides of a household.
     func setHouseholdRole(_ role: HouseholdLink.Role) {}
+
+    func canRead(_ record: SyncRecord) -> Bool {
+        record.collection != "contracts" || (try? SyncRecord.decoder().decode(SubscriptionContract.self, from: record.payload)) != nil
+    }
 
     func syncRecords() -> [SyncRecord] {
         SyncRecord.records(contracts, collection: "contracts", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })

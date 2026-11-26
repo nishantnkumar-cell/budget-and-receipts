@@ -66,9 +66,23 @@ public struct SyncState: Codable, Hashable, Sendable {
     }
 
     public var entries: [String: Entry]
+    /// Items whose newest version in iCloud this version of the app can't read, such as ones
+    /// a newer version saved. Nothing is sent over them. Nil in older saved files.
+    public var unreadable: Set<String>?
 
-    public init(entries: [String: Entry] = [:]) {
+    public init(entries: [String: Entry] = [:], unreadable: Set<String>? = nil) {
         self.entries = entries
+        self.unreadable = unreadable
+    }
+
+    /// An item arrived that can't be read here: leave iCloud's copy exactly as it is.
+    public mutating func recordUnreadable(_ key: String) {
+        unreadable = (unreadable ?? []).union([key])
+    }
+
+    /// Files such as photos and documents, which an item points to.
+    private static func isFile(_ key: String) -> Bool {
+        key.hasPrefix("images|") || key.hasPrefix("contractFiles|")
     }
 
     /// The changes between what was last synced and the items as they are now.
@@ -90,15 +104,23 @@ public struct SyncState: Codable, Hashable, Sendable {
         for (key, entry) in entries where !seen.contains(key) {
             deletes.append(.init(key: key, isPrivate: entry.isPrivate))
         }
+        if let held = unreadable, !held.isEmpty {
+            saves.removeAll { held.contains($0.key) }
+            // An item that can't be read may point to files nothing else here mentions, so no
+            // file is deleted until everything can be read.
+            deletes.removeAll { held.contains($0.key) || Self.isFile($0.key) }
+        }
         return SyncChanges(saves: saves, deletes: deletes.sorted { $0.key < $1.key })
     }
 
     public mutating func recordSaved(_ record: SyncRecord) {
         entries[record.key] = Entry(digest: record.digest, isPrivate: record.isPrivate)
+        unreadable?.remove(record.key)
     }
 
     public mutating func recordDeleted(_ key: String) {
         entries[key] = nil
+        unreadable?.remove(key)
     }
 
     /// True when a deletion comes from the other zone to the one this item was last synced in:

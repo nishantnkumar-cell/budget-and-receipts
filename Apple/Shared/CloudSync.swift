@@ -118,11 +118,22 @@ protocol SyncSource: AnyObject, Sendable {
     var isWaitingForFiles: Bool { get }
     /// Keys among these arrivals this store refused (not the partner's to change).
     func rejectedKeys(_ saves: [SyncRecord]) -> Set<String>
+    /// False for an item of this store's kind that this version can't read, e.g. one a newer
+    /// version saved.
+    func canRead(_ record: SyncRecord) -> Bool
 }
 
 extension SyncSource {
     func rejectedKeys(_ saves: [SyncRecord]) -> Set<String> { [] }
     var isWaitingForFiles: Bool { false }
+    func canRead(_ record: SyncRecord) -> Bool { true }
+}
+
+extension [SyncSource] {
+    /// The items among these that the store for their kind can't read.
+    @MainActor func unreadableKeys(_ records: [SyncRecord]) -> Set<String> {
+        Set(records.filter { record in contains { $0.collections.contains(record.collection) && !$0.canRead(record) } }.map(\.key))
+    }
 }
 
 /// Where this device stands in a shared household.
@@ -317,6 +328,14 @@ actor CloudSync: CKSyncEngineDelegate {
             return (Set(sources.flatMap(\.collections)), Set(sources.flatMap { $0.syncRecords() }.map(\.key)))
         }
         knownCollections = known
+        // A different build of the app may read what the last one couldn't.
+        let buildFile = stateFolder.appendingPathComponent("sync-build.txt")
+        let build = "\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") ?? "") \(Self.buildDate)"
+        let isNewBuild = (try? String(contentsOf: buildFile, encoding: .utf8)) != build
+        try? build.write(to: buildFile, atomically: true, encoding: .utf8)
+        if isNewBuild, state.unreadable?.isEmpty == false {
+            FileManager.default.createFile(atPath: stateFolder.appendingPathComponent(Self.refetchFlag).path, contents: Data())
+        }
         let forgotten = state.forgetUnknown(known: known, keeping: current)
         guard forgotten > 0 else { return }
         log("\(forgotten) items of a newer kind weren't kept: reading them again.")
@@ -325,6 +344,12 @@ actor CloudSync: CKSyncEngineDelegate {
     }
 
     private static let refetchFlag = "sync-refetch-held"
+
+    /// Changes with every build, so an update is noticed even when the version number isn't.
+    private static var buildDate: String {
+        let changed = Bundle.main.executableURL.flatMap { try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate }
+        return changed.map { "\(Int($0.timeIntervalSince1970))" } ?? ""
+    }
 
     /// The engines only pass on what changed, so items of a newer kind that weren't kept are
     /// read straight from iCloud. The engines and anything they have queued are left alone.
@@ -343,9 +368,17 @@ actor CloudSync: CKSyncEngineDelegate {
                         let record = try result.get().record
                         guard record.recordType == Self.recordType,
                               let collection = record.encryptedValues["collection"] as? String,
-                              !knownCollections.contains(collection), let item = syncRecord(from: record) else { continue }
+                              var item = syncRecord(from: record) else { continue }
+                        let wasUnreadable = state.unreadable?.contains(item.key) == true
+                        guard !knownCollections.contains(collection) || wasUnreadable else { continue }
+                        item.byPartner = record.lastModifiedUserRecordID.map { $0.recordName != CKCurrentUserDefaultName } ?? false
+                        let arrived = item
+                        // Still unreadable: it stays as it is.
+                        if wasUnreadable, await MainActor.run(body: { !sources.unreadableKeys([arrived]).isEmpty }) { continue }
                         let kept = await MainActor.run {
-                            sources.compactMap { $0 as? HeldItemsStore }.allSatisfy { $0.applySync(saves: [item], deletes: []) }
+                            wasUnreadable
+                                ? sources.allSatisfy { $0.applySync(saves: [arrived], deletes: []) }
+                                : sources.compactMap { $0 as? HeldItemsStore }.allSatisfy { $0.applySync(saves: [arrived], deletes: []) }
                         }
                         guard kept else { return }
                         names[item.key] = record.recordID.recordName
@@ -391,7 +424,7 @@ actor CloudSync: CKSyncEngineDelegate {
         } catch {
             print("[sync] Couldn't wipe iCloud: \(describe(error))")
         }
-        for file in ["sync-engine.json", "sync-engine-shared.json", "sync-state.json", "sync-records.json", "sync-names.json", "sync-sealed-reset", "sync-refetch-held", "sync-log.txt"] {
+        for file in ["sync-engine.json", "sync-engine-shared.json", "sync-state.json", "sync-records.json", "sync-names.json", "sync-sealed-reset", "sync-refetch-held", "sync-build.txt", "sync-log.txt"] {
             try? FileManager.default.removeItem(at: stateFolder.appendingPathComponent(file))
         }
         print("[sync] Forgot this device's sync records")
@@ -773,6 +806,12 @@ actor CloudSync: CKSyncEngineDelegate {
                             if kept { state.recordSaved(item) }
                             continue
                         }
+                        // Nor one of a known kind that it can't read.
+                        if let item = syncRecord(from: server), await MainActor.run(body: { !sources.unreadableKeys([item]).isEmpty }) {
+                            outgoing[name] = nil
+                            state.recordUnreadable(item.key)
+                            continue
+                        }
                     }
                     retry.append(.saveRecord(failure.record.recordID))
                 case .zoneNotFound:
@@ -861,21 +900,25 @@ actor CloudSync: CKSyncEngineDelegate {
         if !duplicateDeletes.isEmpty { syncEngine.state.add(pendingRecordZoneChanges: duplicateDeletes.map { .deleteRecord($0) }) }
         guard !saves.isEmpty || !deletes.isEmpty else { saveState(); return }
         let finalSaves = saves, finalDeletes = deletes
-        let rejected = await MainActor.run { () -> (saved: Bool, rejected: Set<String>) in
+        let rejected = await MainActor.run { () -> (saved: Bool, rejected: Set<String>, unreadable: Set<String>) in
             var ok = true
             var rejected = Set<String>()
+            let unreadable = sources.unreadableKeys(finalSaves)
+            let readable = finalSaves.filter { !unreadable.contains($0.key) }
             for source in sources {
-                let result = source.applySync(saves: finalSaves, deletes: finalDeletes)
+                let result = source.applySync(saves: readable, deletes: finalDeletes)
                 ok = ok && result
-                rejected.formUnion(source.rejectedKeys(finalSaves))
+                rejected.formUnion(source.rejectedKeys(readable))
             }
-            return (ok, rejected)
+            return (ok, rejected, unreadable)
         }
         // Only mark changes as synced once they're on disk; otherwise they're fetched again.
         guard rejected.saved else { await report("Couldn't save changes from iCloud yet"); return }
         for (record, item) in fetchedRecords {
             systemFields[record.recordID.recordName] = encodeSystemFields(record)
-            if rejected.rejected.contains(item.key) {
+            if rejected.unreadable.contains(item.key) {
+                state.recordUnreadable(item.key)
+            } else if rejected.rejected.contains(item.key) {
                 // Not the partner's to change: our version is sent back.
                 state.recordDeleted(item.key)
             } else {
@@ -1140,7 +1183,8 @@ actor CloudSync: CKSyncEngineDelegate {
     /// Everything is compared and sent again from scratch (after an account change, joining or
     /// leaving a household, or a restore). Record names are kept so nothing is duplicated.
     private func resetLocalSyncState() {
-        state = SyncState()
+        // What can't be read stays untouched through a fresh start.
+        state = SyncState(unreadable: state.unreadable)
         systemFields = [:]
         outgoing = [:]
         saveState()

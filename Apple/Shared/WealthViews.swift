@@ -238,6 +238,8 @@ struct WealthAccountEditor: View {
     @EnvironmentObject var store: BudgetStore
     @Environment(\.dismiss) private var dismiss
     @State var account: WealthAccount
+    /// The item as this screen opened it, so saving writes only what was changed here.
+    @State private var opened: WealthAccount?
     @State private var newValue: Decimal?
     @State private var confirmingDelete = false
 
@@ -324,6 +326,7 @@ struct WealthAccountEditor: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { if opened == nil, !isNew { opened = account } }
         .navigationTitle(isNew ? "New account" : account.name)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -344,7 +347,7 @@ struct WealthAccountEditor: View {
     }
 
     private func save() {
-        store.saveWealthAccount(account)
+        if let opened { store.saveWealthAccount(account, editedFrom: opened) } else { store.saveWealthAccount(account) }
         if let newValue { store.recordBalance(newValue, for: account.id) }
         dismiss()
     }
