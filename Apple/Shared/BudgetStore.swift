@@ -61,6 +61,10 @@ final class BudgetStore: ObservableObject {
     private(set) var lastSaveSucceeded = true
     /// Called after every local change is saved, so iCloud sync can send it.
     var didPersist: (() -> Void)?
+    /// A payment logged on the phone met its statement line: its old id, then the new one.
+    var didReplacePayment: ((String, String) -> Void)?
+    /// You made payments private, or shared them again.
+    var didChangePrivacy: ((Set<String>) -> Void)?
 
     /// - Parameter folder: where the JSON files live. Tests pass a temporary folder;
     ///   the app uses Application Support.
@@ -247,13 +251,14 @@ final class BudgetStore: ObservableObject {
 
     /// Replaces everything with a backup's data, then reloads, so iCloud sync makes the other
     /// devices match. Contracts are reloaded too (they live in the same folder).
-    func restore(_ contents: EncryptedBackup.Contents, subscriptions: SubscriptionStore, held: HeldItemsStore) throws {
+    func restore(_ contents: EncryptedBackup.Contents, subscriptions: SubscriptionStore, tax: TaxStore, held: HeldItemsStore) throws {
         try EncryptedBackup.replace(folder: storage.folder, with: contents)
         unreadableFiles = []
         loadAll()
         subscriptions.reloadAfterRestore()
+        tax.reloadAfterRestore()
         held.reloadAfterRestore()
-        held.release(to: [self, subscriptions])
+        held.release(to: [self, subscriptions, tax])
         persist()
     }
 
@@ -365,9 +370,11 @@ final class BudgetStore: ObservableObject {
     func update(_ transaction: BankTransaction) {
         guard let index = transactions.firstIndex(where: { $0.id == transaction.id }) else { return }
         let oldRepayment = transactions[index].reimbursement?.repaymentID
-        transactions[index] = transaction
-        relinkRepayment(of: transaction.id, from: oldRepayment, to: transaction.reimbursement?.repaymentID)
-        persist()
+        reportingPrivacyChanges {
+            transactions[index] = transaction
+            relinkRepayment(of: transaction.id, from: oldRepayment, to: transaction.reimbursement?.repaymentID)
+            persist()
+        }
     }
 
     // MARK: Logged payments (Shortcuts and Siri)
@@ -412,6 +419,7 @@ final class BudgetStore: ObservableObject {
             for index in notes.indices where notes[index].transactionID == logged.id { notes[index].transactionID = match.statement }
             for index in transactions.indices where transactions[index].repays == logged.id { transactions[index].repays = match.statement }
             transactions.remove(at: loggedIndex)
+            didReplacePayment?(match.logged, match.statement)
         }
         persist()
         return matches.count
@@ -948,18 +956,31 @@ final class BudgetStore: ObservableObject {
 
     func updateAccount(_ account: BankAccount) {
         guard let index = accounts.firstIndex(where: { $0.id == account.id }) else { return }
-        accounts[index] = account
-        persist()
+        reportingPrivacyChanges {
+            accounts[index] = account
+            persist()
+        }
     }
 
-    /// Removes an account. Its transactions stay, without an account.
+    /// Removes an account. Its transactions stay, without an account, and those of a private
+    /// account stay private.
     func deleteAccount(_ account: BankAccount) {
-        accounts.removeAll { $0.id == account.id }
-        for index in transactions.indices where transactions[index].accountID == account.id {
-            transactions[index].accountID = nil
+        reportingPrivacyChanges {
+            if accounts.contains(where: { $0.id == account.id && $0.isPrivate == true }) {
+                for index in transactions.indices where transactions[index].accountID == account.id {
+                    transactions[index].isPrivate = true
+                }
+                for index in imports.indices where imports[index].accountID == account.id {
+                    imports[index].isPrivate = true
+                }
+            }
+            accounts.removeAll { $0.id == account.id }
+            for index in transactions.indices where transactions[index].accountID == account.id {
+                transactions[index].accountID = nil
+            }
+            if accountFilter == account.id { accountFilter = nil }
+            persist()
         }
-        if accountFilter == account.id { accountFilter = nil }
-        persist()
     }
 
     func account(_ id: UUID?) -> BankAccount? { id.flatMap { id in accounts.first { $0.id == id } } }
@@ -1444,6 +1465,21 @@ extension BudgetStore: SyncSource {
         transaction.isPrivate == true || transaction.accountID.map { id in accounts.contains { $0.id == id && $0.isPrivate == true } } == true
     }
 
+    /// Runs a change made by the person here, then says which payments it hid or showed.
+    private func reportingPrivacyChanges(_ change: () -> Void) {
+        let before = paymentPrivacy
+        change()
+        let changed = paymentPrivacy.filter { before[$0.key] != nil && before[$0.key] != $0.value }
+        if !changed.isEmpty { didChangePrivacy?(Set(changed.keys)) }
+    }
+
+    /// Each payment's id and whether it's kept from the partner.
+    var paymentPrivacy: [String: Bool] {
+        let privateAccounts = Set(accounts.filter { $0.isPrivate == true }.map(\.id))
+        return Dictionary(transactions.map { ($0.id, $0.isPrivate == true || $0.accountID.map(privateAccounts.contains) == true) },
+                          uniquingKeysWith: { $0 || $1 })
+    }
+
     /// The items from this device's own point of view.
     private func localRecords() -> [SyncRecord] {
         let privateAccounts = Set(accounts.filter { $0.isPrivate == true }.map(\.id))
@@ -1455,7 +1491,7 @@ extension BudgetStore: SyncSource {
         return SyncRecord.records(transactions, collection: "transactions", id: \.fingerprint, isPrivate: isPrivate)
             + SyncRecord.records(changes, collection: "changes", id: \.id.uuidString, isPrivate: { privatePayments.contains($0.transactionID) })
             + SyncRecord.records(budgets, collection: "budgets", id: \.id.uuidString)
-            + SyncRecord.records(imports, collection: "imports", id: \.id.uuidString, isPrivate: { $0.accountID.map(privateAccounts.contains) == true })
+            + SyncRecord.records(imports, collection: "imports", id: \.id.uuidString, isPrivate: { $0.isPrivate == true || $0.accountID.map(privateAccounts.contains) == true })
             + SyncRecord.records([couple], collection: "couple", id: { _ in "settings" })
             + SyncRecord.records(settlements, collection: "settlements", id: \.id.uuidString)
             + SyncRecord.records(pendingReceipts, collection: "pendingReceipts", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })

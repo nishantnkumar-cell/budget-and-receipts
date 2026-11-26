@@ -14,7 +14,7 @@ If an invite sent through Messages doesn't seem to do anything, try the QR code 
 
 ## Shared unless you say otherwise
 
-Everything is shared with your partner unless you mark it Private. You can make a payment, an account, a contract, a goal or a trip private. Making an account private makes its payments private too. Private things stay on your own devices.
+Everything is shared with your partner unless you mark it Private. You can make a payment, an account, a contract, a goal or a trip private. Making an account private makes its payments private too, and they stay private if you delete the account. Private things stay on your own devices.
 
 Marking something private only hides it from then on. If your partner already had a copy, it stays on their devices, because iCloud can't take it back.
 

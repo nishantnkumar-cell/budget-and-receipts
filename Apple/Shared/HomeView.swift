@@ -52,13 +52,17 @@ struct HomeView: View {
     }
 }
 
-/// One row of the Mac sidebar's places that have no iPhone tab: To Check, Reports and Net worth.
+/// One row of the Mac sidebar's places that have no iPhone tab: To Check, Reports, Net worth
+/// and, when switched on, Property & Tax.
 struct MorePlacesRow: View {
     @EnvironmentObject var store: BudgetStore
+    @AppStorage(AppSettings.taxEnabledKey) private var taxEnabled = false
+
+    private var places: [AppSection] { [.inbox, .reports, .netWorth] + (taxEnabled ? [.tax] : []) }
 
     var body: some View {
         HStack(spacing: 10) {
-            ForEach([AppSection.inbox, .reports, .netWorth]) { place in
+            ForEach(places) { place in
                 NavigationLink { place.screen } label: {
                     VStack(spacing: 6) {
                         Image(systemName: place.macSymbol)

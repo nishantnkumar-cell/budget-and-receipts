@@ -26,6 +26,34 @@ final class AccountStoreTests: XCTestCase {
         XCTAssertEqual(BudgetStore(folder: folder).accounts.count, 1, "Saved")
     }
 
+    func testDeletingAPrivateAccountKeepsItsPaymentsPrivate() throws {
+        let store = BudgetStore(folder: folder)
+        var secret = store.addAccount(name: "Mine only")
+        secret.isPrivate = true
+        store.updateAccount(secret)
+        let open = store.addAccount(name: "Joint")
+        for (account, shop) in [(secret, "FLORIST"), (open, "GROCER")] {
+            let csv = "Date,Description,Amount\r\n03/11/2026,\(shop),-15.00\r\n"
+            store.commitImport(try store.previewImport(text: csv, fileName: "\(shop).csv", mapping: nil, account: account.id), fileName: "\(shop).csv")
+        }
+        var changed: Set<String> = []
+        store.didChangePrivacy = { changed.formUnion($0) }
+        store.deleteAccount(secret)
+        store.deleteAccount(open)
+        XCTAssertTrue(changed.isEmpty, "Nobody can see more or less than before")
+        for reread in [store, BudgetStore(folder: folder)] {
+            let records = reread.syncRecords()
+            for transaction in reread.transactions {
+                let isPrivate = transaction.merchant == "FLORIST"
+                XCTAssertEqual(records.first { $0.collection == "transactions" && $0.id == transaction.id }?.isPrivate, isPrivate)
+            }
+            for item in reread.imports {
+                XCTAssertEqual(records.first { $0.collection == "imports" && $0.id == item.id.uuidString }?.isPrivate, item.fileName == "FLORIST.csv")
+            }
+            XCTAssertEqual(reread.imports.count, 2)
+        }
+    }
+
     func testChosenAccountAndFilter() throws {
         let store = BudgetStore(folder: folder)
         let card = store.addAccount(name: "Credit card")
