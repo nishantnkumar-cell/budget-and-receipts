@@ -16,13 +16,27 @@ public struct HeldRecords: Hashable, Sendable {
     public var isEmpty: Bool { byKey.isEmpty }
 
     /// Takes in what arrived: keeps items outside `known` collections and drops deleted ones.
+    /// A held copy of a known item is dropped too: its own store now has something newer.
     /// Returns true when something changed.
     @discardableResult
     public mutating func apply(saves: [SyncRecord], deletes: Set<String>, known: Set<String>) -> Bool {
         let before = byKey
         for key in deletes { byKey[key] = nil }
-        for record in saves where !known.contains(record.collection) { byKey[record.key] = record }
+        for record in saves { byKey[record.key] = known.contains(record.collection) ? nil : record }
         return byKey != before
+    }
+
+    /// After a backup is restored: its items win, and any it doesn't mention stay, so that
+    /// restoring never deletes something this version can't even show.
+    public func restored(from backup: HeldRecords) -> HeldRecords {
+        HeldRecords(records + backup.records)
+    }
+
+    /// When this device starts seeing a household from the other side. Shared items of an
+    /// unknown kind can't be turned round, so they're let go rather than sent back mirrored;
+    /// a device that understands them sends its own.
+    public mutating func removeShared() {
+        byKey = byKey.filter { $0.value.isPrivate }
     }
 
     /// The held items belonging to these collections, for a store that now understands them.

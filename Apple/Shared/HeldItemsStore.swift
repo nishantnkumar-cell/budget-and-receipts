@@ -48,9 +48,17 @@ final class HeldItemsStore: ObservableObject, SyncSource {
     }
 
     func reloadAfterRestore() {
+        let current = held
         load()
+        held = current.restored(from: held)
         save()
         didPersist?()
+    }
+
+    /// This device joined or left a partner's household (see `HeldRecords.removeShared`).
+    func removeSharedItems() {
+        held.removeShared()
+        save()
     }
 
     func resetAllData() {
@@ -58,6 +66,8 @@ final class HeldItemsStore: ObservableObject, SyncSource {
         save()
         didPersist?()
     }
+
+    func setHouseholdRole(_ role: HouseholdLink.Role) {}
 
     func syncRecords() -> [SyncRecord] { held.records }
 
@@ -74,12 +84,15 @@ final class HeldItemsStore: ObservableObject, SyncSource {
     }
 
     /// Hands items to a store that understands them now. One stays held until that store has
-    /// saved it.
+    /// saved it. An item the store already has is newer, so the held copy is just let go.
     func release(to sources: [SyncSource]) {
         guard !isWaitingForFiles else { return }
         for source in sources where source !== self && !source.isWaitingForFiles {
             let records = held.records(in: source.collections)
-            guard !records.isEmpty, source.applySync(saves: records, deletes: []) else { continue }
+            guard !records.isEmpty else { continue }
+            let present = Set(source.syncRecords().map(\.key))
+            let missing = records.filter { !present.contains($0.key) }
+            guard missing.isEmpty || source.applySync(saves: missing, deletes: []) else { continue }
             held.remove(records.map(\.key))
             save()
         }
