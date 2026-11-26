@@ -129,6 +129,13 @@ enum SampleData {
         return store
     }
 
+    /// Made-up rupee accounts.
+    @MainActor static func indiaStore() -> IndiaStore {
+        let store = IndiaStore(folder: folder)
+        store.change { $0 = IndiaSample.make() }
+        return store
+    }
+
     @MainActor static func subscriptionStore() -> SubscriptionStore {
         let store = SubscriptionStore(folder: folder)
         let calendar = Calendar.current

@@ -52,16 +52,19 @@ struct HomeView: View {
     }
 }
 
-/// One row of the Mac sidebar's places that have no iPhone tab: To Check, Reports, Net worth
-/// and, when switched on, Property & Tax.
+/// The Mac sidebar's places that have no iPhone tab: To Check, Reports, Net worth and, when
+/// switched on, Property & Tax and India Accounts.
 struct MorePlacesRow: View {
     @EnvironmentObject var store: BudgetStore
     @AppStorage(AppSettings.taxEnabledKey) private var taxEnabled = false
+    @AppStorage(AppSettings.indiaEnabledKey) private var indiaEnabled = false
 
-    private var places: [AppSection] { [.inbox, .reports, .netWorth] + (taxEnabled ? [.tax] : []) }
+    private var places: [AppSection] { [.inbox, .reports, .netWorth] + (taxEnabled ? [.tax] : []) + (indiaEnabled ? [.india] : []) }
+    /// Up to four fit side by side; more wrap onto a second line.
+    private var columns: [GridItem] { Array(repeating: GridItem(.flexible(), spacing: 10), count: places.count > 4 ? 3 : places.count) }
 
     var body: some View {
-        HStack(spacing: 10) {
+        LazyVGrid(columns: columns, spacing: 10) {
             ForEach(places) { place in
                 NavigationLink { place.screen } label: {
                     VStack(spacing: 6) {

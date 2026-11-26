@@ -456,13 +456,18 @@ public enum AmountParser {
 }
 
 /// Parses statement dates. Dates are set to midday so a time-zone change never moves them to another day.
-struct DateParser {
+package struct DateParser {
     let order: DateOrder
     let timeZone: TimeZone
 
+    package init(order: DateOrder, timeZone: TimeZone) {
+        self.order = order
+        self.timeZone = timeZone
+    }
+
     private static let monthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
 
-    func parse(_ text: String) -> Date? {
+    package func parse(_ text: String) -> Date? {
         let parts = text.trimmingCharacters(in: .whitespaces)
             .split(whereSeparator: { $0 == "/" || $0 == "-" || $0 == "." || $0 == " " })
             .map(String.init)

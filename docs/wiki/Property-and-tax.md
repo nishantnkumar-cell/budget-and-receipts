@@ -35,6 +35,6 @@ Property details are shared. Pay is private unless you turn on **Show to** your 
 
 ## What isn't covered
 
-Savings and dividend income, foreign income, capital gains, Scottish rates, student loans, Child Benefit charge, pension annual allowance, the property income allowance, accruals accounting, limits on interest where loans exceed the property's value, stamp duty, and tax years from 2027-28.
+Savings and dividend income, foreign income (see [India accounts](India-accounts) for Indian interest, which is listed but not added to the estimate), capital gains, Scottish rates, student loans, Child Benefit charge, pension annual allowance, the property income allowance, accruals accounting, limits on interest where loans exceed the property's value, stamp duty, and tax years from 2027-28.
 
 Figures use the cash basis: money counts when it's received or paid. Rent a letting agent holds counts when the agent receives it, so check statements dated around 5 April. If your rent is high enough for **Making Tax Digital**, the app says so; it doesn't send quarterly updates.

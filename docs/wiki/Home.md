@@ -12,6 +12,7 @@ These pages explain how to use it. If you're new, start with [Getting started](G
 - [Budgeting as a couple](Budgeting-as-a-couple)
 - [Reports and net worth](Reports-and-net-worth)
 - [Property and tax](Property-and-tax)
+- [India accounts](India-accounts): rupee statements and interest for your UK return
 - [Goals, trips and money owed back](Goals-trips-and-money-owed-back)
 - [Widgets, Siri and Ask your budget](Widgets-Siri-and-Ask-your-budget)
 - [Backups and erasing data](Backups-and-erasing-data)

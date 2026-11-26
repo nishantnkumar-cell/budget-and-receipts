@@ -156,7 +156,7 @@ final class TaxStoreTests: XCTestCase {
         let tax = TaxStore(folder: folder)
         tax.change { $0.properties.append(flat) }
         try budget.restore(EncryptedBackup.open(backup, password: "long enough"), subscriptions: SubscriptionStore(folder: folder),
-                           tax: tax, held: HeldItemsStore(folder: folder, known: budget.collections))
+                           tax: tax, india: IndiaStore(folder: folder), held: HeldItemsStore(folder: folder, known: budget.collections))
         XCTAssertEqual(tax.book.properties, [flat])
         XCTAssertEqual(TaxStore(folder: folder).book.properties, [flat])
     }
@@ -168,7 +168,7 @@ final class TaxStoreTests: XCTestCase {
         let backup = try EncryptedBackup.make(folder: folder, password: "long enough", device: "", appVersion: "")
         tax.change { $0.properties.append(RentalProperty(id: "later", name: "Later")) }
         try budget.restore(EncryptedBackup.open(backup, password: "long enough"), subscriptions: SubscriptionStore(folder: folder),
-                           tax: tax, held: HeldItemsStore(folder: folder, known: budget.collections))
+                           tax: tax, india: IndiaStore(folder: folder), held: HeldItemsStore(folder: folder, known: budget.collections))
         XCTAssertEqual(tax.book.properties, [flat])
     }
 

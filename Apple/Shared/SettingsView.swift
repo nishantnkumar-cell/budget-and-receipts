@@ -15,6 +15,7 @@ struct SettingsView: View {
     @AppStorage(WidgetBridge.showAmountsKey) private var widgetsShowAmounts = true
     @AppStorage("askBudgetAI") private var askBudgetAI = true
     @AppStorage(AppSettings.taxEnabledKey) private var taxEnabled = false
+    @AppStorage(AppSettings.indiaEnabledKey) private var indiaEnabled = false
 
     var body: some View {
         Form {
@@ -61,6 +62,13 @@ struct SettingsView: View {
                 Text("UK property and tax")
             } footer: {
                 Text("Adds rental property records and Self Assessment estimates, opened from Home on iPhone and the sidebar on the Mac. Update every device that shares this budget before entering anything. Estimates only, not tax advice.")
+            }
+            Section {
+                Toggle("India Accounts", isOn: $indiaEnabled)
+            } header: {
+                Text("Rupee accounts")
+            } footer: {
+                Text("ICICI, SBI and other rupee accounts, kept apart from your pound budget, with interest by UK tax year. Update every device that shares this budget before entering anything.")
             }
             Section {
                 Toggle("Lock with \(AppLock().methodName)", isOn: $settings.appLockEnabled)

@@ -251,14 +251,15 @@ final class BudgetStore: ObservableObject {
 
     /// Replaces everything with a backup's data, then reloads, so iCloud sync makes the other
     /// devices match. Contracts are reloaded too (they live in the same folder).
-    func restore(_ contents: EncryptedBackup.Contents, subscriptions: SubscriptionStore, tax: TaxStore, held: HeldItemsStore) throws {
+    func restore(_ contents: EncryptedBackup.Contents, subscriptions: SubscriptionStore, tax: TaxStore, india: IndiaStore, held: HeldItemsStore) throws {
         try EncryptedBackup.replace(folder: storage.folder, with: contents)
         unreadableFiles = []
         loadAll()
         subscriptions.reloadAfterRestore()
         tax.reloadAfterRestore()
+        india.reloadAfterRestore()
         held.reloadAfterRestore()
-        held.release(to: [self, subscriptions, tax])
+        held.release(to: [self, subscriptions, tax, india])
         persist()
     }
 

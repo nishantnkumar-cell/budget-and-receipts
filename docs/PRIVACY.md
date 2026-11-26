@@ -18,6 +18,10 @@ Nothing. Duo Budget has no account, no servers of its own, no analytics, no adve
 
 If you use Property & Tax, what you enter (properties, choices about payments, agent statements, mortgage interest, pay and tax) is stored, synced, backed up and erased like the rest of your data. All figures are worked out on your device and nothing is sent to a tax authority or anyone else. In a shared household, property details are shared with your partner. Pay and amounts brought forward stay private unless you choose to show them, and a choice about a private payment stays private. Stopping sharing removes an item from your partner's devices, but can't undo what they have already seen.
 
+## Rupee accounts
+
+If you use India Accounts, what you import or enter (the bank, kind and last four digits of each account, statement lines, balances and exchange rates) is stored, synced, backed up and erased like the rest of your data. Statement files are read on your device, and exchange rates are typed in, not looked up. In a shared household, accounts are shared with your partner unless you mark them private; a private account's lines are private too. Stopping sharing removes an account from your partner's devices, but can't undo what they have already seen. The file you can export for an accountant is not encrypted.
+
 ## What runs on your device
 
 - Receipts and statements are read on the device with Apple Vision.
