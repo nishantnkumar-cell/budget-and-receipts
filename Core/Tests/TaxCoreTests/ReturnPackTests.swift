@@ -97,14 +97,53 @@ final class ReturnPackTests: XCTestCase {
         XCTAssertTrue(result.checks.contains { $0.contains("£162.00 more than the 15%") })
     }
 
-    func testMoreThanTwoThousandUntaxedUsesTheForeignPagesAndManyAccountsShareARow() {
+    func testMoreThanTwoThousandUntaxedUsesTheForeignPagesAndAccountsAreAddedByHowTheyWereTaxed() {
         let large = pack(PropertyBook(), india: india([(200_100, 0)]))
         XCTAssertEqual(values(large, .foreign)["SA106.B1"], .pounds(2_001))
-        let many = pack(PropertyBook(), india: india(Array(repeating: (100_000, 10_000), count: 4)))
-        XCTAssertEqual(values(many, .foreign)["SA106.B1"], .pounds(4_000))
-        XCTAssertEqual(values(many, .foreign)["SA106.C1"], .pounds(400))
-        XCTAssertNil(values(many, .foreign)["SA106.B2"])
-        XCTAssertTrue(many.checks.contains { $0.contains("Attach a sheet") })
+        let many = pack(PropertyBook(), india: india([(100_000, 10_000), (100_000, 10_000), (100_000, 31_200), (100_000, 0), (100_000, 0)]))
+        let boxes = values(many, .foreign)
+        XCTAssertEqual(boxes["SA106.B1"], .pounds(3_000))
+        XCTAssertEqual(boxes["SA106.C1"], .pounds(350))
+        XCTAssertEqual(boxes["SA106.B2"], .pounds(2_000))
+        XCTAssertNil(boxes["SA106.C2"])
+        XCTAssertNil(boxes["SA106.B3"])
+    }
+
+    func testTaxRelievedNeverPassesTheTreatyShareOfTheFigureShown() {
+        let result = pack(PropertyBook(), india: india([(10_099, 3_181)]))
+        XCTAssertEqual(values(result, .foreign)["SA106.B1"], .pounds(100))
+        XCTAssertEqual(values(result, .foreign)["SA106.C1"], .pounds(15))
+    }
+
+    func testAJobEnteredTwiceBlocks() {
+        let twice = pack(PropertyBook(pay: [job("a", "40000", "5486"), job("b", "40000", "5486")]))
+        XCTAssertFalse(twice.isReady)
+        XCTAssertTrue(twice.problems.contains { $0.contains("same pay and tax") })
+        var other = job("b", "100", "1")
+        other.employer = " employer A"
+        let named = pack(PropertyBook(pay: [job("a", "40000", "5486"), other]))
+        XCTAssertFalse(named.isReady)
+        XCTAssertTrue(pack(PropertyBook(pay: [job("a", "1", "0"), job("b", "2", "0")])).isReady)
+    }
+
+    func testAPartYearPayslipIsntTheYearsPay() {
+        var pay = job("a", "20000", "3000")
+        pay.payslipDate = TaxYear.day(2025, 9, 30)
+        let half = pack(PropertyBook(pay: [pay]))
+        XCTAssertFalse(half.isReady)
+        XCTAssertTrue(half.problems[0].contains("30 Sep 2025"))
+        pay.payslipDate = TaxYear.day(2026, 3, 31)
+        XCTAssertTrue(pack(PropertyBook(pay: [pay])).isReady)
+    }
+
+    func testAPartnersReturnFromASharedHouseholdIsNeverReady() {
+        let book = PropertyBook(pay: [job("a", "1", "0", person: .partner), job("b", "2", "0")])
+        func made(_ person: Person, _ shared: Bool) -> ReturnPack {
+            ReturnPack.make(person, year: year, ledger: PropertyLedger(), book: book, sharedHousehold: shared, today: after)
+        }
+        XCTAssertFalse(made(.partner, true).isReady)
+        XCTAssertTrue(made(.partner, false).isReady)
+        XCTAssertTrue(made(.me, true).isReady)
     }
 
     func testInterestWithoutARateBlocksAndOtherYearsAreRefused() {

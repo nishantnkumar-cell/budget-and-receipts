@@ -46,7 +46,7 @@ In **Return Figures**, choose whose return, for **2025-26**:
 
 **Deadlines:** HMRC had to receive paper returns for 2025-26 by 31 October 2026. Posting one now means a late filing penalty unless HMRC's letter to you gave a later date. Online returns are due by 31 January 2027. HMRC's online service can't take a PDF.
 
-Your name, tax reference, National Insurance number, signature and anything the app doesn't hold are for you to add. Pages are marked **Not ready to file** while something needs sorting out. Interest from India Accounts goes on the foreign pages (or, if untaxed, small and your only foreign income, one box of the main return), with tax relief limited to 15%. It isn't in the app's tax estimate. The files aren't encrypted.
+Your name, tax reference, National Insurance number, signature and anything the app doesn't hold are for you to add. Pages are marked **Not ready to file** while something needs sorting out: for example the same job entered twice, pay that only comes from a payslip earlier than the year's end (check it against your P60 or P45 and save it by hand), or, in a shared household, your partner's return made on your device. Make each person's forms on their own device. The property income allowance isn't applied. Interest from India Accounts goes on the foreign pages (or, if untaxed, small and your only foreign income, one box of the main return), with tax relief limited to 15%. It isn't in the app's tax estimate. The files aren't encrypted.
 
 ## Sharing with your partner
 

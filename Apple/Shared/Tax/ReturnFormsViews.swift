@@ -10,7 +10,12 @@ extension BudgetStore {
         if india.unreadableCount > 0 {
             ledger.issues.append(.init(message: "\(india.unreadableCount) India Accounts items can't be read. Update the app on this device.", blocksFiling: true))
         }
-        return ReturnPack.make(person, year: tax.year, ledger: ledger, book: tax.book, india: india.book)
+        var pack = ReturnPack.make(person, year: tax.year, ledger: ledger, book: tax.book, india: india.book,
+                                   sharedHousehold: householdRole != .solo)
+        // The same thing is only said once.
+        var seen = Set<String>()
+        pack.problems = pack.problems.filter { seen.insert($0).inserted }
+        return pack
     }
 }
 

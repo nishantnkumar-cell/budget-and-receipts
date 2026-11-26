@@ -165,6 +165,10 @@ extension PropertyBook {
         return true
     }
 
+    public static func repeatedPayProblem(_ employer: String) -> String {
+        "Pay from \(employer) is entered more than once for the same person, so it counts twice. Keep one in Pay and Statements."
+    }
+
     /// Employers entered more than once for one person in a year, whose pay would count twice.
     public func repeatedPay(in year: TaxYear) -> [String] {
         let entries = pay.filter { $0.taxYear == year.description }

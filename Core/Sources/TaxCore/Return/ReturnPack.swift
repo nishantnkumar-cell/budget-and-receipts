@@ -85,14 +85,19 @@ public struct ReturnPack: Hashable, Sendable {
     private static func down(_ value: Decimal) -> Int { NSDecimalNumber(decimal: TaxMoney.poundsDown(value)).intValue }
     private static func up(_ value: Decimal) -> Int { NSDecimalNumber(decimal: TaxMoney.poundsUp(value)).intValue }
 
+    /// `sharedHousehold` is true when the other person uses the app on their own devices, so
+    /// what they keep private isn't here.
     public static func make(_ person: Person, year: TaxYear, ledger: PropertyLedger, book: PropertyBook,
-                            india: IndiaBook = IndiaBook(), today: Date = Date()) -> ReturnPack {
+                            india: IndiaBook = IndiaBook(), sharedHousehold: Bool = false, today: Date = Date()) -> ReturnPack {
         guard year == Self.year else {
             return ReturnPack(year: year, person: person, forms: [],
                               problems: ["Only the 2025-26 forms are built in. Choose that tax year."], checks: [])
         }
         var problems = ledger.issues.filter(\.blocksFiling).map(\.message)
         var checks: [String] = []
+        if sharedHousehold && person != .me {
+            problems.append("This is made only from what your partner shares with this device: pay, figures, accounts and payments they keep private are missing. Make their forms on their own device.")
+        }
         if today >= paperLate {
             checks.append("Paper returns for 2025-26 had to reach HMRC by 31 October 2026, so posting these now means a late filing penalty (unless HMRC's letter to you gave a later date). File online by 31 January 2027, copying these figures.")
         }
@@ -105,6 +110,21 @@ public struct ReturnPack: Hashable, Sendable {
         // Employment pages, one for each employer.
         let jobs = book.pay.filter { $0.person == person && $0.taxYear == year.description }
             .sorted { ($0.employer.lowercased(), $0.id) < ($1.employer.lowercased(), $1.id) }
+        // A job entered twice would be taxed twice.
+        for employer in book.repeatedPay(in: year) where jobs.contains(where: { $0.employer == employer }) {
+            problems.append(PropertyBook.repeatedPayProblem(employer))
+        }
+        let figures = Dictionary(grouping: jobs.filter { $0.taxablePay != 0 }) { "\($0.taxablePay)|\($0.taxDeducted)" }
+        for same in figures.values.filter({ $0.count > 1 }).sorted(by: { $0[0].employer < $1[0].employer }) {
+            problems.append("\(same.map(\.employer).joined(separator: " and ")) show the same pay and tax, so they look like one job entered twice. Keep one in Pay and Statements.")
+        }
+        // The form wants the year's total, from the P60 or P45. A payslip's figures to date
+        // only stand for that when it's from the end of the year.
+        for job in jobs {
+            if let paid = job.payslipDate, paid < year.end.addingTimeInterval(-35 * 86_400) {
+                problems.append("Pay from \(job.employer) is only up to a payslip of \(PropertyLedger.day(paid)). Import the year's last payslip, or check the figures against your P60 or P45 in Pay and Statements and save them.")
+            }
+        }
         for job in jobs {
             var entries = [entry("SA102.1", "1", "Pay from this employment", .pounds(down(job.taxablePay))),
                            entry("SA102.2", "2", "UK tax taken off pay", .pounds(up(job.taxDeducted)))]
@@ -112,7 +132,8 @@ public struct ReturnPack: Hashable, Sendable {
             forms.append(ReturnForm(kind: .employment, detail: job.employer, entries: entries))
         }
         if !jobs.isEmpty {
-            checks.append("Employment pages: add your employer's PAYE reference (box 4) and answer boxes 6 to 8. Add any benefits and expenses.")
+            checks.append("Employment pages: compare boxes 1 and 2 with each P60 or P45, add your employer's PAYE reference (box 4) and answer boxes 6 to 8. Add any benefits and expenses.")
+            if jobs.count > 1 { checks.append("There's more than one employment page: make sure each is a different job.") }
         }
 
         // UK property pages.
@@ -143,6 +164,11 @@ public struct ReturnPack: Hashable, Sendable {
                 entries.append(entry("SA105.\(box)", box, label, .pounds(down(value))))
             }
             forms.append(ReturnForm(kind: .property, detail: "", entries: entries))
+            let costs = pages.ratesAndInsurance + pages.repairs + pages.professionalFees + pages.services
+                + pages.otherExpense + pages.replacementItems
+            if pages.income > 0 && (pages.income <= 1_000 || costs < 1_000) {
+                checks.append("With property income or costs of £1,000 or less, the property income allowance may matter: you may not need property pages, or may claim it (box 20.1) instead of costs. The app doesn't apply it; read the UK property notes.")
+            }
         }
 
         // Interest from rupee accounts.
@@ -213,28 +239,33 @@ public struct ReturnPack: Hashable, Sendable {
             return
         }
 
-        // Each account's interest, and the tax that can be relieved: no more than the treaty allows.
-        var lines: [(interest: Decimal, tax: Decimal)] = []
+        // One row for the interest India taxed and one for the rest: the notes ask for a
+        // country's amounts to be added together unless they're taxed differently. Tax that
+        // can be relieved is no more than the treaty allows, account by account.
+        var withTax: (interest: Decimal, tax: Decimal) = (0, 0)
+        var without: Decimal = 0
         var excess: Decimal = 0
         for row in rows {
             let interest = pounds(row.interest)
             let withheld = max(0, pounds(row.taxDeducted))
             let allowed = TaxMoney.penceDown(interest * treatyRate)
             excess += max(0, withheld - allowed)
-            lines.append((interest, min(withheld, allowed)))
+            if withheld > 0 {
+                withTax.interest += interest
+                withTax.tax += min(withheld, allowed)
+            } else {
+                without += interest
+            }
         }
-        // The page has three rows.
-        if lines.count > 3 {
-            lines = [(lines.reduce(0) { $0 + $1.interest }, lines.reduce(0) { $0 + $1.tax })]
-            checks.append("More than three accounts, so they're added together in one row. Attach a sheet listing them: India Accounts exports one.")
-        }
+        let lines = [withTax, (interest: without, tax: Decimal(0))]
         var entries: [ReturnEntry] = []
         var sum = 0
         var row = 0
         for line in lines where down(line.interest) > 0 {
             row += 1
             let amount = down(line.interest)
-            let tax = min(up(line.tax), amount)
+            // Rounded up, but never past the treaty's share of the figure in column B.
+            let tax = min(up(line.tax), down(Decimal(amount) * treatyRate))
             sum += amount
             entries.append(entry("SA106.A\(row)", "F 2, column A, row \(row)", "Country code", .text("IND")))
             entries.append(entry("SA106.B\(row)", "F 2, column B, row \(row)", "Interest before any tax", .pounds(amount)))
