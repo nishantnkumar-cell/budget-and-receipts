@@ -41,6 +41,8 @@ Import rupee statements here, not under Activity, or they would be counted as po
 - UK residents are normally taxed on interest wherever it arises, including NRE interest that India doesn't tax; some recent arrivals can claim relief.
 - Relief for Indian tax is limited to the rate in the India–UK treaty, which can be less than the bank deducted.
 
+The interest also goes onto the [return copies](Property-and-tax) in Property & Tax.
+
 ## What isn't covered
 
 These figures aren't part of the Property & Tax estimate. Nor are mutual funds, shares, capital gains, rent from property in India or your Indian tax return.

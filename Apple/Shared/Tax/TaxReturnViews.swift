@@ -23,6 +23,7 @@ struct TaxReturnView: View {
                     Label("Not ready to file: see Property & Tax.", systemImage: "exclamationmark.circle").foregroundStyle(.orange)
                 }
             }
+            ReturnCopiesSection(person: person)
             if !jobs.isEmpty {
                 Section("Employment page") {
                     ForEach(jobs) { job in

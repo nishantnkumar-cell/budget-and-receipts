@@ -35,6 +35,7 @@ Duo Budget is open source under the [MIT licence](LICENSE). It is also sold on t
 
 **UK property and tax** (off until switched on in Settings)
 - Mark rent and costs against a property from your own payments, once or with a rule, split payments included.
+- Soft copies of the 2025-26 return for each person: a box-by-box PDF, and HMRC's own SA100, SA102, SA105 and SA106 filled in from blank copies you download. Nothing is sent to HMRC.
 - Letting agent statements (PDF or CSV) and umbrella payslips imported from their files, checked before saving, with rent linked to its bank payment.
 - Ownership shares, letting agent statements, mortgage interest and pay; UK property page figures and an estimate for each of you, with anything doubtful listed first.
 - "Whose name should we buy in?" compares the extra income tax. England, Wales and Northern Ireland, 2025-26 and 2026-27. Estimates only, not tax advice.

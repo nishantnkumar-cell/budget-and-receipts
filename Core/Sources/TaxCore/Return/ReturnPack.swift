@@ -1,0 +1,256 @@
+import BudgetCore
+import Foundation
+
+/// The HMRC forms this app can fill in, for the 2025-26 tax year.
+public enum ReturnFormKind: String, CaseIterable, Sendable {
+    case main = "SA100", employment = "SA102", property = "SA105", foreign = "SA106"
+
+    public var title: String {
+        switch self {
+        case .main: "Main tax return"
+        case .employment: "Employment"
+        case .property: "UK property"
+        case .foreign: "Foreign"
+        }
+    }
+
+    /// Where the blank form is on GOV.UK.
+    public var download: URL {
+        let page = switch self {
+        case .main: "self-assessment-tax-return-sa100"
+        case .employment: "self-assessment-employment-sa102"
+        case .property: "self-assessment-uk-property-sa105"
+        case .foreign: "self-assessment-foreign-sa106"
+        }
+        return URL(string: "https://www.gov.uk/government/publications/\(page)")!
+    }
+}
+
+public enum ReturnValue: Hashable, Sendable {
+    /// Whole pounds: forms leave out the pence.
+    case pounds(Int)
+    case count(Int)
+    case tick
+    case text(String)
+
+    /// As shown on the box-by-box sheet.
+    public var shown: String {
+        switch self {
+        case .pounds(let value): String(TaxMoney.format(Decimal(value)).dropLast(3))
+        case .count(let value): "\(value)"
+        case .tick: "X (tick)"
+        case .text(let text): text
+        }
+    }
+}
+
+public struct ReturnEntry: Hashable, Sendable, Identifiable {
+    /// Finds the box's place on the form (see `ReturnLayout`).
+    public var id: String
+    /// The box as the form numbers it, with its page for the main return.
+    public var box: String
+    public var label: String
+    public var value: ReturnValue
+}
+
+/// One copy of one form.
+public struct ReturnForm: Hashable, Sendable, Identifiable {
+    public var kind: ReturnFormKind
+    /// What tells copies apart, e.g. the employer.
+    public var detail: String
+    public var entries: [ReturnEntry]
+    public var id: String { "\(kind.rawValue)|\(detail)" }
+    public var title: String { "\(kind.rawValue) \(kind.title)" + (detail.isEmpty ? "" : ": \(detail)") }
+}
+
+/// Everything to put on one person's forms for a year, with what to sort out first.
+public struct ReturnPack: Hashable, Sendable {
+    public var year: TaxYear
+    public var person: Person
+    public var forms: [ReturnForm]
+    /// While any of these stand, the figures can't be relied on.
+    public var problems: [String]
+    /// Things the app can't know, to deal with before sending.
+    public var checks: [String]
+
+    public var isReady: Bool { problems.isEmpty && !forms.isEmpty }
+
+    /// The only year whose form box numbers and layouts are built in.
+    public static let year = TaxYear(startYear: 2025)
+    /// Paper returns for that year had to reach HMRC before this.
+    static let paperLate = TaxYear.day(2026, 11, 1)
+    /// What the UK-India treaty lets India take from interest paid to a UK resident.
+    static let treatyRate = Decimal(15) / 100
+
+    private static func down(_ value: Decimal) -> Int { NSDecimalNumber(decimal: TaxMoney.poundsDown(value)).intValue }
+    private static func up(_ value: Decimal) -> Int { NSDecimalNumber(decimal: TaxMoney.poundsUp(value)).intValue }
+
+    public static func make(_ person: Person, year: TaxYear, ledger: PropertyLedger, book: PropertyBook,
+                            india: IndiaBook = IndiaBook(), today: Date = Date()) -> ReturnPack {
+        guard year == Self.year else {
+            return ReturnPack(year: year, person: person, forms: [],
+                              problems: ["Only the 2025-26 forms are built in. Choose that tax year."], checks: [])
+        }
+        var problems = ledger.issues.filter(\.blocksFiling).map(\.message)
+        var checks: [String] = []
+        if today >= paperLate {
+            checks.append("Paper returns for 2025-26 had to reach HMRC by 31 October 2026, so posting these now means a late filing penalty (unless HMRC's letter to you gave a later date). File online by 31 January 2027, copying these figures.")
+        }
+        var main: [ReturnEntry] = []
+        var forms: [ReturnForm] = []
+        func entry(_ id: String, _ box: String, _ label: String, _ value: ReturnValue) -> ReturnEntry {
+            ReturnEntry(id: id, box: box, label: label, value: value)
+        }
+
+        // Employment pages, one for each employer.
+        let jobs = book.pay.filter { $0.person == person && $0.taxYear == year.description }
+            .sorted { ($0.employer.lowercased(), $0.id) < ($1.employer.lowercased(), $1.id) }
+        for job in jobs {
+            var entries = [entry("SA102.1", "1", "Pay from this employment", .pounds(down(job.taxablePay))),
+                           entry("SA102.2", "2", "UK tax taken off pay", .pounds(up(job.taxDeducted)))]
+            if !job.employer.isEmpty { entries.append(entry("SA102.5", "5", "Your employer's name", .text(job.employer))) }
+            forms.append(ReturnForm(kind: .employment, detail: job.employer, entries: entries))
+        }
+        if !jobs.isEmpty {
+            checks.append("Employment pages: add your employer's PAYE reference (box 4) and answer boxes 6 to 8. Add any benefits and expenses.")
+        }
+
+        // UK property pages.
+        let input = PersonInput.make(person, ledger: ledger, book: book, year: year)
+        if input.propertyCount > 0 {
+            let pages = TaxCalculator.pages(input)
+            var entries = [entry("SA105.1", "1", "Number of properties rented out", .count(pages.propertyCount))]
+            if pages.joint { entries.append(entry("SA105.3", "3", "Income from property let jointly", .tick)) }
+            let money: [(String, String, Decimal)] = [
+                ("20", "Total rents and other income from property", pages.income),
+                ("24", "Rent, rates, insurance and ground rents", pages.ratesAndInsurance),
+                ("25", "Property repairs and maintenance", pages.repairs),
+                ("27", "Legal, management and other professional fees", pages.professionalFees),
+                ("28", "Costs of services provided", pages.services),
+                ("29", "Other allowable property expenses", pages.otherExpense),
+                ("36", "Costs of replacing domestic items", pages.replacementItems),
+                ("38", "Adjusted profit for the year", pages.adjustedProfit),
+                ("39", "Loss brought forward used against this year's profits", pages.lossUsed),
+                ("40", "Taxable profit for the year", pages.taxableProfit),
+                ("41", "Adjusted loss for the year", pages.adjustedLoss),
+                ("43", "Loss to carry forward", pages.lossCarriedForward),
+                ("44", "Residential property finance costs", pages.financeCosts),
+                ("45", "Unused residential finance costs brought forward", pages.financeBroughtForward)
+            ]
+            // A box that doesn't apply is left blank, except that a profit used up by losses
+            // is shown as nothing left.
+            for (box, label, value) in money where value > 0 || (box == "40" && pages.adjustedProfit > 0) {
+                entries.append(entry("SA105.\(box)", box, label, .pounds(down(value))))
+            }
+            forms.append(ReturnForm(kind: .property, detail: "", entries: entries))
+        }
+
+        // Interest from rupee accounts.
+        let report = IndiaReport.make(india, year: year, person: person, today: today)
+        let earned = report.rows.filter { $0.interest > 0 }
+        if !earned.isEmpty {
+            if report.rupeesPerPound == nil {
+                problems.append("Enter the rupees to a pound for \(year) in India Accounts, so the interest from India can be put in pounds.")
+            } else {
+                foreign(earned, rate: report.rupeesPerPound, main: &main, forms: &forms, checks: &checks, entry: entry)
+            }
+        }
+        if !report.rows.isEmpty {
+            checks += report.warnings.filter { !$0.contains("rupees to a pound") }
+        }
+
+        // Reliefs on the main return.
+        if input.reliefAtSourcePension > 0 {
+            main.append(entry("SA100.TR4.1", "TR 4, box 1", "Pension payments with basic rate relief, including the relief",
+                              .pounds(up(input.reliefAtSourcePension))))
+        }
+        if input.giftAid > 0 {
+            // The app holds the amount with the tax added back; the form asks for what you paid.
+            main.append(entry("SA100.TR4.5", "TR 4, box 5", "Gift Aid payments made in the year",
+                              .pounds(up(input.giftAid * Decimal(4) / 5))))
+        }
+
+        // "What makes up your return": only the answers the app knows to be yes.
+        var answers: [ReturnEntry] = []
+        let employments = forms.filter { $0.kind == .employment }.count
+        if employments > 0 {
+            answers.append(entry("SA100.TR2.1", "TR 2, question 1", "Employment pages: Yes", .tick))
+            answers.append(entry("SA100.TR2.1n", "TR 2, question 1", "Number of employment pages", .count(employments)))
+        }
+        if forms.contains(where: { $0.kind == .property }) {
+            answers.append(entry("SA100.TR2.4", "TR 2, question 4", "UK property pages: Yes", .tick))
+        }
+        if forms.contains(where: { $0.kind == .foreign }) {
+            answers.append(entry("SA100.TR2.5", "TR 2, question 5", "Foreign pages: Yes", .tick))
+        }
+        if !answers.isEmpty || !main.isEmpty {
+            forms.insert(ReturnForm(kind: .main, detail: "", entries: answers + main), at: 0)
+            checks.append("Main return: write your name, tax reference and National Insurance number, answer every question the app left blank, then sign and date it.")
+            checks.append("Add anything the app doesn't hold, such as UK bank interest, dividends, other income from abroad, capital gains, student loan or Child Benefit.")
+        }
+        if input.advancePaid > 0 {
+            checks.append("Payments on account you've made aren't entered on the forms: HMRC already has them.")
+        }
+        checks += ledger.issues.filter { !$0.blocksFiling }.map(\.message)
+        if forms.isEmpty && problems.isEmpty { problems.append("There's nothing to put on a return for this person yet.") }
+        return ReturnPack(year: year, person: person, forms: forms, problems: problems, checks: checks)
+    }
+
+    /// Interest goes on the foreign pages, or in one box of the main return when none of it
+    /// was taxed and it's £2,000 or less.
+    private static func foreign(_ rows: [IndiaReport.Row], rate: Decimal?, main: inout [ReturnEntry], forms: inout [ReturnForm],
+                                checks: inout [String], entry: (String, String, String, ReturnValue) -> ReturnEntry) {
+        func pounds(_ rupees: Decimal) -> Decimal { IndiaMoney.pounds(rupees, rupeesPerPound: rate) ?? 0 }
+        let total = pounds(rows.reduce(0) { $0 + $1.interest })
+        let taxed = rows.contains { $0.taxDeducted > 0 }
+        checks.append("Interest from India isn't in the app's tax estimate, so the bill will be higher than it shows.")
+        if !taxed && total <= 2_000 {
+            guard down(total) > 0 else { return }
+            main.append(entry("SA100.TR3.3", "TR 3, box 3", "Untaxed foreign interest (up to £2,000)", .pounds(down(total))))
+            main.append(entry("SA100.TR7.19", "TR 7, box 19", "Any other information",
+                              .text("Page TR 3, box 3: the interest arose in India.")))
+            checks.append("TR 3 box 3 only works if this interest is your only foreign income. If you have other foreign income, or claim the foreign income and gains regime, use the Foreign pages instead.")
+            return
+        }
+
+        // Each account's interest, and the tax that can be relieved: no more than the treaty allows.
+        var lines: [(interest: Decimal, tax: Decimal)] = []
+        var excess: Decimal = 0
+        for row in rows {
+            let interest = pounds(row.interest)
+            let withheld = max(0, pounds(row.taxDeducted))
+            let allowed = TaxMoney.penceDown(interest * treatyRate)
+            excess += max(0, withheld - allowed)
+            lines.append((interest, min(withheld, allowed)))
+        }
+        // The page has three rows.
+        if lines.count > 3 {
+            lines = [(lines.reduce(0) { $0 + $1.interest }, lines.reduce(0) { $0 + $1.tax })]
+            checks.append("More than three accounts, so they're added together in one row. Attach a sheet listing them: India Accounts exports one.")
+        }
+        var entries: [ReturnEntry] = []
+        var sum = 0
+        var row = 0
+        for line in lines where down(line.interest) > 0 {
+            row += 1
+            let amount = down(line.interest)
+            let tax = min(up(line.tax), amount)
+            sum += amount
+            entries.append(entry("SA106.A\(row)", "F 2, column A, row \(row)", "Country code", .text("IND")))
+            entries.append(entry("SA106.B\(row)", "F 2, column B, row \(row)", "Interest before any tax", .pounds(amount)))
+            if tax > 0 {
+                entries.append(entry("SA106.C\(row)", "F 2, column C, row \(row)", "Foreign tax taken off", .pounds(tax)))
+                entries.append(entry("SA106.E\(row)", "F 3, column E, row \(row)", "Claiming Foreign Tax Credit Relief", .tick))
+            }
+            // Claiming relief, or with no tax to take away, the taxable amount is column B.
+            entries.append(entry("SA106.F\(row)", "F 3, column F, row \(row)", "Taxable amount", .pounds(amount)))
+        }
+        guard sum > 0 else { return }
+        entries.append(entry("SA106.4", "F 3, box 4", "Total of column F", .pounds(sum)))
+        forms.append(ReturnForm(kind: .foreign, detail: "", entries: entries))
+        if excess >= Decimal(1) / 100 {
+            checks.append("India took \(TaxMoney.format(excess)) more than the 15% the UK-India treaty allows. Column C shows only what can be relieved here; ask your accountant about claiming the rest in India.")
+        }
+        checks.append("Foreign pages: check the figures against the banks' interest certificates. NRE interest that India doesn't tax is normally still taxable in the UK.")
+    }
+}
