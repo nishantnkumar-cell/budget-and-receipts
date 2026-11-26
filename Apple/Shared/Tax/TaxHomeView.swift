@@ -1,0 +1,69 @@
+import BudgetCore
+import SwiftUI
+import TaxCore
+
+/// Property & Tax: where the year stands, and the way to each part.
+struct TaxHomeView: View {
+    @EnvironmentObject var store: BudgetStore
+    @EnvironmentObject var tax: TaxStore
+
+    var body: some View {
+        let ledger = store.propertyLedger(tax)
+        let blocking = ledger.issues.filter(\.blocksFiling)
+        let notes = ledger.issues.filter { !$0.blocksFiling }
+        let lost = PropertyLedger.lostAssignments(transactions: store.transactions, book: tax.book)
+        Form {
+            Section {
+                TaxYearPicker()
+                NavigationLink { TaxPaymentsView() } label: { Label("Property Payments", systemImage: "creditcard") }
+                NavigationLink { TaxPropertiesView() } label: { Label("Properties and Rules", systemImage: "house") }
+                NavigationLink { TaxFiguresView() } label: { Label("Pay, Statements and Interest", systemImage: "square.and.pencil") }
+                NavigationLink { TaxReturnView() } label: { Label("Return Figures", systemImage: "doc.text") }
+                NavigationLink { TaxCompareView() } label: { Label("Whose Name to Buy In?", systemImage: "person.2") }
+            }
+            if tax.book.properties.isEmpty {
+                Section {
+                    Text("Start by adding a property in Properties and Rules. Then mark its rent and costs in Property Payments.")
+                }
+            }
+            if !blocking.isEmpty {
+                Section("Not ready to file") {
+                    ForEach(blocking, id: \.self) { Label($0.message, systemImage: "exclamationmark.circle").foregroundStyle(.orange) }
+                }
+            }
+            if !lost.isEmpty {
+                Section {
+                    Button("Forget \(lost.count) choice\(lost.count == 1 ? "" : "s") for payments that are gone", role: .destructive) {
+                        let ids = Set(lost.map(\.id))
+                        tax.change { book in book.assignments.removeAll { ids.contains($0.id) } }
+                    }
+                } footer: {
+                    Text("Only do this after marking their replacements, and once everything has synced.")
+                }
+            }
+            if !tax.book.properties.isEmpty {
+                ForEach(store.taxPeople, id: \.person) { entry in
+                    let result = TaxCalculator.estimate(.make(entry.person, ledger: ledger, book: tax.book, year: tax.year))
+                    Section(blocking.isEmpty ? "\(entry.name): estimate" : "\(entry.name): provisional estimate") {
+                        LabeledContent("Taxable property profit", value: TaxMoney.format(result.pages.taxableProfit))
+                        LabeledContent("Tax for the year", value: TaxMoney.format(result.liability))
+                        LabeledContent(result.balance < 0 ? "Refund due" : "Still to pay", value: TaxMoney.format(abs(result.balance)))
+                        if let advance = result.paymentOnAccount {
+                            LabeledContent("Plus two advance payments, each", value: TaxMoney.format(advance))
+                        }
+                    }
+                }
+            }
+            if !notes.isEmpty {
+                Section("Worth checking") {
+                    ForEach(notes, id: \.self) { Text($0.message) }
+                }
+            }
+            Section {
+                Text(TaxNotes.notCovered).font(.footnote).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle(AppSection.tax.rawValue)
+    }
+}

@@ -8,6 +8,9 @@ import UserNotifications
 final class AppSettings: ObservableObject {
     static let supportedCurrencies = ["GBP", "EUR", "USD", "INR", "AUD", "CAD", "CHF", "JPY"]
 
+    /// Whether the Property & Tax screens show. Off by default; the data syncs either way.
+    nonisolated static let taxEnabledKey = "propertyTaxEnabled"
+
     /// The currency code views format money with. Read directly so formatting code stays simple.
     nonisolated static var currency: String {
         UserDefaults.standard.string(forKey: Keys.currency) ?? Locale.current.currency?.identifier ?? "GBP"

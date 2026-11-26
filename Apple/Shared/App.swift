@@ -1,4 +1,5 @@
 import SwiftUI
+import TaxCore
 import CloudKit
 
 @main
@@ -12,6 +13,7 @@ struct BudgetReceiptsApp: App {
     // refresh, with no screen) can sync them too.
     @StateObject private var store = { _ = AppModel.started; return AppModel.store }()
     @StateObject private var subscriptions = AppModel.subscriptions
+    @StateObject private var tax = AppModel.tax
     @StateObject private var settings = AppModel.settings
     @StateObject private var lock = AppLock()
     @Environment(\.scenePhase) private var scenePhase
@@ -39,6 +41,7 @@ struct BudgetReceiptsApp: App {
                             WelcomeView()
                                 .environmentObject(store)
                                 .environmentObject(subscriptions)
+                                .environmentObject(tax)
                                 .environmentObject(settings)
                                 .environmentObject(syncStatus)
                         }
@@ -50,6 +53,7 @@ struct BudgetReceiptsApp: App {
             #endif
             .environmentObject(store)
             .environmentObject(subscriptions)
+            .environmentObject(tax)
             .environmentObject(settings)
             .environmentObject(syncStatus)
             // A receipt or statement opened with the app ("Open in", or Open With on the Mac).
@@ -66,6 +70,7 @@ struct BudgetReceiptsApp: App {
                 NavigationStack { AskBudgetView() }
                     .environmentObject(store)
                     .environmentObject(subscriptions)
+                    .environmentObject(tax)
             }
             .task(id: scenePhase) {
                 // Receipts shared from other apps while this one was closed.
@@ -188,19 +193,28 @@ enum AppModel {
     static let subscriptions = SubscriptionStore()
     #endif
     /// Synced items from a newer version, kept untouched until this app understands them.
-    static let held = HeldItemsStore(folder: store.dataFolder, known: store.collections.union(subscriptions.collections))
+    static let held = HeldItemsStore(folder: store.dataFolder,
+                                     known: store.collections.union(subscriptions.collections).union(TaxItems.collections))
+    #if DEBUG
+    static let tax = SampleData.isOn ? SampleData.taxStore(for: store) : TaxStore(folder: store.dataFolder)
+    #else
+    static let tax = TaxStore(folder: store.dataFolder)
+    #endif
     static let settings = AppSettings()
     /// Sets up what has to be ready before any screen (or a Siri request) uses the stores.
     static let started: Void = {
         store.didChange = { WidgetBridge.scheduleRefresh() }
         subscriptions.didReceiveChanges = { store.noteRecentChanges($0) }
+        tax.didReceiveChanges = { store.noteRecentChanges($0) }
+        tax.paymentPrivacy = { store.paymentPrivacy }
+        store.didReplacePayment = { old, new in tax.change { $0.replacePayment(old, with: new) } }
     }()
     static var isWaitingForFiles: Bool {
-        store.isWaitingForFiles || subscriptions.isWaitingForFiles || held.isWaitingForFiles
+        store.isWaitingForFiles || subscriptions.isWaitingForFiles || tax.isWaitingForFiles || held.isWaitingForFiles
     }
     /// Reads any files that were locked at launch. True when all are now readable.
     static func reloadIfWaiting() -> Bool {
-        let ready = [store.reloadIfWaiting(), subscriptions.reloadIfWaiting(), held.reloadIfWaiting()]
+        let ready = [store.reloadIfWaiting(), subscriptions.reloadIfWaiting(), tax.reloadIfWaiting(), held.reloadIfWaiting()]
         return !ready.contains(false)
     }
     static let syncStatus = SyncStatus()
@@ -215,7 +229,9 @@ enum AppModel {
                 store.didPersist = nil
                 subscriptions.didPersist = nil
                 held.didPersist = nil
+                tax.didPersist = nil
                 store.resetAllData()
+                tax.resetAllData()
                 subscriptions.resetAllData()
                 held.resetAllData()
             }
@@ -234,10 +250,11 @@ enum AppModel {
             store.didPersist = nil
             subscriptions.didPersist = nil
             held.didPersist = nil
+            tax.didPersist = nil
             return
         }
         guard cloud == nil else { return }
-        let sync = CloudSync(sources: [store, subscriptions, held], imagesFolder: store.imagesFolder, stateFolder: JSONFileStorage.defaultFolder, status: syncStatus)
+        let sync = CloudSync(sources: [store, subscriptions, tax, held], imagesFolder: store.imagesFolder, stateFolder: JSONFileStorage.defaultFolder, status: syncStatus)
         cloud = sync
         syncStatus.sync = sync
         ShareAcceptor.shared.setHandler { metadata in
@@ -253,6 +270,7 @@ enum AppModel {
         store.didPersist = { Task { await sync.localDataChanged() } }
         subscriptions.didPersist = { Task { await sync.localDataChanged() } }
         held.didPersist = { Task { await sync.localDataChanged() } }
+        tax.didPersist = { Task { await sync.localDataChanged() } }
         await sync.start()
     }
 
