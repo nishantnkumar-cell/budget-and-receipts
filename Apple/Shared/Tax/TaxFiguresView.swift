@@ -129,9 +129,9 @@ private struct TaxPayEditor: View {
         let values = [pay, deducted, pension].map(TaxAmountField.value)
         let exists = tax.book.pay.contains { $0.id == job.id }
         TaxSheet(title: "Pay", canSave: !employer.isEmpty && !values.contains(nil)) {
-            var saved = TaxPay(id: job.id, person: person, taxYear: job.taxYear, employer: employer, taxablePay: values[0]!,
+            // Saved by hand, the figures count as typed in (no payslip date): you've checked them.
+            let saved = TaxPay(id: job.id, person: person, taxYear: job.taxYear, employer: employer, taxablePay: values[0]!,
                                taxDeducted: values[1]!, reliefAtSourcePension: values[2]!, isShared: shared, enteredBy: job.enteredBy)
-            saved.payslipDate = job.payslipDate
             tax.change { book in
                 var saved = saved
                 let current = book.pay.first { $0.id == saved.id }
@@ -140,7 +140,6 @@ private struct TaxPayEditor: View {
                 // Sharing is written only when the switch was changed here, so a sheet left
                 // open never shares again what another device has since made private.
                 if shared == job.isShared, let current { saved.isShared = current.isShared }
-                if let current { saved.payslipDate = current.payslipDate }
                 book.pay.removeAll { $0.id == saved.id }
                 book.pay.append(saved)
             }

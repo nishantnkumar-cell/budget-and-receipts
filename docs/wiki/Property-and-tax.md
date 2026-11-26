@@ -37,6 +37,17 @@ Both are in **Pay and Statements**. Files are read on your device, and you see w
 
 **Not ready to file** lists anything to sort out, such as missing statements or a payment without a category. **Return Figures** shows the UK property page boxes for each person. **Whose Name to Buy In?** compares the extra income tax on a new property.
 
+## Copies for HMRC
+
+In **Return Figures**, choose whose return, for **2025-26**:
+
+- **Box-by-Box Sheet (PDF):** every form and box with its figure, in whole pounds, with what to check. Use it to type the return into HMRC's online service, or give it to an accountant.
+- **Fill HMRC Forms:** download the blank forms it lists from GOV.UK, choose them, and save one PDF with your figures on HMRC's own pages (SA100, SA102 for each job, SA105 and SA106). Print at actual size.
+
+**Deadlines:** HMRC had to receive paper returns for 2025-26 by 31 October 2026. Posting one now means a late filing penalty unless HMRC's letter to you gave a later date. Online returns are due by 31 January 2027. HMRC's online service can't take a PDF.
+
+Your name, tax reference, National Insurance number, signature and anything the app doesn't hold are for you to add. Pages are marked **Not ready to file** while something needs sorting out: for example the same job entered twice, pay that only comes from a payslip earlier than the year's end (check it against your P60 or P45 and save it by hand), or, in a shared household, your partner's return made on your device. Make each person's forms on their own device. The property income allowance isn't applied. Interest from India Accounts goes on the foreign pages (or, if untaxed, small and your only foreign income, one box of the main return), with tax relief limited to 15%. It isn't in the app's tax estimate. The files aren't encrypted.
+
 ## Sharing with your partner
 
 Property details are shared. Pay is private unless you turn on **Show to** your partner, and only the person who typed it in can change it. Choices about payments you keep private stay private, so your figures may then differ from your partner's.

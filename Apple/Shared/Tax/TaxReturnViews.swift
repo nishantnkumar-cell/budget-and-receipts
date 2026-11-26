@@ -7,6 +7,8 @@ struct TaxReturnView: View {
     @EnvironmentObject var store: BudgetStore
     @EnvironmentObject var tax: TaxStore
     @State private var person = Person.me
+    @State private var sheet: ExportDocument?
+    @State private var saveFailure: String?
 
     var body: some View {
         let ledger = store.propertyLedger(tax)
@@ -23,6 +25,8 @@ struct TaxReturnView: View {
                     Label("Not ready to file: see Property & Tax.", systemImage: "exclamationmark.circle").foregroundStyle(.orange)
                 }
             }
+            ReturnCopiesSection(person: person, sheet: $sheet)
+            if let saveFailure { Section { Text(saveFailure).foregroundStyle(.orange) } }
             if !jobs.isEmpty {
                 Section("Employment page") {
                     ForEach(jobs) { job in
@@ -64,6 +68,11 @@ struct TaxReturnView: View {
         }
         .formStyle(.grouped)
         .navigationTitle("Return Figures")
+        .fileExporter(isPresented: Binding(get: { sheet != nil }, set: { if !$0 { sheet = nil } }), document: sheet,
+                      contentType: .pdf,
+                      defaultFilename: "Tax return \(tax.year) \(store.taxPeople.first { $0.person == person }?.name ?? "") sheet.pdf") { result in
+            if case .failure(let error) = result { saveFailure = error.localizedDescription }
+        }
     }
 }
 

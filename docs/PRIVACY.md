@@ -16,7 +16,7 @@ Nothing. Duo Budget has no account, no servers of its own, no analytics, no adve
 
 ## Property and tax details
 
-If you use Property & Tax, what you enter (properties, choices about payments, agent statements, mortgage interest, pay and tax) is stored, synced, backed up and erased like the rest of your data. Payslip and agent statement files you import are read on your device; only the figures are kept. All figures are worked out on your device and nothing is sent to a tax authority or anyone else. In a shared household, property details are shared with your partner. Pay and amounts brought forward stay private unless you choose to show them, and a choice about a private payment stays private. Stopping sharing removes an item from your partner's devices, but can't undo what they have already seen.
+If you use Property & Tax, what you enter (properties, choices about payments, agent statements, mortgage interest, pay and tax) is stored, synced, backed up and erased like the rest of your data. Payslip and agent statement files you import are read on your device; only the figures are kept. Return sheets and filled forms are made on your device and saved only where you choose; they are not encrypted. All figures are worked out on your device and nothing is sent to a tax authority or anyone else. In a shared household, property details are shared with your partner. Pay and amounts brought forward stay private unless you choose to show them, and a choice about a private payment stays private. Stopping sharing removes an item from your partner's devices, but can't undo what they have already seen.
 
 ## Rupee accounts
 

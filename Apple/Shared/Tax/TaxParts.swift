@@ -14,7 +14,7 @@ extension BudgetStore {
             ledger.issues.append(.init(message: "\(tax.unreadableCount) tax items can't be read, probably saved by a newer version. Update the app on this device.", blocksFiling: true))
         }
         for employer in tax.book.repeatedPay(in: tax.year) {
-            ledger.issues.append(.init(message: "Pay from \(employer) is entered more than once for the same person, so it counts twice. Keep one in Pay and Statements.", blocksFiling: true))
+            ledger.issues.append(.init(message: PropertyBook.repeatedPayProblem(employer), blocksFiling: true))
         }
         if householdRole != .solo {
             ledger.issues.append(.init(message: "Payments your partner keeps private aren't included on this device.", blocksFiling: false))
