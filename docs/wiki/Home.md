@@ -11,6 +11,7 @@ These pages explain how to use it. If you're new, start with [Getting started](G
 - [Subscriptions and contracts](Subscriptions-and-contracts)
 - [Budgeting as a couple](Budgeting-as-a-couple)
 - [Reports and net worth](Reports-and-net-worth)
+- [Property and tax](Property-and-tax)
 - [Goals, trips and money owed back](Goals-trips-and-money-owed-back)
 - [Widgets, Siri and Ask your budget](Widgets-Siri-and-Ask-your-budget)
 - [Backups and erasing data](Backups-and-erasing-data)

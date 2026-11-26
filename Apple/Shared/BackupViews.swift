@@ -52,7 +52,7 @@ struct ExportBackupView: View {
                 .disabled(problem != nil || working)
                 if let message { Text(message).font(.caption).foregroundStyle(.secondary) }
             } footer: {
-                Text("Includes payments, budgets, goals, contracts, rules, receipt photos and contract documents. Settings on this device and the iCloud connection aren't included.")
+                Text("Includes payments, budgets, goals, contracts, rules, property and tax details, receipt photos and contract documents. Settings on this device and the iCloud connection aren't included.")
             }
         }
         .formStyle(.grouped)

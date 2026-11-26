@@ -17,7 +17,7 @@ struct TaxHomeView: View {
                 TaxYearPicker()
                 NavigationLink { TaxPaymentsView() } label: { Label("Property Payments", systemImage: "creditcard") }
                 NavigationLink { TaxPropertiesView() } label: { Label("Properties and Rules", systemImage: "house") }
-                NavigationLink { TaxFiguresView() } label: { Label("Pay, Statements and Interest", systemImage: "square.and.pencil") }
+                NavigationLink { TaxFiguresView() } label: { Label("Pay and Statements", systemImage: "square.and.pencil") }
                 NavigationLink { TaxReturnView() } label: { Label("Return Figures", systemImage: "doc.text") }
                 NavigationLink { TaxCompareView() } label: { Label("Whose Name to Buy In?", systemImage: "person.2") }
             }

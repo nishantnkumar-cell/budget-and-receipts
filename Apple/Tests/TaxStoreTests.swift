@@ -113,6 +113,28 @@ final class TaxStoreTests: XCTestCase {
         XCTAssertEqual(tax.book.assignments.map(\.fingerprint), ["line"])
     }
 
+    func testRestoringABackupMadeBeforeTaxKeepsTheTaxDetails() throws {
+        let budget = BudgetStore(folder: folder)
+        let backup = try EncryptedBackup.make(folder: folder, password: "long enough", device: "", appVersion: "")
+        let tax = TaxStore(folder: folder)
+        tax.change { $0.properties.append(flat) }
+        try budget.restore(EncryptedBackup.open(backup, password: "long enough"), subscriptions: SubscriptionStore(folder: folder),
+                           tax: tax, held: HeldItemsStore(folder: folder, known: budget.collections))
+        XCTAssertEqual(tax.book.properties, [flat])
+        XCTAssertEqual(TaxStore(folder: folder).book.properties, [flat])
+    }
+
+    func testRestoringABackupWithTaxDetailsReplacesThem() throws {
+        let budget = BudgetStore(folder: folder)
+        let tax = TaxStore(folder: folder)
+        tax.change { $0.properties.append(flat) }
+        let backup = try EncryptedBackup.make(folder: folder, password: "long enough", device: "", appVersion: "")
+        tax.change { $0.properties.append(RentalProperty(id: "later", name: "Later")) }
+        try budget.restore(EncryptedBackup.open(backup, password: "long enough"), subscriptions: SubscriptionStore(folder: folder),
+                           tax: tax, held: HeldItemsStore(folder: folder, known: budget.collections))
+        XCTAssertEqual(tax.book.properties, [flat])
+    }
+
     func testSampleFiguresReachTheScreens() {
         let budget = BudgetStore(folder: folder)
         let tax = SampleData.taxStore(for: budget)

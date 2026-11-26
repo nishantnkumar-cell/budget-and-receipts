@@ -71,7 +71,7 @@ struct TaxFiguresView: View {
             }
         }
         .formStyle(.grouped)
-        .navigationTitle("Pay, Statements and Interest")
+        .navigationTitle("Pay and Statements")
         .sheet(item: $sheet) { sheet in
             switch sheet {
             case .pay(let item): TaxPayEditor(job: item)
