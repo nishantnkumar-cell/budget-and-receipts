@@ -107,6 +107,8 @@ struct ProductCoverEditor: View {
     @EnvironmentObject var store: BudgetStore
     @Environment(\.dismiss) private var dismiss
     @State var cover: ProductCover
+    /// The item as this screen opened it, so saving writes only what was changed here.
+    @State private var opened: ProductCover?
 
     private var isNew: Bool { !store.covers.contains { $0.id == cover.id } }
 
@@ -152,11 +154,12 @@ struct ProductCoverEditor: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { if opened == nil, !isNew { opened = cover } }
         .navigationTitle(isNew ? "Return or warranty" : (cover.item.isEmpty ? cover.shop : cover.item))
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
-                    store.saveCover(cover)
+                    if let opened { store.saveCover(cover, editedFrom: opened) } else { store.saveCover(cover) }
                     dismiss()
                 }
                 .disabled((cover.item + cover.shop).trimmingCharacters(in: .whitespaces).isEmpty || (cover.returnBy == nil && cover.warrantyEnds == nil))

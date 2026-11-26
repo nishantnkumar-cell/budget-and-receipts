@@ -120,6 +120,8 @@ struct AccountEditor: View {
     @EnvironmentObject var store: BudgetStore
     @Environment(\.dismiss) private var dismiss
     @State var account: BankAccount
+    /// The item as this screen opened it, so saving writes only what was changed here.
+    @State private var opened: BankAccount?
     @State private var cards = ""
     @State private var confirmingDelete = false
 
@@ -152,7 +154,13 @@ struct AccountEditor: View {
         }
         .formStyle(.grouped)
         .navigationTitle(account.name.isEmpty ? "Account" : account.name)
-        .onAppear { cards = account.cardEndings.joined(separator: ", ") }
+        .onAppear {
+            if let current = store.accounts.first(where: { $0.id == account.id }) {
+                account = current
+                opened = current
+            }
+            cards = account.cardEndings.joined(separator: ", ")
+        }
         .onDisappear(perform: save)
         .alert("Delete \(account.label)?", isPresented: $confirmingDelete) {
             Button("Cancel", role: .cancel) {}
@@ -164,10 +172,10 @@ struct AccountEditor: View {
     }
 
     private func save() {
-        guard store.accounts.contains(where: { $0.id == account.id }) else { return }
+        guard let opened else { return }
         account.cardEndings = cards.split(whereSeparator: { !$0.isNumber }).map { String($0.suffix(4)) }.filter { $0.count == 4 }
         account.name = account.name.trimmingCharacters(in: .whitespaces).isEmpty ? "Account" : account.name
-        store.updateAccount(account)
+        store.updateAccount(account, editedFrom: opened)
     }
 }
 

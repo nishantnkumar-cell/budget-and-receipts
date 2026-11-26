@@ -182,6 +182,8 @@ struct CommitmentEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State var item: SubscriptionContract
     var priceRise: PriceRise?
+    /// The item as this screen opened it, so saving writes only what was changed here.
+    @State private var opened: SubscriptionContract?
     @State private var addedDocuments: [ContractDocument] = []
     @State private var removedDocuments: [ContractDocument] = []
 
@@ -240,13 +242,14 @@ struct CommitmentEditor: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { if opened == nil, !isNew { opened = item } }
         .navigationTitle(isNew ? (kind == .subscription ? "New subscription" : "New contract") : item.vendor)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
                     item.vendor = item.vendor.trimmingCharacters(in: .whitespaces)
                     item.kind = kind
-                    subscriptions.save(item)
+                    if let opened { subscriptions.save(item, editedFrom: opened) } else { subscriptions.save(item) }
                     subscriptions.removeFiles(removedDocuments)
                     dismiss()
                 }

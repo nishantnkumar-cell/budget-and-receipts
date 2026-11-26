@@ -66,9 +66,39 @@ public struct SyncState: Codable, Hashable, Sendable {
     }
 
     public var entries: [String: Entry]
+    /// Items whose newest version in iCloud this version of the app can't read, such as ones
+    /// a newer version saved. Nothing is sent over them. Nil in older saved files.
+    public var unreadable: Set<String>?
 
-    public init(entries: [String: Entry] = [:]) {
+    public init(entries: [String: Entry] = [:], unreadable: Set<String>? = nil) {
         self.entries = entries
+        self.unreadable = unreadable
+    }
+
+    /// An item arrived that can't be read here: leave iCloud's copy exactly as it is. Where
+    /// that copy sits is noted, so making the item private can still take it out of sharing.
+    public mutating func recordUnreadable(_ key: String, isPrivate: Bool = false) {
+        unreadable = (unreadable ?? []).union([key])
+        entries[key] = Entry(digest: 0, isPrivate: isPrivate)
+    }
+
+    /// A fresh start, where everything is compared again. Items that can't be read stay held,
+    /// or a copy made private elsewhere could be shared again. After a change of household or
+    /// account only the private ones stay: the shared copies are in another place now.
+    public func startingAgain(sameHousehold: Bool) -> SyncState {
+        let held = (unreadable ?? []).filter { key in entries[key].map { $0.isPrivate || sameHousehold } ?? false }
+        return SyncState(entries: entries.filter { held.contains($0.key) }, unreadable: held.isEmpty ? nil : held)
+    }
+
+    /// True when this copy mustn't be sent, because iCloud holds one that can't be read here.
+    /// Making an item private always goes through: keeping it from your partner comes first.
+    public func blocks(_ record: SyncRecord) -> Bool {
+        unreadable?.contains(record.key) == true && !(record.isPrivate && entries[record.key]?.isPrivate == false)
+    }
+
+    /// Files such as photos and documents, which an item points to.
+    private static func isFile(_ key: String) -> Bool {
+        key.hasPrefix("images|") || key.hasPrefix("contractFiles|")
     }
 
     /// The changes between what was last synced and the items as they are now.
@@ -90,15 +120,24 @@ public struct SyncState: Codable, Hashable, Sendable {
         for (key, entry) in entries where !seen.contains(key) {
             deletes.append(.init(key: key, isPrivate: entry.isPrivate))
         }
+        if let held = unreadable, !held.isEmpty {
+            let hiding = Set(saves.filter { !blocks($0) }.map(\.key))
+            saves.removeAll(where: blocks)
+            // An item that can't be read may point to files nothing else here mentions, so no
+            // file is removed until everything can be read. One moving to private still moves.
+            deletes.removeAll { (held.contains($0.key) && !hiding.contains($0.key)) || (Self.isFile($0.key) && !seen.contains($0.key)) }
+        }
         return SyncChanges(saves: saves, deletes: deletes.sorted { $0.key < $1.key })
     }
 
     public mutating func recordSaved(_ record: SyncRecord) {
         entries[record.key] = Entry(digest: record.digest, isPrivate: record.isPrivate)
+        unreadable?.remove(record.key)
     }
 
     public mutating func recordDeleted(_ key: String) {
         entries[key] = nil
+        unreadable?.remove(key)
     }
 
     /// True when a deletion comes from the other zone to the one this item was last synced in:

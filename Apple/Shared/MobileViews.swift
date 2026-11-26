@@ -122,6 +122,8 @@ extension BankTransaction {
 struct TransactionEditor: View {
     @EnvironmentObject var store: BudgetStore
     @State var transaction: BankTransaction
+    /// The item as this screen opened it, so saving writes only what was changed here.
+    @State private var opened: BankTransaction?
     @State private var savedCategory: String?
     @State private var similarCount = 0
 
@@ -155,7 +157,14 @@ struct TransactionEditor: View {
             }
         }
         .navigationTitle("Edit")
-        .onAppear { if savedCategory == nil { savedCategory = transaction.category } }
+        .onAppear {
+            // Show what's saved now, unless there are changes here still to save.
+            if opened == nil || transaction == opened, let current = store.transactions.first(where: { $0.id == transaction.id }) {
+                transaction = current
+                opened = current
+            }
+            if savedCategory == nil { savedCategory = transaction.category }
+        }
         .toolbar {
             Button("Save", action: save)
         }
@@ -171,7 +180,9 @@ struct TransactionEditor: View {
     private func save() {
         // A category you pick yourself is kept, even if it looks like a transfer.
         if transaction.category != savedCategory { transaction.categoryChosen = true }
-        store.update(transaction)
+        guard let opened, let saved = store.update(transaction, editedFrom: opened) else { return }
+        transaction = saved
+        self.opened = saved
         if transaction.category != savedCategory, transaction.category != "Uncategorised" {
             similarCount = store.similarUncategorised(to: transaction).count
         }

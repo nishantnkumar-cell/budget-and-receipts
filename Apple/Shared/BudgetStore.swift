@@ -124,6 +124,12 @@ final class BudgetStore: ObservableObject {
 
     // MARK: Savings goals
 
+    /// As for a payment's screen: see `update(_:editedFrom:)`. A deleted goal stays deleted.
+    func saveGoal(_ draft: SavingsGoal, editedFrom original: SavingsGoal) {
+        guard let current = goals.first(where: { $0.id == draft.id }) else { return }
+        saveGoal(EditMerge.apply(draft, editedFrom: original, onto: current))
+    }
+
     func saveGoal(_ goal: SavingsGoal) {
         if let index = goals.firstIndex(where: { $0.id == goal.id }) { goals[index] = goal } else { goals.append(goal) }
         persist()
@@ -177,6 +183,11 @@ final class BudgetStore: ObservableObject {
     var outstandingReimbursements: [Reimbursements.Outstanding] { Reimbursements.outstanding(transactions) }
 
     // MARK: Trips
+
+    func saveTrip(_ draft: Trip, editedFrom original: Trip) {
+        guard let current = trips.first(where: { $0.id == draft.id }) else { return }
+        saveTrip(EditMerge.apply(draft, editedFrom: original, onto: current, together: [["start", "end"]]))
+    }
 
     func saveTrip(_ trip: Trip) {
         if let index = trips.firstIndex(where: { $0.id == trip.id }) { trips[index] = trip } else { trips.append(trip) }
@@ -235,6 +246,12 @@ final class BudgetStore: ObservableObject {
     }
 
     // MARK: Returns and warranties
+
+    func saveCover(_ draft: ProductCover, editedFrom original: ProductCover) {
+        guard let current = covers.first(where: { $0.id == draft.id }) else { return }
+        // A cover needs one of its two dates, so they're taken together.
+        saveCover(EditMerge.apply(draft, editedFrom: original, onto: current, together: [["returnBy", "warrantyEnds"]]))
+    }
 
     func saveCover(_ cover: ProductCover) {
         if let index = covers.firstIndex(where: { $0.id == cover.id }) { covers[index] = cover } else { covers.append(cover) }
@@ -366,6 +383,17 @@ final class BudgetStore: ObservableObject {
         transactions.append(transaction)
         transactions.sort { $0.date > $1.date }
         persist()
+    }
+
+    /// Saves a payment edited on its own screen: only what was changed there is written, onto
+    /// the payment as it is now. Returns what's saved, or nil when it has been deleted.
+    @discardableResult
+    func update(_ draft: BankTransaction, editedFrom original: BankTransaction) -> BankTransaction? {
+        guard let current = transactions.first(where: { $0.id == draft.id }) else { return nil }
+        let merged = EditMerge.apply(draft, editedFrom: original, onto: current,
+                                     together: [["amount", "splits", "pendingSplitDraft"], ["category", "subcategory", "categoryChosen"]])
+        update(merged)
+        return merged
     }
 
     func update(_ transaction: BankTransaction) {
@@ -955,6 +983,11 @@ final class BudgetStore: ObservableObject {
         return account
     }
 
+    func updateAccount(_ draft: BankAccount, editedFrom original: BankAccount) {
+        guard let current = accounts.first(where: { $0.id == draft.id }) else { return }
+        updateAccount(EditMerge.apply(draft, editedFrom: original, onto: current))
+    }
+
     func updateAccount(_ account: BankAccount) {
         guard let index = accounts.firstIndex(where: { $0.id == account.id }) else { return }
         reportingPrivacyChanges {
@@ -994,6 +1027,11 @@ final class BudgetStore: ObservableObject {
     }
 
     // MARK: Net worth
+
+    func saveWealthAccount(_ draft: WealthAccount, editedFrom original: WealthAccount) {
+        guard let current = wealthAccounts.first(where: { $0.id == draft.id }) else { return }
+        saveWealthAccount(EditMerge.apply(draft, editedFrom: original, onto: current))
+    }
 
     func saveWealthAccount(_ account: WealthAccount) {
         if let index = wealthAccounts.firstIndex(where: { $0.id == account.id }) {
@@ -1559,6 +1597,28 @@ extension BudgetStore: SyncSource {
     }
 
     func rejectedKeys(_ saves: [SyncRecord]) -> Set<String> { lastRejected }
+
+    func canRead(_ record: SyncRecord) -> Bool {
+        func reads<T: Decodable>(_: [T]) -> Bool { (try? SyncRecord.decoder().decode(T.self, from: record.payload)) != nil }
+        return switch record.collection {
+        case "transactions": reads(transactions)
+        case "changes": reads(changes)
+        case "budgets": reads(budgets)
+        case "imports": reads(imports)
+        case "couple": reads([couple])
+        case "settlements": reads(settlements)
+        case "pendingReceipts": reads(pendingReceipts)
+        case "accounts": reads(accounts)
+        case "wealth": reads(wealthAccounts)
+        case "notes": reads(notes)
+        case "rules": reads(rules)
+        case "categories": reads(categories)
+        case "goals": reads(goals)
+        case "trips": reads(trips)
+        case "covers": reads(covers)
+        default: true
+        }
+    }
 
     private func keepRecentChanges(saves: [SyncRecord], deletes: Set<String>) {
         guard !saves.isEmpty || !deletes.isEmpty else { return }
