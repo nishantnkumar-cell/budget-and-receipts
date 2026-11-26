@@ -42,6 +42,35 @@ final class HeldRecordsTests: XCTestCase {
         XCTAssertEqual(state.changes(to: []).deletes.map(\.key), [newer.key])
     }
 
+    func testANewerCopyOfANowKnownItemDropsTheHeldOne() {
+        var held = HeldRecords([newer])
+        XCTAssertTrue(held.apply(saves: [newer], deletes: [], known: [newer.collection]))
+        XCTAssertTrue(held.isEmpty)
+    }
+
+    func testRestoringABackupNeverLosesAHeldItem() {
+        let other = SyncRecord(collection: "tax.rule", id: "r", payload: Data("3".utf8))
+        var changed = newer
+        changed.payload = Data("old".utf8)
+        let held = HeldRecords([newer, other])
+        XCTAssertEqual(held.restored(from: HeldRecords()).records, held.records)
+        XCTAssertEqual(held.restored(from: HeldRecords([changed])).records, HeldRecords([changed, other]).records)
+    }
+
+    func testChangingSidesInAHouseholdKeepsOnlyPrivateItems() {
+        var held = HeldRecords([newer, SyncRecord(collection: "tax.rule", id: "r", payload: Data())])
+        held.removeShared()
+        XCTAssertEqual(held.records, [newer])
+    }
+
+    func testADeletionFromTheZoneAnItemLeftIsIgnored() {
+        var state = SyncState()
+        state.recordSaved(newer)
+        XCTAssertTrue(state.isLeftover(newer.key, deletedFromPrivate: false))
+        XCTAssertFalse(state.isLeftover(newer.key, deletedFromPrivate: true))
+        XCTAssertFalse(state.isLeftover("transactions|unseen", deletedFromPrivate: false))
+    }
+
     func testSurvivesBeingSaved() throws {
         var record = newer
         record.fileName = "x.pdf"

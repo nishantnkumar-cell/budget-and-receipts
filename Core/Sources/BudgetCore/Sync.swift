@@ -101,6 +101,12 @@ public struct SyncState: Codable, Hashable, Sendable {
         entries[key] = nil
     }
 
+    /// True when a deletion comes from the other zone to the one this item was last synced in:
+    /// the item moved between private and shared, and the new copy must be kept.
+    public func isLeftover(_ key: String, deletedFromPrivate: Bool) -> Bool {
+        entries[key].map { $0.isPrivate != deletedFromPrivate } ?? false
+    }
+
     /// Forgets, without deleting anything in iCloud, items of a kind this version doesn't know
     /// and no longer has. An older version could have noted them as synced without keeping
     /// them; sending that difference would delete them everywhere. Returns how many.
