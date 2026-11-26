@@ -42,10 +42,11 @@ struct TaxHomeView: View {
                     Text("Only do this after marking their replacements, and once everything has synced.")
                 }
             }
-            if !tax.book.properties.isEmpty {
-                ForEach(store.taxPeople, id: \.person) { entry in
-                    let input = PersonInput.make(entry.person, ledger: ledger, book: tax.book, year: tax.year, india: india.book)
-                    let result = TaxCalculator.estimate(input)
+            ForEach(store.taxPeople, id: \.person) { entry in
+                let input = PersonInput.make(entry.person, ledger: ledger, book: tax.book, year: tax.year, india: india.book)
+                let result = TaxCalculator.estimate(input)
+                // Pay or savings alone is enough to estimate: no property needed.
+                if !tax.book.properties.isEmpty || result.pay > 0 || result.interest > 0 || result.dividends > 0 || input.isMissingRate {
                     Section(blocking.isEmpty ? "\(entry.name): estimate" : "\(entry.name): provisional estimate") {
                         LabeledContent("Taxable property profit", value: TaxMoney.format(result.pages.taxableProfit))
                         if result.interest > 0 { LabeledContent("Interest", value: TaxMoney.format(result.interest)) }

@@ -246,10 +246,14 @@ public enum TaxCalculator {
                     banded(under + min(taxableDividends, dividendAllowance), under + taxableDividends,
                            basicLimit: basicLimit, higherLimit: higherLimit, rates: dividendRates(input.year)))
         }
-        // The cheapest split is at one end, or where interest or dividends just reach a nil band.
+        // The cheapest split is at one end, or where interest or dividends just reach a nil band,
+        // or where the point they meet (or the end of the £500) crosses into a higher band.
         let least = min(interest, max(0, spare - dividends)), most = min(interest, spare)
-        let turns = [most, least, interest - startingLeft - savingsAllowance, interest - startingLeft,
-                     spare - dividends + dividendAllowance]
+        let crossings = [basicLimit, higherLimit].flatMap { limit in
+            [taxableEarned + interest - limit, taxableEarned + interest + dividendAllowance - limit]
+        }
+        let turns = [least, interest - startingLeft - savingsAllowance, interest - startingLeft,
+                     spare - dividends + dividendAllowance] + crossings
         // Interest takes the allowance first unless another split is cheaper.
         var best = tax(allowanceOnInterest: most)
         for turn in turns {

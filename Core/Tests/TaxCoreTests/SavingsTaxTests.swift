@@ -62,6 +62,12 @@ final class SavingsTaxTests: XCTestCase {
         }
     }
 
+    func testTheBestSplitCanFallWhereIncomeCrossesIntoTheHigherBand() {
+        // £12,300 against interest leaves it exactly filling the basic band.
+        XCTAssertEqual(estimate(interest: 50_000, dividends: 2_500).liability, pounds("7023.87"))
+        XCTAssertEqual(estimate(pay: 9_970, interest: 40_000, dividends: 20_000).liability, 12_920)
+    }
+
     func testAnAdditionalRatePayerHasNoSavingsAllowance() {
         let result = estimate(pay: 150_000, interest: 1_000, dividends: 1_000)
         XCTAssertEqual(result.savingsTax, 450)
