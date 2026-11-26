@@ -22,6 +22,23 @@ public struct IndiaReport: Hashable, Sendable {
     /// Things to check before using the figures.
     public var warnings: [String]
 
+    /// What the UK-India treaty lets India take from interest paid to a UK resident.
+    public static let treatyRate = Decimal(15) / 100
+
+    /// In pounds: the interest, and the Indian tax on it that can be relieved here (account
+    /// by account, no more than the treaty allows). Nil without a rate.
+    public var inPounds: (interest: Decimal, relievableTax: Decimal)? {
+        guard let rate = rupeesPerPound, rate > 0 else { return nil }
+        var interest: Decimal = 0, tax: Decimal = 0
+        for row in rows where row.interest > 0 {
+            let pounds = IndiaMoney.pounds(row.interest, rupeesPerPound: rate) ?? 0
+            let withheld = max(0, IndiaMoney.pounds(row.taxDeducted, rupeesPerPound: rate) ?? 0)
+            interest += pounds
+            tax += min(withheld, TaxMoney.penceDown(pounds * Self.treatyRate))
+        }
+        return (interest, tax)
+    }
+
     public var interest: Decimal { rows.reduce(0) { $0 + $1.interest } }
     public var taxDeducted: Decimal { rows.reduce(0) { $0 + $1.taxDeducted } }
     public var interestPounds: Decimal? { IndiaMoney.pounds(interest, rupeesPerPound: rupeesPerPound) }

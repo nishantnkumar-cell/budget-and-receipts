@@ -76,7 +76,6 @@ final class ReturnPackTests: XCTestCase {
         XCTAssertEqual(values(result, .main)["SA100.TR3.3"], .pounds(1_999))
         XCTAssertNotNil(values(result, .main)["SA100.TR7.19"])
         XCTAssertTrue(result.forms.allSatisfy { $0.kind != .foreign })
-        XCTAssertTrue(result.checks.contains { $0.contains("isn't in the app's tax estimate") })
     }
 
     func testTaxedInterestGoesOnTheForeignPagesCappedAtTheTreatyRate() {

@@ -65,7 +65,9 @@ struct TaxFiguresView: View {
             }
             Section {
                 ForEach(book.figures.filter { $0.taxYear == year }) { entry in
-                    row(name(entry.person), entry.losses + entry.financeCosts + entry.advancePaid + entry.giftAid, enteredBy: entry.enteredBy) {
+                    let entered = entry.losses + entry.financeCosts + entry.advancePaid + entry.giftAid
+                        + (entry.ukInterest ?? 0) + (entry.ukDividends ?? 0)
+                    row(name(entry.person), entered, enteredBy: entry.enteredBy) {
                         sheet = .figures(entry)
                     }
                 }
@@ -77,7 +79,7 @@ struct TaxFiguresView: View {
                     }
                 }
             } header: {
-                Text("Brought forward, advance payments and Gift Aid")
+                Text("Savings, brought forward, advance payments and Gift Aid")
             }
         }
         .formStyle(.grouped)
@@ -295,18 +297,22 @@ private struct TaxYearFiguresEditor: View {
     @State private var finance = ""
     @State private var advance = ""
     @State private var giftAid = ""
+    @State private var interest = ""
+    @State private var dividends = ""
     @State private var shared = false
     /// Whether it was already saved when the sheet opened.
     @State private var existed = false
 
     var body: some View {
-        let values = [losses, finance, advance, giftAid].map(TaxAmountField.value)
+        let values = [losses, finance, advance, giftAid, interest, dividends].map(TaxAmountField.value)
         TaxSheet(title: "Other figures, \(figures.taxYear)", canSave: !values.contains(nil)) {
             var saved = figures
             saved.losses = values[0]!
             saved.financeCosts = values[1]!
             saved.advancePaid = values[2]!
             saved.giftAid = values[3]!
+            saved.ukInterest = values[4]! == 0 ? nil : values[4]
+            saved.ukDividends = values[5]! == 0 ? nil : values[5]
             saved.isShared = shared
             tax.change { book in
                 var saved = saved
@@ -318,6 +324,14 @@ private struct TaxYearFiguresEditor: View {
                 if !saved.isBlank { book.figures.append(saved) }
             }
         } content: {
+            Section {
+                TaxAmountField(title: "Interest from UK banks", text: $interest)
+                TaxAmountField(title: "Dividends from UK companies", text: $dividends)
+            } header: {
+                Text("Savings this year")
+            } footer: {
+                Text("This person's share, for the whole tax year. Leave out ISAs. Interest from India comes from India Accounts.")
+            }
             Section {
                 TaxAmountField(title: "Property losses", text: $losses)
                 TaxAmountField(title: "Unused finance costs", text: $finance)
@@ -343,6 +357,8 @@ private struct TaxYearFiguresEditor: View {
             finance = TaxAmountField.text(figures.financeCosts)
             advance = TaxAmountField.text(figures.advancePaid)
             giftAid = TaxAmountField.text(figures.giftAid)
+            interest = TaxAmountField.text(figures.ukInterest ?? 0)
+            dividends = TaxAmountField.text(figures.ukDividends ?? 0)
             shared = figures.isShared
             existed = tax.book.figures.contains { $0.id == figures.id }
         }

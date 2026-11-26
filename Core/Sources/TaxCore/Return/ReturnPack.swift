@@ -79,8 +79,7 @@ public struct ReturnPack: Hashable, Sendable {
     public static let year = TaxYear(startYear: 2025)
     /// Paper returns for that year had to reach HMRC before this.
     static let paperLate = TaxYear.day(2026, 11, 1)
-    /// What the UK-India treaty lets India take from interest paid to a UK resident.
-    static let treatyRate = Decimal(15) / 100
+    static let treatyRate = IndiaReport.treatyRate
 
     private static func down(_ value: Decimal) -> Int { NSDecimalNumber(decimal: TaxMoney.poundsDown(value)).intValue }
     private static func up(_ value: Decimal) -> Int { NSDecimalNumber(decimal: TaxMoney.poundsUp(value)).intValue }
@@ -146,7 +145,7 @@ public struct ReturnPack: Hashable, Sendable {
         }
 
         // UK property pages.
-        let input = PersonInput.make(person, ledger: ledger, book: book, year: year)
+        let input = PersonInput.make(person, ledger: ledger, book: book, year: year, india: india)
         if input.propertyCount > 0 {
             let pages = TaxCalculator.pages(input)
             var entries = [entry("SA105.1", "1", "Number of properties rented out", .count(pages.propertyCount))]
@@ -194,6 +193,14 @@ public struct ReturnPack: Hashable, Sendable {
             checks += report.warnings.filter { !$0.contains("rupees to a pound") }
         }
 
+        // Savings and dividends entered for the year.
+        if input.ukInterest >= 1 {
+            main.append(entry("SA100.TR3.2", "TR 3, box 2", "Untaxed UK interest", .pounds(down(input.ukInterest))))
+        }
+        if input.dividends >= 1 {
+            main.append(entry("SA100.TR3.4", "TR 3, box 4", "Dividends from UK companies", .pounds(down(input.dividends))))
+        }
+
         // Reliefs on the main return.
         if input.reliefAtSourcePension > 0 {
             main.append(entry("SA100.TR4.1", "TR 4, box 1", "Pension payments with basic rate relief, including the relief",
@@ -221,7 +228,8 @@ public struct ReturnPack: Hashable, Sendable {
         if !answers.isEmpty || !main.isEmpty {
             forms.insert(ReturnForm(kind: .main, detail: "", entries: answers + main), at: 0)
             checks.append("Main return: write your name, tax reference and National Insurance number, answer every question the app left blank, then sign and date it.")
-            checks.append("Add anything the app doesn't hold, such as UK bank interest, dividends, other income from abroad, capital gains, student loan or Child Benefit.")
+            checks.append("UK interest and dividends are only what you entered in Pay and Statements: include every account outside ISAs, and move any interest that had tax taken off to box 1.")
+            checks.append("Add anything the app doesn't hold, such as dividends and other income from abroad, capital gains, student loan or Child Benefit.")
         }
         if input.advancePaid > 0 {
             checks.append("Payments on account you've made aren't entered on the forms: HMRC already has them.")
@@ -244,7 +252,6 @@ public struct ReturnPack: Hashable, Sendable {
         func pounds(_ rupees: Decimal) -> Decimal { IndiaMoney.pounds(rupees, rupeesPerPound: rate) ?? 0 }
         let total = pounds(rows.reduce(0) { $0 + $1.interest })
         let taxed = rows.contains { $0.taxDeducted > 0 }
-        checks.append("Interest from India isn't in the app's tax estimate, so the bill will be higher than it shows.")
         if !taxed && total <= 2_000 {
             guard down(total) > 0 else { return }
             main.append(entry("SA100.TR3.3", "TR 3, box 3", "Untaxed foreign interest (up to £2,000)", .pounds(down(total))))
