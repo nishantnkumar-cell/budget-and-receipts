@@ -20,7 +20,7 @@ struct IndiaImportView: View {
                     Label(fileName.isEmpty ? "Choose statement file" : fileName, systemImage: "doc.badge.plus")
                 }
             } footer: {
-                Text("An ICICI or SBI account statement saved as CSV, or SBI's tab-separated download. For an Excel file, open it in Numbers or Excel and export it as CSV first. The file is read on this device only.")
+                Text("An ICICI or SBI account statement saved as CSV or tab-separated text. For an Excel file, open it in Numbers or Excel and export it as CSV first. The file is read on this device only.")
             }
             if let error {
                 Section { Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.brandPink) }
@@ -30,7 +30,7 @@ struct IndiaImportView: View {
             }
         }
         .formStyle(.grouped)
-        .navigationTitle("Import Rupee Statement")
+        .navigationTitle("Import Statement")
         // Any file may be offered: some banks name a text file ".xls".
         .fileImporter(isPresented: $choosing, allowedContentTypes: [.data]) { load($0) }
         .sheet(item: $adding) { account in
@@ -75,9 +75,7 @@ struct IndiaImportView: View {
             }
             Section {
                 Button("Import \(result.new.count) Lines") {
-                    india.change { book in
-                        book.entries += statement.entries(for: accountID, existing: book.entries).new
-                    }
+                    india.change { $0.add(statement, to: accountID) }
                     dismiss()
                 }
                 .disabled(result.new.isEmpty)

@@ -82,6 +82,38 @@ final class IndiaStatementTests: XCTestCase {
         XCTAssertEqual(statement.entries(for: "b", existing: first.new).new.count, 4)
     }
 
+    func testAPaymentsWordingNeverEndsTheStatement() throws {
+        let text = "Date,Narration,Debit,Credit\n01/04/2026,LEGENDS CAFE,10,\n02/04/2026,CHEQUE STATUS FEE,5,\n03/04/2026,TEA,1,\n,Cheque Status,,\n12,000123,x,y\n"
+        XCTAssertEqual(try IndiaStatement.read(text: text).lines.map(\.amount), [-10, -5, -1])
+    }
+
+    func testADateThatCantBeReadIsReportedWhateverTheWording() {
+        let text = "Date,Narration,Debit,Credit\n01/04/2026,A,1,\n02/04/2026 10:22,MIN BALANCE CHARGES,100,\n"
+        XCTAssertThrowsError(try IndiaStatement.read(text: text)) {
+            XCTAssertEqual($0 as? IndiaStatementError, .badDate(line: 3, value: "02/04/2026 10:22"))
+        }
+    }
+
+    func testFilesWithAndWithoutABalanceColumnDontDouble() throws {
+        let with = try IndiaStatement.read(text: "Date,Narration,Debit,Credit,Balance\n30/06/2026,CREDIT INTEREST,,100,200\n")
+        let without = try IndiaStatement.read(text: "Date,Narration,Debit,Credit\n30/06/2026,Credit Interest,,100\n")
+        for (first, second) in [(with, without), (without, with)] {
+            let stored = first.entries(for: "a", existing: []).new
+            XCTAssertEqual(second.entries(for: "a", existing: stored).new, [])
+            XCTAssertEqual(second.entries(for: "a", existing: stored).alreadyThere, 1)
+        }
+    }
+
+    func testAnOverlapAddsOnlyTheExtraIdenticalPayment() throws {
+        let one = try IndiaStatement.read(text: "Date,Narration,Debit,Credit\n01/04/2026,TEA,10,\n")
+        let two = try IndiaStatement.read(text: "Date,Narration,Debit,Credit\n01/04/2026,TEA,10,\n01/04/2026,TEA,10,\n")
+        let stored = one.entries(for: "a", existing: []).new
+        let more = two.entries(for: "a", existing: stored)
+        XCTAssertEqual(more.alreadyThere, 1)
+        XCTAssertEqual(more.new.count, 1)
+        XCTAssertEqual(two.entries(for: "a", existing: stored + more.new).new, [])
+    }
+
     func testTwoIdenticalPaymentsInOneFileAreBothKept() throws {
         let text = "Date,Narration,Debit,Credit\n01/04/2026,TEA,10,\n01/04/2026,TEA,10,\n"
         let entries = try IndiaStatement.read(text: text).entries(for: "a", existing: []).new

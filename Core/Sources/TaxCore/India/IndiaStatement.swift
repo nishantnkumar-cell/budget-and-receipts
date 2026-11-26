@@ -107,18 +107,18 @@ public struct IndiaStatement: Hashable, Sendable {
                 return record[column].trimmingCharacters(in: .whitespaces)
             }
             let whole = record.joined(separator: " ").lowercased()
-            // A second table after the payments, as some SBI files have for cheques.
-            if whole.contains("cheque status") || whole.contains("legends") { break }
             if columns(record) != nil { continue }
             let dateText = field(found.date)
             let outText = field(found.withdrawal), inText = field(found.deposit)
             let hasMoney = (outText + inText).contains { $0.isNumber && $0 != "0" }
             guard let date = parser.parse(dateText) else {
+                // A second table after the payments, as some SBI files have for cheques. Only a
+                // line without a date can start it, so a payment's wording never does.
+                if whole.contains("cheque status") || whole.contains("legends") { break }
                 // Totals and notes under the payments have no date. A line with money and a
                 // date that can't be read must never be dropped quietly.
-                if hasMoney && !whole.contains("total") && !whole.contains("balance") {
-                    throw IndiaStatementError.badDate(line: index + 1, value: dateText)
-                }
+                let isTotal = !dateText.contains(where: \.isNumber) && (whole.contains("total") || whole.contains("balance"))
+                if hasMoney && !isTotal { throw IndiaStatementError.badDate(line: index + 1, value: dateText) }
                 continue
             }
             func rupees(_ text: String) throws -> Decimal {
@@ -166,25 +166,46 @@ public struct IndiaStatement: Hashable, Sendable {
     /// The lines as entries of one account, split into new ones and ones already there.
     /// Importing the same or an overlapping statement again adds nothing twice.
     public func entries(for accountID: String, existing: [IndiaEntry]) -> (new: [IndiaEntry], alreadyThere: Int) {
-        let known = Set(existing.map(\.id))
-        var seen: [String: Int] = [:]
-        var new: [IndiaEntry] = []
-        var alreadyThere = 0
-        for line in lines {
-            let day = TaxYear.calendar.dateComponents([.year, .month, .day], from: line.date)
-            // The running balance identifies a line however the bank words it.
-            let mark = line.balance.map { "b\($0)" } ?? line.narration.uppercased()
-            let key = String(format: "%@|%04d-%02d-%02d|", accountID, day.year ?? 0, day.month ?? 0, day.day ?? 0) + "\(line.amount)|\(mark)"
-            let occurrence = seen[key, default: 0] + 1
-            seen[key] = occurrence
-            let id = "\(key)|\(occurrence)"
-            if known.contains(id) {
-                alreadyThere += 1
-            } else {
-                new.append(IndiaEntry(id: id, accountID: accountID, date: line.date, narration: line.narration,
-                                      amount: line.amount, balance: line.balance))
+        func dayText(_ date: Date) -> String {
+            let day = TaxYear.calendar.dateComponents([.year, .month, .day], from: date)
+            return String(format: "%04d-%02d-%02d", day.year ?? 0, day.month ?? 0, day.day ?? 0)
+        }
+        // Lines already imported, by day and amount. Each stands for at most one line here.
+        var held = Dictionary(grouping: existing.filter { $0.accountID == accountID && !$0.isManual }) {
+            "\(dayText($0.date))|\($0.amount)"
+        }
+        var taken = Set(existing.map(\.id))
+        var found = Set<Int>()
+        // The same running balance means the same line, however the bank words it. These are
+        // matched first, so a line without a balance can't claim one of them.
+        for (index, line) in lines.enumerated() where line.balance != nil {
+            let slot = "\(dayText(line.date))|\(line.amount)"
+            if let match = held[slot]?.firstIndex(where: { $0.balance == line.balance }) {
+                held[slot]?.remove(at: match)
+                found.insert(index)
             }
         }
-        return (new, alreadyThere)
+        // One of the two files has no balance column: the wording has to do.
+        for (index, line) in lines.enumerated() where !found.contains(index) {
+            let slot = "\(dayText(line.date))|\(line.amount)"
+            if let match = held[slot]?.firstIndex(where: {
+                (line.balance == nil || $0.balance == nil) && $0.narration.caseInsensitiveCompare(line.narration) == .orderedSame
+            }) {
+                held[slot]?.remove(at: match)
+                found.insert(index)
+            }
+        }
+        var new: [IndiaEntry] = []
+        for (index, line) in lines.enumerated() where !found.contains(index) {
+            let mark = line.balance.map { "b\($0)" } ?? line.narration.uppercased()
+            let key = "\(accountID)|\(dayText(line.date))|\(line.amount)|\(mark)"
+            var occurrence = 1
+            while taken.contains("\(key)|\(occurrence)") { occurrence += 1 }
+            let id = "\(key)|\(occurrence)"
+            taken.insert(id)
+            new.append(IndiaEntry(id: id, accountID: accountID, date: line.date, narration: line.narration,
+                                  amount: line.amount, balance: line.balance))
+        }
+        return (new, found.count)
     }
 }

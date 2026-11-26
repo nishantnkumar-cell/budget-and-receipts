@@ -38,6 +38,10 @@ Duo Budget is open source under the [MIT licence](LICENSE). It is also sold on t
 - Ownership shares, letting agent statements, mortgage interest and pay; UK property page figures and an estimate for each of you, with anything doubtful listed first.
 - "Whose name should we buy in?" compares the extra income tax. England, Wales and Northern Ireland, 2025-26 and 2026-27. Estimates only, not tax advice.
 
+**Rupee accounts** (off until switched on in Settings)
+- ICICI, SBI and other Indian accounts, imported from statements saved as CSV, with balances in rupees and, at a rate you enter, in pounds. Never added to your pound budget.
+- Interest and tax deducted in India by UK tax year and person, exported for an accountant. Not part of the tax estimate.
+
 **Privacy and safety**
 - No account, no servers, no analytics. Data stays on your devices and in end-to-end encrypted iCloud.
 - Face ID, Touch ID or passcode lock; password-encrypted backup files and restore; Erase All Data behind Face ID and typing ERASE.
@@ -52,7 +56,7 @@ The wiki pages are kept in `docs/wiki/` and published to the wiki by a workflow 
 
 | Folder | What it holds |
 | --- | --- |
-| `Core/` | Swift package with `BudgetCore`, the models and money rules (split approval, contracts, receipt parsing), and `TaxCore`, the UK property and tax rules. Foundation only, so their tests also run on Linux. |
+| `Core/` | Swift package with `BudgetCore`, the models and money rules (split approval, contracts, receipt parsing), and `TaxCore`, the UK property and tax rules and the rupee accounts. Foundation only, so their tests also run on Linux. |
 | `Apple/` | iPhone and Mac apps. `project.yml` is the XcodeGen spec; the `.xcodeproj` is generated and not committed. |
 | `Apple/Shared/` | SwiftUI screens, stores, iCloud sync and the Vision OCR service shared by both apps. |
 | `Apple/Widgets/` | Home Screen, Lock Screen and Control Centre widgets. |

@@ -177,6 +177,30 @@ public struct IndiaBook: Hashable, Sendable {
         if let index = accounts.firstIndex(where: { $0.id == account.id }) { accounts[index] = account } else { accounts.append(account) }
     }
 
+    /// Saves an edit made to a copy of an account taken earlier. Only what the edit changed is
+    /// written, so something newer from another device stays (above all, that it's private),
+    /// and an account removed meanwhile stays removed.
+    public mutating func save(_ draft: IndiaAccount, editedFrom original: IndiaAccount) {
+        guard var current = account(original.id) else { return }
+        if draft.bank != original.bank { current.bank = draft.bank }
+        if draft.kind != original.kind { current.kind = draft.kind }
+        if draft.lastFour != original.lastFour { current.lastFour = draft.lastFour }
+        if draft.nickname != original.nickname { current.nickname = draft.nickname }
+        if draft.owner != original.owner { current.owner = draft.owner }
+        if draft.isPrivate != original.isPrivate { current.isPrivate = draft.isPrivate }
+        if draft.statedBalance != original.statedBalance || draft.statedOn != original.statedOn {
+            current.statedBalance = draft.statedBalance
+            current.statedOn = draft.statedOn
+        }
+        save(current)
+    }
+
+    /// Adds a statement's new lines to an account, if it's still there.
+    public mutating func add(_ statement: IndiaStatement, to accountID: String) {
+        guard account(accountID) != nil else { return }
+        entries += statement.entries(for: accountID, existing: entries).new
+    }
+
     public mutating func save(_ entry: IndiaEntry) {
         if let index = entries.firstIndex(where: { $0.id == entry.id }) { entries[index] = entry } else { entries.append(entry) }
     }

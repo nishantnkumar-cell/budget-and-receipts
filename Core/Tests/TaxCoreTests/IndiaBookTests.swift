@@ -41,6 +41,24 @@ final class IndiaBookTests: XCTestCase {
         XCTAssertEqual(book.balance(of: account.id)?.rupees, 5)
     }
 
+    func testASheetLeftOpenOnlySavesWhatItChanged() {
+        var book = IndiaSample.make()
+        let opened = book.account("india-sample-sbi")!
+        var elsewhere = opened
+        elsewhere.isPrivate = true
+        book.save(elsewhere)
+        var draft = opened
+        draft.nickname = "Savings"
+        book.save(draft, editedFrom: opened)
+        XCTAssertEqual(book.account(opened.id)?.nickname, "Savings")
+        XCTAssertEqual(book.account(opened.id)?.isPrivate, true)
+        book.deleteAccount(opened.id)
+        book.save(draft, editedFrom: opened)
+        XCTAssertNil(book.account(opened.id))
+        book.add(try! IndiaStatement.read(text: IndiaSample.sbiStatement), to: opened.id)
+        XCTAssertTrue(book.entries(of: opened.id).isEmpty)
+    }
+
     func testReportSplitsAJointAccountAndConvertsAtTheYearsRate() {
         let report = IndiaReport.make(IndiaSample.make(), year: year, person: .me, today: after)
         XCTAssertEqual(report.rows.map(\.account.id), ["india-sample-icici", "india-sample-sbi"])

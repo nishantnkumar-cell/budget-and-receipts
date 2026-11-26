@@ -128,6 +128,12 @@ private struct TaxPayEditor: View {
             let saved = TaxPay(id: job.id, person: person, taxYear: job.taxYear, employer: employer, taxablePay: values[0]!,
                                taxDeducted: values[1]!, reliefAtSourcePension: values[2]!, isShared: shared, enteredBy: job.enteredBy)
             tax.change { book in
+                var saved = saved
+                // Sharing is written only when the switch was changed here, so a sheet left
+                // open never shares again what another device has since made private.
+                if shared == job.isShared, let current = book.pay.first(where: { $0.id == saved.id }) {
+                    saved.isShared = current.isShared
+                }
                 book.pay.removeAll { $0.id == saved.id }
                 book.pay.append(saved)
             }
@@ -294,6 +300,11 @@ private struct TaxYearFiguresEditor: View {
             saved.giftAid = values[3]!
             saved.isShared = shared
             tax.change { book in
+                var saved = saved
+                // As for pay: only a changed switch is written.
+                if shared == figures.isShared, let current = book.figures.first(where: { $0.id == saved.id }) {
+                    saved.isShared = current.isShared
+                }
                 book.figures.removeAll { $0.id == saved.id }
                 if !saved.isBlank { book.figures.append(saved) }
             }

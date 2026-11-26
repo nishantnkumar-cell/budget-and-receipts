@@ -182,6 +182,7 @@ struct IndiaAccountEditor: View {
     @State private var draft: IndiaAccount
     @State private var balance: String
     @State private var balanceDate: Date
+    @State private var digits: String
 
     init(account: IndiaAccount, isNew: Bool, saved: @escaping (IndiaAccount) -> Void = { _ in }) {
         self.account = account
@@ -190,6 +191,7 @@ struct IndiaAccountEditor: View {
         _draft = State(initialValue: account)
         _balance = State(initialValue: account.statedBalance.map { "\($0)" } ?? "")
         _balanceDate = State(initialValue: account.statedOn ?? Date())
+        _digits = State(initialValue: account.lastFour)
     }
 
     private var canSave: Bool {
@@ -205,7 +207,7 @@ struct IndiaAccountEditor: View {
                 Picker("Kind", selection: $draft.kind) {
                     ForEach(IndiaAccount.Kind.allCases, id: \.self) { Text($0.title).tag($0) }
                 }
-                TextField("Last four digits", text: Binding(get: { draft.lastFour }, set: { draft.lastFour = String($0.filter(\.isNumber).suffix(4)) }))
+                TextField("Last four digits", text: $digits)
                     #if os(iOS)
                     .keyboardType(.numberPad)
                     #endif
@@ -215,7 +217,7 @@ struct IndiaAccountEditor: View {
                 }
                 Toggle("Private", isOn: $draft.isPrivate)
             } footer: {
-                Text("A joint account's interest is split equally. A private account and its lines aren't shared with your partner.")
+                Text("Only the last four digits are saved. A joint account's interest is split equally. A private account and its lines aren't shared with your partner.")
             }
             Section {
                 IndiaAmountField(title: "Balance (₹)", text: $balance)
@@ -236,10 +238,14 @@ struct IndiaAccountEditor: View {
 
     private func save() {
         var result = draft
+        // A longer number typed or pasted is cut here: only its last four digits are saved.
+        result.lastFour = BankAccount.lastFour(digits)
         result.nickname = result.nickname.trimmingCharacters(in: .whitespacesAndNewlines)
         result.statedBalance = IndiaMoney.parse(balance)
         result.statedOn = result.statedBalance == nil ? nil : balanceDate
-        india.change { $0.save(result) }
+        india.change { book in
+            if isNew { book.save(result) } else { book.save(result, editedFrom: account) }
+        }
         saved(result)
     }
 }
