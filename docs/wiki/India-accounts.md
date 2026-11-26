@@ -31,18 +31,19 @@ Import rupee statements here, not under Activity, or they would be counted as po
 
 **Exchange Rates:** type the rupees to one pound for today's balances, and an average for each tax year. The app doesn't look rates up. HMRC publishes yearly averages on GOV.UK.
 
-## Interest for your UK return
+## Interest and dividends for your UK return
 
-**Interest for UK Tax** shows, for each person and tax year (6 April to 5 April), the interest and the tax deducted in India, in rupees and pounds, with an export for an accountant.
+**Income for UK Tax** shows, for each person and tax year (6 April to 5 April), the interest, dividends and tax deducted in India, in rupees and pounds, with an export for an accountant.
 
 - Interest and tax are picked out from the bank's wording. Open a line to correct it.
-- Add deposit interest from the bank's certificate with **Add Interest or Tax**. Don't type in what a statement already has.
+- Add deposit interest from the bank's certificate with **Add Income or Tax**. Don't type in what a statement already has.
+- Add each dividend before tax, and the tax taken off it, the same way, under the account it was paid into. Form 26AS shows both. The amount on a bank statement is usually after tax.
 - Banks may pay interest after taking tax off. The UK return needs the interest before tax, so compare with the interest certificate or Form 26AS.
 - UK residents are normally taxed on interest wherever it arises, including NRE interest that India doesn't tax; some recent arrivals can claim relief.
-- Relief for Indian tax is limited to the rate in the India–UK treaty, which can be less than the bank deducted.
+- Relief for Indian tax is limited to the rates in the India–UK treaty: 15% for interest and 10% for ordinary dividends, which can be less than was deducted. Property income dividends, from some real estate trusts, can be taxed at 15%: the app applies 10%.
 
-The interest also goes onto the [return copies](Property-and-tax) in Property & Tax.
+The interest and dividends also go onto the [return copies](Property-and-tax) in Property & Tax.
 
 ## What isn't covered
 
-The interest is also added to the Property & Tax estimate, with relief for Indian tax. Not covered: mutual funds, shares, capital gains, rent from property in India or your Indian tax return.
+Both are added to the Property & Tax estimate, with relief for Indian tax. Not covered: capital gains on shares or mutual funds, rent from property in India or your Indian tax return.

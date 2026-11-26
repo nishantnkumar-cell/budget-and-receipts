@@ -106,7 +106,7 @@ final class IndiaBookTests: XCTestCase {
         book.save(line)
         let csv = IndiaReport.make(book, year: year, person: .me, today: after).csv(book)
         XCTAssertTrue(csv.contains("'=HYPERLINK(1)"))
-        XCTAssertTrue(csv.contains("2026-27,Total,,,,4251,180,36.97,1.57,115,"))
+        XCTAssertTrue(csv.contains("2026-27,Total,,,,4251,180,36.97,1.57,0,0,0,0,115,"))
         XCTAssertEqual(csv.components(separatedBy: "\r\n").count, 7)
     }
 

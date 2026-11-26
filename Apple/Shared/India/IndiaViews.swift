@@ -28,7 +28,7 @@ struct IndiaHomeView: View {
                 }
                 Section {
                     NavigationLink { IndiaImportView() } label: { Label("Import Statement", systemImage: "square.and.arrow.down") }
-                    NavigationLink { IndiaReportView() } label: { Label("Interest for UK Tax", systemImage: "doc.text") }
+                    NavigationLink { IndiaReportView() } label: { Label("Income for UK Tax", systemImage: "doc.text") }
                     NavigationLink { IndiaRatesView() } label: { Label("Exchange Rates", systemImage: "arrow.left.arrow.right") }
                 }
             }
@@ -132,7 +132,7 @@ struct IndiaAccountView: View {
                                        rate: india.book.rate(IndiaRate.balancesID))
                     }
                     Button("Edit Account", systemImage: "pencil") { editingAccount = account }
-                    Button("Add Interest or Tax", systemImage: "plus") { adding = true }
+                    Button("Add Income or Tax", systemImage: "plus") { adding = true }
                 }
                 Section {
                     Toggle("Only interest and tax", isOn: $onlyInterest)
@@ -301,16 +301,16 @@ private struct IndiaManualEditor: View {
     @State private var note = ""
 
     var body: some View {
-        TaxSheet(title: "Interest or Tax", canSave: (IndiaMoney.parse(amount) ?? 0) > 0, save: save) {
+        TaxSheet(title: "Income or Tax", canSave: (IndiaMoney.parse(amount) ?? 0) > 0, save: save) {
             Section {
                 Picker("What", selection: $kind) {
-                    ForEach([IndiaEntry.Kind.interest, .taxDeducted], id: \.self) { Text($0.title).tag($0) }
+                    ForEach([IndiaEntry.Kind.interest, .taxDeducted, .dividend, .dividendTax], id: \.self) { Text($0.title).tag($0) }
                 }
                 IndiaAmountField(title: "Amount (₹)", text: $amount)
                 DatePicker("Date", selection: $date, displayedComponents: .date)
                 TextField("Note (optional)", text: $note)
             } footer: {
-                Text("For amounts no statement shows, such as deposit interest from the bank's certificate. Don't type in what a statement already has.")
+                Text("For amounts no statement shows, such as deposit interest from the bank's certificate, or dividends before tax and their tax from Form 26AS. Don't type in what a statement already has.")
             }
         }
     }

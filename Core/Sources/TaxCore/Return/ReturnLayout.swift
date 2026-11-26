@@ -35,6 +35,7 @@ public enum ReturnLayout {
             "SA100.TR3.2": .init(5, 82, 193.5, 204, 209.5, cells: 8),
             "SA100.TR3.3": .init(5, 82, 250.5, 141.5, 266.5, cells: 4),
             "SA100.TR3.4": .init(5, 82, 308, 204, 324, cells: 8),
+            "SA100.TR3.6": .init(5, 340.5, 193.5, 400.5, 209.5, cells: 4),
             "SA100.TR4.1": .init(6, 82, 202, 204, 218, cells: 8),
             "SA100.TR4.5": .init(6, 82, 390, 204, 406, cells: 8),
             "SA100.TR7.19": .init(9, 72, 300, 535, 316),
@@ -43,11 +44,15 @@ public enum ReturnLayout {
             // Its first cell is a printed minus sign.
             "SA102.2": .init(1, 97.5, 292, 204, 308, cells: 7),
             "SA102.5": .init(1, 70, 406, 280, 422),
+            // SA101, additional information.
+            "SA101.10": .init(4, 82, 120, 204, 136, cells: 8),
+            "SA101.11": .init(4, 82, 174.5, 204, 190.5, cells: 8),
             // SA105, UK property.
             "SA105.1": .init(1, 250.5, 206.5, 280, 222.5, cells: 2),
             "SA105.3": .init(1, 518, 210.5, 531, 226.5),
             // SA106, foreign savings totals.
-            "SA106.4": .init(3, 377, 220.5, 499.5, 236.5, cells: 8)
+            "SA106.4": .init(3, 377, 220.5, 499.5, 236.5, cells: 8),
+            "SA106.6": .init(3, 377, 370, 499.5, 386, cells: 8)
         ]
         func left(_ box: String, _ page: Int, _ top: Double) {
             places["SA105.\(box)"] = .init(page, 82, top, 204, top + 16, cells: 8)
@@ -76,6 +81,15 @@ public enum ReturnLayout {
             places["SA106.C\(row)"] = .init(2, 427.5, top, 550, top + 16, cells: 8)
             places["SA106.E\(row)"] = .init(3, 270.5, top, 283.5, top + 16)
             places["SA106.F\(row)"] = .init(3, 377, top, 499.5, top + 16, cells: 8)
+        }
+        // The dividend rows below them.
+        for (index, top) in [294.0, 315.0, 335.5].enumerated() {
+            let row = index + 1
+            places["SA106.DA\(row)"] = .init(2, 51.5, top, 96, top + 16, cells: 3)
+            places["SA106.DB\(row)"] = .init(2, 224.5, top, 347, top + 16, cells: 8)
+            places["SA106.DC\(row)"] = .init(2, 427.5, top, 550, top + 16, cells: 8)
+            places["SA106.DE\(row)"] = .init(3, 270.5, top, 283.5, top + 16)
+            places["SA106.DF\(row)"] = .init(3, 377, top, 499.5, top + 16, cells: 8)
         }
         return places
     }()

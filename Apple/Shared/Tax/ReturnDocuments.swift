@@ -118,11 +118,12 @@ enum ReturnFormFiller {
     /// SHA-256 of the 2025-26 files on GOV.UK in November 2026.
     private static let checked: [ReturnFormKind: String] = [
         .main: "53841ec2138b5d1ccd8e69ae402b35e6e3a04f17556bb3b0829f55b47f51b506",
+        .additional: "ed5d92aac01071976b869f416b561d1b49bbc9851561dc2055b467394ff764d1",
         .employment: "7b3c5fbe89a29be7b60df954cb8211f8bbee8289e11b1c872d4847c3b67a9f21",
         .property: "83daac11232f107009c7e174d4e0bf0424c6d305951de82924fb5f59770c9592",
         .foreign: "d803b8afae43d70e372cf9df95c95acaa0a9459123ee66a605a4bc81529d42fb"
     ]
-    private static let pageCounts: [ReturnFormKind: Int] = [.main: 10, .employment: 2, .property: 2, .foreign: 8]
+    private static let pageCounts: [ReturnFormKind: Int] = [.main: 10, .additional: 4, .employment: 2, .property: 2, .foreign: 8]
 
     /// Which blank 2025-26 form a file is, or nil.
     static func identify(_ data: Data) -> Blank? {

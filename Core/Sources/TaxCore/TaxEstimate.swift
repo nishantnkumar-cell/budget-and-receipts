@@ -21,7 +21,15 @@ public struct PersonInput: Hashable, Sendable {
     /// Interest from India in pounds, and the Indian tax on it that can be relieved.
     public var foreignInterest: Decimal = 0
     public var foreignTax: Decimal = 0
-    /// True when there is interest from India but no exchange rate, so it's left out.
+    /// Dividends from India in pounds, and the Indian tax on them that can be relieved.
+    public var foreignDividends: Decimal = 0
+    public var foreignDividendTax: Decimal = 0
+    /// Pension saving for the annual allowance (see `PensionYear`).
+    public var pensionPaidIn: Decimal = 0
+    public var pensionSacrificed: Decimal = 0
+    public var pensionUnused: Decimal = 0
+    public var pensionSchemePays: Decimal = 0
+    /// True when there is income from India but no exchange rate, so it's left out.
     public var isMissingRate = false
 
     public init() {}
@@ -33,9 +41,11 @@ public struct PersonInput: Hashable, Sendable {
         let report = IndiaReport.make(india, year: year, person: person)
         if let pounds = report.inPounds {
             input.foreignInterest = pounds.interest
-            input.foreignTax = pounds.relievableTax
+            input.foreignTax = pounds.interestTax
+            input.foreignDividends = pounds.dividends
+            input.foreignDividendTax = pounds.dividendTax
         } else {
-            input.isMissingRate = report.rows.contains { $0.interest > 0 }
+            input.isMissingRate = report.rows.contains { $0.interest > 0 || $0.dividends > 0 }
         }
         for job in book.pay where job.person == person && job.taxYear == year.description {
             input.pay += job.taxablePay
@@ -60,6 +70,10 @@ public struct PersonInput: Hashable, Sendable {
             input.giftAid += entry.giftAid
             input.ukInterest += entry.ukInterest ?? 0
             input.dividends += entry.ukDividends ?? 0
+            input.pensionPaidIn += entry.pension?.paidIn ?? 0
+            input.pensionSacrificed += entry.pension?.sacrificed ?? 0
+            input.pensionUnused += entry.pension?.unused ?? 0
+            input.pensionSchemePays += entry.pension?.schemePays ?? 0
         }
         return input
     }
@@ -109,15 +123,23 @@ public struct PropertyPages: Hashable, Sendable {
 
 public struct TaxEstimate: Hashable, Sendable {
     public var pay: Decimal
-    /// All interest, and the part of it from India.
+    /// All interest and all dividends, and the parts from India.
     public var interest: Decimal
     public var foreignInterest: Decimal
     public var dividends: Decimal
+    public var foreignDividends: Decimal
     /// The tax on interest and on dividends, included in `taxBeforeReduction`.
     public var savingsTax: Decimal
     public var dividendTax: Decimal
     /// Relief for tax India took.
     public var foreignRelief: Decimal
+    /// This year's pension annual allowance. Nil when no pension saving was entered.
+    public var pensionAllowance: Decimal?
+    /// Saving above the allowance and what was carried forward, the charge on it, and the part
+    /// the scheme pays. The rest is included in `liability`.
+    public var pensionExcess: Decimal
+    public var pensionCharge: Decimal
+    public var pensionSchemePaid: Decimal
     public var pages: PropertyPages
     public var adjustedNetIncome: Decimal
     public var personalAllowance: Decimal
@@ -181,19 +203,42 @@ public enum TaxCalculator {
         return part(0, basicLimit) * rates.basic + part(basicLimit, higherLimit) * rates.higher + part(higherLimit, top) * rates.additional
     }
 
+    static let pensionAllowance: Decimal = 60_000
+    private static let pensionThresholdIncome: Decimal = 200_000
+    private static let pensionAdjustedIncome: Decimal = 260_000
+    private static let pensionMinimum: Decimal = 10_000
+
     public static func estimate(_ input: PersonInput) -> TaxEstimate {
         var result = beforeForeignRelief(input)
-        guard input.foreignInterest > 0, input.foreignTax > 0 else { return result }
-        // Relief is the smaller of the Indian tax allowed and the UK tax the interest causes:
-        // the bill with it less the bill without it.
-        var without = input
-        without.foreignInterest = 0
-        let caused = max(0, result.liability - beforeForeignRelief(without).liability)
-        let relief = min(TaxMoney.penceDown(input.foreignTax), caused)
-        result.foreignRelief = relief
-        result.liability -= relief
+        result.foreignRelief = foreignRelief(input)
+        // The pension charge is added after relief: foreign tax can't be set against it.
+        result.liability += result.pensionCharge - result.pensionSchemePaid - result.foreignRelief
         settle(&result)
         return result
+    }
+
+    /// Relief for each kind of Indian income is the smaller of the tax allowed and the UK tax
+    /// that income causes: the bill with it less the bill without it. Kinds already counted
+    /// stay left out, and the order giving most relief is used.
+    private static func foreignRelief(_ input: PersonInput) -> Decimal {
+        let sources: [(income: WritableKeyPath<PersonInput, Decimal>, tax: Decimal)] = [
+            (\.foreignInterest, TaxMoney.penceDown(input.foreignTax)),
+            (\.foreignDividends, TaxMoney.penceDown(input.foreignDividendTax))
+        ]
+        func relief(_ order: [Int]) -> Decimal {
+            var remaining = input, total: Decimal = 0
+            for index in order {
+                let source = sources[index]
+                guard remaining[keyPath: source.income] > 0, source.tax > 0 else { continue }
+                var without = remaining
+                without[keyPath: source.income] = 0
+                let caused = beforeForeignRelief(remaining).liability - beforeForeignRelief(without).liability
+                total += min(source.tax, max(0, caused))
+                remaining = without
+            }
+            return total
+        }
+        return max(relief([0, 1]), relief([1, 0]))
     }
 
     /// What's still to pay, and next year's advance payments, from the bill.
@@ -212,7 +257,8 @@ public enum TaxCalculator {
         let earned = pay + pages.taxableProfit
         let foreign = TaxMoney.poundsDown(input.foreignInterest)
         let interest = TaxMoney.poundsDown(input.ukInterest) + foreign
-        let dividends = TaxMoney.poundsDown(input.dividends)
+        let foreignDividends = TaxMoney.poundsDown(input.foreignDividends)
+        let dividends = TaxMoney.poundsDown(input.dividends) + foreignDividends
         let total = earned + interest + dividends
         // Relief-at-source pensions and Gift Aid widen the lower bands and protect the allowance.
         let widening = pension + TaxMoney.poundsUp(input.giftAid)
@@ -261,6 +307,23 @@ public enum TaxCalculator {
             if other.savings + other.dividends < best.savings + best.dividends { best = other }
         }
         let (savingsTax, dividendTax) = best
+
+        // Pension saving above the annual allowance is taxed as the top slice of income.
+        var allowanceForPension: Decimal?
+        var pensionExcess: Decimal = 0, pensionCharge: Decimal = 0
+        if input.pensionPaidIn > 0 {
+            // High incomes get less: both tests count the contributions differently.
+            let thresholdIncome = total - pension + TaxMoney.poundsDown(input.pensionSacrificed)
+            let adjustedIncome = total + max(0, TaxMoney.poundsDown(input.pensionPaidIn) - pension)
+            var yearly = pensionAllowance
+            if thresholdIncome > pensionThresholdIncome && adjustedIncome > pensionAdjustedIncome {
+                yearly = max(pensionMinimum, yearly - TaxMoney.poundsDown((adjustedIncome - pensionAdjustedIncome) / 2))
+            }
+            allowanceForPension = yearly
+            pensionExcess = max(0, TaxMoney.poundsDown(input.pensionPaidIn) - yearly - TaxMoney.poundsDown(input.pensionUnused))
+            pensionCharge = TaxMoney.penceDown(banded(everything, everything + pensionExcess, basicLimit: basicLimit,
+                                                      higherLimit: higherLimit, rates: ordinary))
+        }
         let tax = TaxMoney.penceDown(earnedTax + savingsTax + dividendTax)
 
         // Finance cost relief: basic rate on the lowest of the costs, the property profit and
@@ -272,7 +335,10 @@ public enum TaxCalculator {
 
         var result = TaxEstimate(
             pay: pay, interest: interest, foreignInterest: foreign, dividends: dividends,
+            foreignDividends: foreignDividends,
             savingsTax: TaxMoney.penceDown(savingsTax), dividendTax: TaxMoney.penceDown(dividendTax), foreignRelief: 0,
+            pensionAllowance: allowanceForPension, pensionExcess: pensionExcess, pensionCharge: pensionCharge,
+            pensionSchemePaid: min(pensionCharge, TaxMoney.penceDown(max(0, input.pensionSchemePays))),
             pages: pages, adjustedNetIncome: adjustedNet, personalAllowance: personalAllowance,
             taxBeforeReduction: tax, financeReduction: financeReduction,
             financeCarriedForward: finance - relievable, liability: tax - financeReduction,

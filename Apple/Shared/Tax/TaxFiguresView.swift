@@ -66,7 +66,7 @@ struct TaxFiguresView: View {
             Section {
                 ForEach(book.figures.filter { $0.taxYear == year }) { entry in
                     let entered = entry.losses + entry.financeCosts + entry.advancePaid + entry.giftAid
-                        + (entry.ukInterest ?? 0) + (entry.ukDividends ?? 0)
+                        + (entry.ukInterest ?? 0) + (entry.ukDividends ?? 0) + (entry.pension?.paidIn ?? 0)
                     row(name(entry.person), entered, enteredBy: entry.enteredBy) {
                         sheet = .figures(entry)
                     }
@@ -79,7 +79,7 @@ struct TaxFiguresView: View {
                     }
                 }
             } header: {
-                Text("Savings, brought forward, advance payments and Gift Aid")
+                Text("Savings, pension, brought forward, advance payments and Gift Aid")
             }
         }
         .formStyle(.grouped)
@@ -299,12 +299,16 @@ private struct TaxYearFiguresEditor: View {
     @State private var giftAid = ""
     @State private var interest = ""
     @State private var dividends = ""
+    @State private var paidIn = ""
+    @State private var sacrificed = ""
+    @State private var unused = ""
+    @State private var schemePays = ""
     @State private var shared = false
     /// Whether it was already saved when the sheet opened.
     @State private var existed = false
 
     var body: some View {
-        let values = [losses, finance, advance, giftAid, interest, dividends].map(TaxAmountField.value)
+        let values = [losses, finance, advance, giftAid, interest, dividends, paidIn, sacrificed, unused, schemePays].map(TaxAmountField.value)
         TaxSheet(title: "Other figures, \(figures.taxYear)", canSave: !values.contains(nil)) {
             var saved = figures
             saved.losses = values[0]!
@@ -313,6 +317,8 @@ private struct TaxYearFiguresEditor: View {
             saved.giftAid = values[3]!
             saved.ukInterest = values[4]! == 0 ? nil : values[4]
             saved.ukDividends = values[5]! == 0 ? nil : values[5]
+            let pension = PensionYear(paidIn: values[6]!, sacrificed: values[7]!, unused: values[8]!, schemePays: values[9]!)
+            saved.pension = pension == PensionYear(paidIn: 0) ? nil : pension
             saved.isShared = shared
             tax.change { book in
                 var saved = saved
@@ -331,6 +337,16 @@ private struct TaxYearFiguresEditor: View {
                 Text("Savings this year")
             } footer: {
                 Text("This person's share, for the whole tax year. Leave out ISAs. Interest from India comes from India Accounts.")
+            }
+            Section {
+                TaxAmountField(title: "Paid into pensions", text: $paidIn)
+                TaxAmountField(title: "Of which salary sacrifice", text: $sacrificed)
+                TaxAmountField(title: "Unused allowance brought forward", text: $unused)
+                TaxAmountField(title: "Charge your scheme pays", text: $schemePays)
+            } header: {
+                Text("Pension this year")
+            } footer: {
+                Text("Paid in: everything for the tax year from you and your employers, including salary sacrifice and tax relief. For a defined benefit pension, use your scheme's savings statement. Unused allowance is what's left from the three earlier years, from your scheme's statements or HMRC's calculator.")
             }
             Section {
                 TaxAmountField(title: "Property losses", text: $losses)
@@ -359,6 +375,10 @@ private struct TaxYearFiguresEditor: View {
             giftAid = TaxAmountField.text(figures.giftAid)
             interest = TaxAmountField.text(figures.ukInterest ?? 0)
             dividends = TaxAmountField.text(figures.ukDividends ?? 0)
+            paidIn = TaxAmountField.text(figures.pension?.paidIn ?? 0)
+            sacrificed = TaxAmountField.text(figures.pension?.sacrificed ?? 0)
+            unused = TaxAmountField.text(figures.pension?.unused ?? 0)
+            schemePays = TaxAmountField.text(figures.pension?.schemePays ?? 0)
             shared = figures.isShared
             existed = tax.book.figures.contains { $0.id == figures.id }
         }

@@ -87,15 +87,19 @@ public struct IndiaAccount: Codable, Hashable, Sendable, Identifiable {
 /// One line of a rupee account: from a statement, or typed in.
 public struct IndiaEntry: Codable, Hashable, Sendable, Identifiable {
     public enum Kind: String, Codable, CaseIterable, Sendable {
-        case other, interest, taxDeducted
+        case other, interest, taxDeducted, dividend, dividendTax
 
         public var title: String {
             switch self {
             case .other: "Other"
             case .interest: "Interest"
-            case .taxDeducted: "Tax deducted (TDS)"
+            case .taxDeducted: "Tax deducted on interest (TDS)"
+            case .dividend: "Dividend, before tax"
+            case .dividendTax: "Tax deducted on dividends (TDS)"
             }
         }
+
+        public var isTax: Bool { self == .taxDeducted || self == .dividendTax }
     }
 
     public var id: String
@@ -123,10 +127,10 @@ public struct IndiaEntry: Codable, Hashable, Sendable, Identifiable {
         self.isManual = isManual
     }
 
-    /// Interest or tax typed in from a certificate. Amounts are given as positive rupees.
+    /// Interest, a dividend or tax typed in from a certificate. Amounts are given as positive rupees.
     public static func manual(accountID: String, date: Date, kind: Kind, rupees: Decimal, note: String = "") -> IndiaEntry {
         IndiaEntry(id: "manual|\(UUID().uuidString)", accountID: accountID, date: date, narration: note.isEmpty ? kind.title : note,
-                   amount: kind == .taxDeducted ? -abs(rupees) : abs(rupees), chosenKind: kind, isManual: true)
+                   amount: kind.isTax ? -abs(rupees) : abs(rupees), chosenKind: kind, isManual: true)
     }
 
     public var kind: Kind { chosenKind ?? Self.guess(narration: narration, amount: amount) }

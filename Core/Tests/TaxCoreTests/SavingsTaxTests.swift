@@ -154,4 +154,143 @@ final class SavingsTaxTests: XCTestCase {
         let figures = try SyncRecord.decoder().decode(YearFigures.self, from: Data(old.utf8))
         XCTAssertNil(figures.ukInterest)
     }
+
+    // MARK: Dividends from India
+
+    func testIndianDividendsShareTheAllowanceAndGetNoMoreThanTheUKTaxAsRelief() {
+        var input = PersonInput()
+        input.pay = 60_000
+        input.dividends = 500
+        input.foreignDividends = 1_000
+        input.foreignDividendTax = 100
+        let result = TaxCalculator.estimate(input)
+        XCTAssertEqual(result.dividends, 1_500)
+        XCTAssertEqual(result.dividendTax, pounds("337.50"))
+        XCTAssertEqual(result.foreignRelief, 100)
+        XCTAssertEqual(result.liability, 11_432 + pounds("337.50") - 100)
+        // Within the allowance, there's no UK tax to relieve.
+        input.dividends = 0
+        input.foreignDividends = 400
+        XCTAssertEqual(TaxCalculator.estimate(input).foreignRelief, 0)
+    }
+
+    func testReliefOnInterestAndDividendsNeverCountsTheSameTaxTwice() {
+        var input = PersonInput()
+        input.pay = 49_000
+        input.foreignInterest = 2_000
+        input.foreignTax = 300
+        input.foreignDividends = 3_000
+        input.foreignDividendTax = 300
+        let result = TaxCalculator.estimate(input)
+        var without = input
+        without.foreignInterest = 0
+        without.foreignDividends = 0
+        XCTAssertLessThanOrEqual(result.foreignRelief, result.liability + result.foreignRelief - TaxCalculator.estimate(without).liability)
+        XCTAssertEqual(result.foreignRelief, 600)
+    }
+
+    func testIndiaDividendsReachTheEstimateAndTheForeignPages() {
+        let year = TaxYear(startYear: 2025)
+        var india = IndiaBook()
+        india.save(IndiaAccount(id: "a", bank: .icici, kind: .nro))
+        india.save(.manual(accountID: "a", date: TaxYear.day(2025, 8, 1), kind: .dividend, rupees: 100_000))
+        india.save(.manual(accountID: "a", date: TaxYear.day(2025, 8, 1), kind: .dividendTax, rupees: 20_000))
+        india.save(.manual(accountID: "a", date: TaxYear.day(2025, 6, 30), kind: .interest, rupees: 50_000))
+        var input = PersonInput.make(.me, ledger: PropertyLedger(), book: PropertyBook(), year: year, india: india)
+        XCTAssertTrue(input.isMissingRate)
+        india.setRate("2025-26", rupeesPerPound: 100)
+        input = PersonInput.make(.me, ledger: PropertyLedger(), book: PropertyBook(), year: year, india: india)
+        XCTAssertEqual(input.foreignDividends, 1_000)
+        // India took 20%; only the treaty's 10% is relieved.
+        XCTAssertEqual(input.foreignDividendTax, 100)
+        XCTAssertEqual(input.foreignInterest, 500)
+        let pack = ReturnPack.make(.me, year: year, ledger: PropertyLedger(), book: PropertyBook(), india: india,
+                                   today: TaxYear.day(2026, 11, 26))
+        let foreign = pack.forms.first { $0.kind == .foreign }!
+        let values = Dictionary(uniqueKeysWithValues: foreign.entries.map { ($0.id, $0.value) })
+        XCTAssertEqual(values["SA106.DB1"], .pounds(1_000))
+        XCTAssertEqual(values["SA106.DC1"], .pounds(100))
+        XCTAssertEqual(values["SA106.6"], .pounds(1_000))
+        // The untaxed interest joins it there rather than going on the main return.
+        XCTAssertEqual(values["SA106.B1"], .pounds(500))
+        XCTAssertEqual(values["SA106.4"], .pounds(500))
+        XCTAssertFalse(pack.forms.contains { $0.entries.contains { $0.id == "SA100.TR3.3" } })
+        for entry in pack.forms.flatMap(\.entries) { XCTAssertNotNil(ReturnLayout.placement(of: entry.id), entry.id) }
+        XCTAssertTrue(pack.checks.contains { $0.contains("10%") })
+        let csv = IndiaReport.make(india, year: year, person: .me).csv(india)
+        XCTAssertTrue(csv.contains("Dividends GBP"))
+        XCTAssertTrue(csv.contains("Dividend, before tax"))
+    }
+
+    func testSmallUntaxedForeignDividendsGoOnTheMainReturn() {
+        var india = IndiaBook()
+        india.save(IndiaAccount(id: "a", bank: .sbi, kind: .nro))
+        india.save(.manual(accountID: "a", date: TaxYear.day(2025, 8, 1), kind: .dividend, rupees: 40_000))
+        india.setRate("2025-26", rupeesPerPound: 100)
+        let pack = ReturnPack.make(.me, year: TaxYear(startYear: 2025), ledger: PropertyLedger(), book: PropertyBook(), india: india)
+        XCTAssertEqual(pack.forms.first?.entries.first { $0.id == "SA100.TR3.6" }?.value, .pounds(400))
+        XCTAssertFalse(pack.forms.contains { $0.kind == .foreign })
+    }
+
+    // MARK: Pension annual allowance
+
+    private func pension(pay: Decimal, paidIn: Decimal, sacrificed: Decimal = 0, unused: Decimal = 0, schemePays: Decimal = 0,
+                         atSource: Decimal = 0) -> TaxEstimate {
+        var input = PersonInput()
+        input.pay = pay
+        input.pensionPaidIn = paidIn
+        input.pensionSacrificed = sacrificed
+        input.pensionUnused = unused
+        input.pensionSchemePays = schemePays
+        input.reliefAtSourcePension = atSource
+        return TaxCalculator.estimate(input)
+    }
+
+    func testSavingAboveTheAllowanceIsTaxedOnTopOfIncome() {
+        let none = pension(pay: 100_000, paidIn: 60_000, sacrificed: 60_000)
+        XCTAssertEqual(none.pensionAllowance, 60_000)
+        XCTAssertEqual(none.pensionCharge, 0)
+        let over = pension(pay: 100_000, paidIn: 70_000, sacrificed: 70_000)
+        XCTAssertEqual(over.pensionExcess, 10_000)
+        XCTAssertEqual(over.pensionCharge, 4_000)
+        XCTAssertEqual(over.liability, none.liability + 4_000)
+        // Carried forward allowance covers it; the scheme can pay part of what's left.
+        XCTAssertEqual(pension(pay: 100_000, paidIn: 70_000, unused: 10_000).pensionCharge, 0)
+        let paid = pension(pay: 100_000, paidIn: 70_000, schemePays: 3_000)
+        XCTAssertEqual(paid.pensionSchemePaid, 3_000)
+        XCTAssertEqual(paid.liability, none.liability + 1_000)
+        XCTAssertEqual(pension(pay: 100_000, paidIn: 70_000, schemePays: 9_000).liability, none.liability)
+        // Across a band edge: £3,000 of the excess at 20% and £3,000 at 40%.
+        let straddling = pension(pay: 47_270, paidIn: 66_000)
+        XCTAssertEqual(straddling.pensionCharge, 600 + 1_200)
+    }
+
+    func testHighIncomesGetASmallerAllowance() {
+        // Threshold income £230,000 + £20,000 sacrificed; adjusted £230,000 + £50,000.
+        let result = pension(pay: 230_000, paidIn: 50_000, sacrificed: 20_000)
+        XCTAssertEqual(result.pensionAllowance, 50_000)
+        XCTAssertEqual(result.pensionExcess, 0)
+        let more = pension(pay: 300_000, paidIn: 60_000)
+        XCTAssertEqual(more.pensionAllowance, 10_000)
+        XCTAssertEqual(more.pensionCharge, 22_500)
+        // Under the threshold, however much is paid in, the allowance isn't reduced.
+        XCTAssertEqual(pension(pay: 190_000, paidIn: 120_000).pensionAllowance, 60_000)
+        // Salary sacrifice counts towards the threshold.
+        XCTAssertEqual(pension(pay: 190_000, paidIn: 80_000, sacrificed: 20_000).pensionAllowance, 55_000)
+        // Relief-at-source saving is taken off the threshold and not counted twice above it.
+        XCTAssertEqual(pension(pay: 280_000, paidIn: 20_000, atSource: 20_000).pensionAllowance, 50_000)
+    }
+
+    func testThePensionChargeAndFiguresReachTheForm() {
+        var figures = YearFigures(person: .me, taxYear: "2025-26")
+        figures.pension = PensionYear(paidIn: 70_000, sacrificed: 70_000, schemePays: 1_000)
+        XCTAssertFalse(figures.isBlank)
+        let job = TaxPay(person: .me, taxYear: "2025-26", employer: "Made Up Umbrella", taxablePay: 100_000, taxDeducted: 27_432)
+        let pack = ReturnPack.make(.me, year: TaxYear(startYear: 2025), ledger: PropertyLedger(),
+                                   book: PropertyBook(pay: [job], figures: [figures]))
+        let form = pack.forms.first { $0.kind == .additional }!
+        XCTAssertEqual(form.entries.map(\.value), [.pounds(10_000), .pounds(1_000)])
+        for entry in form.entries { XCTAssertNotNil(ReturnLayout.placement(of: entry.id), entry.id) }
+    }
 }
+

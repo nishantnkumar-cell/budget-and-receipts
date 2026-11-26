@@ -35,6 +35,10 @@ struct IndiaReportView: View {
                 Section {
                     IndiaAmountRow(title: "Interest, before tax", rupees: row.interest, rate: report.rupeesPerPound)
                     IndiaAmountRow(title: "Tax deducted in India", rupees: row.taxDeducted, rate: report.rupeesPerPound)
+                    if row.dividends != 0 || row.dividendTax != 0 {
+                        IndiaAmountRow(title: "Dividends, before tax", rupees: row.dividends, rate: report.rupeesPerPound)
+                        IndiaAmountRow(title: "Tax deducted on dividends", rupees: row.dividendTax, rate: report.rupeesPerPound)
+                    }
                 } header: {
                     Text(row.account.title)
                 } footer: {
@@ -51,6 +55,10 @@ struct IndiaReportView: View {
                 Section("Total") {
                     IndiaAmountRow(title: "Interest, before tax", rupees: report.interest, rate: report.rupeesPerPound)
                     IndiaAmountRow(title: "Tax deducted in India", rupees: report.taxDeducted, rate: report.rupeesPerPound)
+                    if report.dividends != 0 || report.dividendTax != 0 {
+                        IndiaAmountRow(title: "Dividends, before tax", rupees: report.dividends, rate: report.rupeesPerPound)
+                        IndiaAmountRow(title: "Tax deducted on dividends", rupees: report.dividendTax, rate: report.rupeesPerPound)
+                    }
                     Button("Export for Your Accountant", systemImage: "square.and.arrow.up") { exporting = true }
                 }
             }
@@ -59,14 +67,14 @@ struct IndiaReportView: View {
             }
         }
         .formStyle(.grouped)
-        .navigationTitle("Interest for UK Tax")
+        .navigationTitle("Income for UK Tax")
         .fileExporter(isPresented: $exporting, document: ExportDocument(data: Data(report.csv(india.book).utf8), type: .commaSeparatedText),
-                      contentType: .commaSeparatedText, defaultFilename: "India interest \(report.year).csv") { _ in }
+                      contentType: .commaSeparatedText, defaultFilename: "India income \(report.year).csv") { _ in }
     }
 }
 
 enum IndiaNotes {
-    static let report = "UK residents are normally taxed on interest wherever it arises, including NRE interest that India doesn't tax; some recent arrivals can claim relief. On the foreign pages (SA106) interest goes in before Indian tax. Relief for that tax is limited to the rate in the India–UK treaty, which can be less than the bank deducted. Property & Tax adds this interest to its estimate. Not tax advice."
+    static let report = "UK residents are normally taxed on interest wherever it arises, including NRE interest that India doesn't tax; some recent arrivals can claim relief. On the foreign pages (SA106) interest goes in before Indian tax. Relief for that tax is limited to the rate in the India–UK treaty, which can be less than the bank deducted. Dividends go in before tax too; India may take no more than 10% of ordinary dividends. Property & Tax adds the interest and dividends to its estimate. Not tax advice."
 }
 
 /// One exchange rate, saved as it's typed.

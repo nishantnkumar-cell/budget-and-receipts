@@ -226,6 +226,8 @@ public struct YearFigures: Codable, Hashable, Sendable, Identifiable {
     /// Interest and dividends received in the UK outside ISAs, before any tax. Nil is nothing.
     public var ukInterest: Decimal?
     public var ukDividends: Decimal?
+    /// Pension saving, for the annual allowance. Nil when not entered.
+    public var pension: PensionYear?
     public var isShared: Bool
     public var enteredBy: Person
 
@@ -245,6 +247,27 @@ public struct YearFigures: Codable, Hashable, Sendable, Identifiable {
 
     public var isBlank: Bool {
         losses == 0 && financeCosts == 0 && advancePaid == 0 && giftAid == 0 && (ukInterest ?? 0) == 0 && (ukDividends ?? 0) == 0
+            && pension == nil
+    }
+}
+
+/// One year's pension saving.
+public struct PensionYear: Codable, Hashable, Sendable {
+    /// Everything paid in for the year by you and your employers, including tax relief. For a
+    /// defined benefit pension, the figure on the scheme's savings statement.
+    public var paidIn: Decimal
+    /// The part of it given up from pay by salary sacrifice.
+    public var sacrificed: Decimal
+    /// Annual allowance not used in the three earlier years.
+    public var unused: Decimal
+    /// The part of any charge the pension scheme pays.
+    public var schemePays: Decimal
+
+    public init(paidIn: Decimal, sacrificed: Decimal = 0, unused: Decimal = 0, schemePays: Decimal = 0) {
+        self.paidIn = paidIn
+        self.sacrificed = sacrificed
+        self.unused = unused
+        self.schemePays = schemePays
     }
 }
 
