@@ -23,6 +23,7 @@ final class HeldItemsStoreTests: XCTestCase {
         var records: [SyncRecord] = []
         var savesWork = true
         var unreadableFiles: [String] { [] }
+        func setHouseholdRole(_ role: HouseholdLink.Role) {}
         func syncRecords() -> [SyncRecord] { records }
         func applySync(saves: [SyncRecord], deletes: Set<String>) -> Bool {
             if savesWork { records += saves }
@@ -83,6 +84,30 @@ final class HeldItemsStoreTests: XCTestCase {
         let subscriptions = SubscriptionStore(folder: folder)
         try store.restore(EncryptedBackup.open(backup, password: "long enough"), subscriptions: subscriptions, tax: TaxStore(folder: folder), held: held)
         XCTAssertEqual(held.syncRecords(), [newer])
+    }
+
+    func testRestoringAnOlderBackupKeepsWhatIsHeld() throws {
+        let store = BudgetStore(folder: folder)
+        let subscriptions = SubscriptionStore(folder: folder)
+        // Made before anything was held, so the backup has no held-items.json.
+        let backup = try EncryptedBackup.make(folder: folder, password: "long enough", device: "", appVersion: "")
+        let held = HeldItemsStore(folder: folder, known: store.collections)
+        held.applySync(saves: [newer], deletes: [])
+        try store.restore(EncryptedBackup.open(backup, password: "long enough"), subscriptions: subscriptions, held: held)
+        XCTAssertEqual(held.syncRecords(), [newer])
+        XCTAssertEqual(HeldItemsStore(folder: folder, known: []).syncRecords(), [newer])
+    }
+
+    func testAHeldCopyNeverReplacesWhatTheStoreAlreadyHas() {
+        let held = HeldItemsStore(folder: folder, known: [])
+        held.applySync(saves: [newer], deletes: [])
+        let future = FutureStore()
+        var current = newer
+        current.payload = Data("newest".utf8)
+        future.records = [current]
+        held.release(to: [future, held])
+        XCTAssertEqual(future.records, [current])
+        XCTAssertTrue(held.syncRecords().isEmpty)
     }
 
     func testADamagedFileIsSetAsideSoSyncRebuildsIt() throws {
