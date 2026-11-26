@@ -142,8 +142,13 @@ final class TaxStore: ObservableObject, SyncSource {
         lastRejected = []
         guard !isWaitingForFiles else { return false }
         var mine = saves.filter { collections.contains($0.collection) }
-        // Pay and yearly figures can only be changed by the person who typed them in.
-        lastRejected = Set(mine.filter { $0.byPartner && items.isMyOwnEntry($0.key) }.map(\.key))
+        // A partner's change is turned down for pay and yearly figures typed in here, and for
+        // anything held privately here. Only the owner can tell a partner's change from one
+        // made on their own other device, as for the couple settings.
+        lastRejected = Set(mine.filter { save in
+            role == .owner && save.byPartner
+                && (items.isMyOwnEntry(save.key) || (!save.isPrivate && items.holdsPrivately(save.key)))
+        }.map(\.key))
         mine.removeAll { lastRejected.contains($0.key) }
         if role == .member { mine = mine.map { $0.isPrivate ? $0 : TaxItems.flipped($0) } }
         var next = items

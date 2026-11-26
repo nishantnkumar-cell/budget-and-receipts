@@ -62,6 +62,30 @@ final class TaxItemsTests: XCTestCase {
         XCTAssertEqual(shared.records.first { $0.key == "taxStatements|\(new.statements[0].id)" }?.isPrivate, false)
     }
 
+    func testEditingAPrivateItemNeverSharesIt() {
+        // A device that hasn't heard the payment was made private edits the item.
+        var saved = items(TaxSample.make().book, private: ["tax-sample-plumber"])
+        let key = "taxPayments|tax-sample-plumber"
+        XCTAssertTrue(saved.holdsPrivately(key))
+        let old = saved.book
+        var new = old
+        let index = new.assignments.firstIndex { $0.fingerprint == "tax-sample-plumber" }!
+        new.assignments[index].category = .capital
+        saved.update(from: old, to: new, isPrivatePayment: { _ in false })
+        XCTAssertEqual(saved.records.first { $0.key == key }?.isPrivate, true)
+        XCTAssertFalse(saved.holdsPrivately("taxProperties|flat"))
+    }
+
+    func testLinkingAStatementToAnotherPaymentFollowsThatPayment() {
+        var saved = items(TaxSample.make().book, private: ["tax-sample-rent-0"])
+        let old = saved.book
+        var new = old
+        let index = new.statements.firstIndex { $0.id == "statement-0" }!
+        new.statements[index].bankFingerprint = "another"
+        saved.update(from: old, to: new, isPrivatePayment: { _ in false })
+        XCTAssertEqual(saved.records.first { $0.key == "taxStatements|statement-0" }?.isPrivate, false)
+    }
+
     func testOnlyMyOwnEntriesAreGuarded() {
         var book = TaxSample.make().book
         book.pay[0].enteredBy = .partner
