@@ -84,6 +84,7 @@ final class TaxStoreTests: XCTestCase {
 
     func testAPartnerCantChangePayTypedInHere() throws {
         let store = TaxStore(folder: folder)
+        store.setHouseholdRole(.owner)
         let mine = TaxPay(id: "job", person: .me, taxYear: "2025-26", employer: "E", taxablePay: 100, taxDeducted: 0, isShared: true)
         store.change { $0.pay.append(mine) }
         var theirs = store.syncRecords()[0]
@@ -169,6 +170,27 @@ final class TaxStoreTests: XCTestCase {
         try budget.restore(EncryptedBackup.open(backup, password: "long enough"), subscriptions: SubscriptionStore(folder: folder),
                            tax: tax, held: HeldItemsStore(folder: folder, known: budget.collections))
         XCTAssertEqual(tax.book.properties, [flat])
+    }
+
+    func testAPartnersOldCopyNeverReplacesAPrivateChoice() {
+        let store = TaxStore(folder: folder)
+        store.setHouseholdRole(.owner)
+        var privacy = ["p": false]
+        store.paymentPrivacy = { privacy }
+        let payment = BankTransaction(date: Date(), merchant: "Plumber", amount: -10, fingerprint: "p")
+        store.change { book in
+            book.properties.append(flat)
+            book.assign(payment, to: "flat", as: .repairs)
+        }
+        var old = record(store, "taxPayments|p")!
+        privacy["p"] = true
+        store.privacyChanged(["p"])
+        store.change { $0.assign(payment, to: "flat", as: .capital) }
+        old.byPartner = true
+        old.isPrivate = false
+        store.applySync(saves: [old], deletes: [])
+        XCTAssertEqual(store.rejectedKeys([old]), ["taxPayments|p"])
+        XCTAssertEqual(store.book.assignments.map(\.category), [.capital])
     }
 
     func testSampleFiguresReachTheScreens() {

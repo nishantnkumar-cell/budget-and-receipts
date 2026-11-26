@@ -73,9 +73,15 @@ public struct TaxItems: Sendable {
         for key in before.keys where after[key] == nil { byKey[key] = nil }
         for (key, record) in after where before[key] != record {
             var record = record
-            // The payment isn't here to ask about: keep who could see the item before.
-            if let stored = byKey[key], let fingerprint = Self.fingerprint(of: record), isPrivatePayment(fingerprint) == nil {
-                record.isPrivate = stored.isPrivate
+            // Editing never widens who sees an item about the same payment: a private one
+            // stays private, and when the payment isn't here to ask about, nothing changes.
+            // Only `followPrivacy` shares an item again.
+            if let stored = byKey[key], let fingerprint = Self.fingerprint(of: record), fingerprint == Self.fingerprint(of: stored) {
+                if stored.isPrivate {
+                    record.isPrivate = true
+                } else if isPrivatePayment(fingerprint) == nil {
+                    record.isPrivate = false
+                }
             }
             byKey[key] = record
         }
@@ -130,6 +136,11 @@ public struct TaxItems: Sendable {
             if let fingerprint = Self.fingerprint(of: record), privacy(fingerprint) == true { record.isPrivate = true }
             return record
         }
+    }
+
+    /// True when this item is about a payment and held privately here.
+    public func holdsPrivately(_ key: String) -> Bool {
+        byKey[key].map { $0.isPrivate && Self.fingerprint(of: $0) != nil } ?? false
     }
 
     /// True when this item was typed in by the person using this device, so a partner's
