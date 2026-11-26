@@ -191,6 +191,8 @@ public struct TaxPay: Codable, Hashable, Sendable, Identifiable {
     public var isShared: Bool
     /// Who typed it in. Only they can change it.
     public var enteredBy: Person
+    /// The pay date of the latest payslip imported into it.
+    public var payslipDate: Date?
 
     public init(id: String = UUID().uuidString, person: Person, taxYear: String, employer: String,
                 taxablePay: Decimal, taxDeducted: Decimal, reliefAtSourcePension: Decimal = 0, isShared: Bool = false,

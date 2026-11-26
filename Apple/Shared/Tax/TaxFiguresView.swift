@@ -33,6 +33,7 @@ struct TaxFiguresView: View {
                 Button("Add Pay", systemImage: "plus") {
                     sheet = .pay(TaxPay(person: .me, taxYear: year, employer: "", taxablePay: 0, taxDeducted: 0))
                 }
+                NavigationLink { PayslipImportView() } label: { Label("Import Payslips", systemImage: "square.and.arrow.down") }
             } header: {
                 Text("Pay (P60)")
             } footer: {
@@ -49,6 +50,7 @@ struct TaxFiguresView: View {
                         let today = min(Date(), tax.year.end.addingTimeInterval(-43_200))
                         sheet = .statement(AgentStatement(propertyID: first.id, date: today, grossRent: 0))
                     }
+                    NavigationLink { LettingImportView() } label: { Label("Import Agent Statements", systemImage: "square.and.arrow.down") }
                 }
                 Section("Mortgage interest for \(year)") {
                     ForEach(book.properties) { property in
@@ -127,8 +129,9 @@ private struct TaxPayEditor: View {
         let values = [pay, deducted, pension].map(TaxAmountField.value)
         let exists = tax.book.pay.contains { $0.id == job.id }
         TaxSheet(title: "Pay", canSave: !employer.isEmpty && !values.contains(nil)) {
-            let saved = TaxPay(id: job.id, person: person, taxYear: job.taxYear, employer: employer, taxablePay: values[0]!,
+            var saved = TaxPay(id: job.id, person: person, taxYear: job.taxYear, employer: employer, taxablePay: values[0]!,
                                taxDeducted: values[1]!, reliefAtSourcePension: values[2]!, isShared: shared, enteredBy: job.enteredBy)
+            saved.payslipDate = job.payslipDate
             tax.change { book in
                 var saved = saved
                 let current = book.pay.first { $0.id == saved.id }
@@ -137,6 +140,7 @@ private struct TaxPayEditor: View {
                 // Sharing is written only when the switch was changed here, so a sheet left
                 // open never shares again what another device has since made private.
                 if shared == job.isShared, let current { saved.isShared = current.isShared }
+                if let current { saved.payslipDate = current.payslipDate }
                 book.pay.removeAll { $0.id == saved.id }
                 book.pay.append(saved)
             }

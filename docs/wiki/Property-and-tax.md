@@ -19,6 +19,14 @@ For UK rental property and Self Assessment. It uses the payments already in Duo 
 2. **Property Payments:** choose a payment, its property and what kind of money it is. Turn on **Always treat … this way** to make a rule. For a split payment, choose each part. You can also do this from the payment's own screen.
 3. **Pay and Statements:** enter each P60, any letting agent statements, the lender's interest paid between 6 April and 5 April, losses brought forward, payments on account already made and Gift Aid.
 
+## Import agent statements and payslips
+
+Both are in **Pay and Statements**. Files are read on your device, and you see what was read before anything is saved. If a file isn't recognised, nothing is imported: add it by hand.
+
+**Agent statements:** PDFs headed “Remittance Advice” or “Management Statement”, or a CSV with columns for property, gross rent, management fee, deductions, net payment and date, in that order. Import your bank statement first: each agent statement is then linked to the payment of the same amount, so the rent isn't counted twice. A remittance advice is checked against the amount it says was paid; a management statement shows nothing to check against, so compare it yourself. Passwords must be removed first.
+
+**Payslips:** PDF payslips showing “Total Taxable Pay”, “PAYE Net Pay” and figures to date. The latest payslip in each tax year sets that year's taxable pay and tax deducted for the employer name you give; figures you typed in, such as from a P60, are only replaced if you switch that on. Choose files holding one payslip each. Compare both figures with the payslip before saving.
+
 ## How nothing is counted twice
 
 - An agent statement gives the rent before fees and replaces the bank payment you link it to.
