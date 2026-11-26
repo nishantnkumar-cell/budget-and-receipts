@@ -33,6 +33,11 @@ Duo Budget is open source under the [MIT licence](LICENSE). It is also sold on t
 - Home and Lock Screen widgets, a Control Centre scan button, Siri and Shortcuts, and "Ask your budget" answered on the device.
 - A Mac command centre with ⌘K to jump anywhere.
 
+**UK property and tax** (off until switched on in Settings)
+- Mark rent and costs against a property from your own payments, once or with a rule, split payments included.
+- Ownership shares, letting agent statements, mortgage interest and pay; UK property page figures and an estimate for each of you, with anything doubtful listed first.
+- "Whose name should we buy in?" compares the extra income tax. England, Wales and Northern Ireland, 2025-26 and 2026-27. Estimates only, not tax advice.
+
 **Privacy and safety**
 - No account, no servers, no analytics. Data stays on your devices and in end-to-end encrypted iCloud.
 - Face ID, Touch ID or passcode lock; password-encrypted backup files and restore; Erase All Data behind Face ID and typing ERASE.
@@ -47,7 +52,7 @@ The wiki pages are kept in `docs/wiki/` and published to the wiki by a workflow 
 
 | Folder | What it holds |
 | --- | --- |
-| `Core/` | `BudgetCore` Swift package: models and money rules (split approval, contracts, receipt parsing). Foundation only, so its tests also run on Linux. |
+| `Core/` | Swift package with `BudgetCore`, the models and money rules (split approval, contracts, receipt parsing), and `TaxCore`, the UK property and tax rules. Foundation only, so their tests also run on Linux. |
 | `Apple/` | iPhone and Mac apps. `project.yml` is the XcodeGen spec; the `.xcodeproj` is generated and not committed. |
 | `Apple/Shared/` | SwiftUI screens, stores, iCloud sync and the Vision OCR service shared by both apps. |
 | `Apple/Widgets/` | Home Screen, Lock Screen and Control Centre widgets. |

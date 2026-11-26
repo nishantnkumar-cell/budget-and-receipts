@@ -91,8 +91,14 @@ final class TaxStore: ObservableObject, SyncSource {
         return !isWaitingForFiles
     }
 
+    /// A backup with no tax file (one made before tax details existed) leaves them as they
+    /// are, rather than deleting them everywhere.
     func reloadAfterRestore() {
+        let current = items
         load()
+        if !FileManager.default.fileExists(atPath: storage.folder.appendingPathComponent(Self.file).path) && unreadableFiles.isEmpty {
+            replace(with: current)
+        }
         save()
         didPersist?()
     }

@@ -15,6 +15,7 @@
 
 **Bigger picture**
 - [Reports and net worth](Reports-and-net-worth)
+- [Property and tax](Property-and-tax)
 - [Widgets, Siri and Ask your budget](Widgets-Siri-and-Ask-your-budget)
 
 **Your data**

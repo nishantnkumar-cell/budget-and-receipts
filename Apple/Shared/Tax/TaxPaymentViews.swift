@@ -214,7 +214,7 @@ struct TaxAssignView: View {
             return "A rule for every payment whose name contains this: \(store.transactions.filter(probe.matches).count) now."
         }
         return switch whole.category {
-        case .mortgagePayment: "Not counted. Enter the lender's yearly interest figure under Pay, Statements and Interest."
+        case .mortgagePayment: "Not counted. Enter the lender's yearly interest figure under Pay and Statements."
         case .capital: "Buying or improving isn't an expense against rent."
         case .ignore: "Left out of the property figures."
         default: "Only this payment."

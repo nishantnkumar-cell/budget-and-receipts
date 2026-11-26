@@ -256,7 +256,7 @@ final class BudgetStore: ObservableObject {
         subscriptions.reloadAfterRestore()
         tax.reloadAfterRestore()
         held.reloadAfterRestore()
-        held.release(to: [self, subscriptions])
+        held.release(to: [self, subscriptions, tax])
         persist()
     }
 

@@ -93,7 +93,7 @@ final class HeldItemsStoreTests: XCTestCase {
         let backup = try EncryptedBackup.make(folder: folder, password: "long enough", device: "", appVersion: "")
         let held = HeldItemsStore(folder: folder, known: store.collections)
         held.applySync(saves: [newer], deletes: [])
-        try store.restore(EncryptedBackup.open(backup, password: "long enough"), subscriptions: subscriptions, held: held)
+        try store.restore(EncryptedBackup.open(backup, password: "long enough"), subscriptions: subscriptions, tax: TaxStore(folder: folder), held: held)
         XCTAssertEqual(held.syncRecords(), [newer])
         XCTAssertEqual(HeldItemsStore(folder: folder, known: []).syncRecords(), [newer])
     }
