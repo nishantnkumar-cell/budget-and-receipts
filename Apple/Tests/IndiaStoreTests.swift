@@ -94,6 +94,25 @@ final class IndiaStoreTests: XCTestCase {
         XCTAssertEqual(india.book.accounts, [hidden])
     }
 
+    func testAMembersPrivateAccountIsNotSharedByAnOutOfDateCopy() {
+        let india = store()
+        india.setHouseholdRole(.member)
+        var joint = account
+        joint.owner = .shared
+        filled(india, joint)
+        var stale = india.syncRecords()[0]
+        india.change { book in
+            var hidden = joint
+            hidden.isPrivate = true
+            book.save(hidden)
+        }
+        stale.byPartner = true
+        XCTAssertTrue(india.applySync(saves: [stale], deletes: []))
+        XCTAssertEqual(india.rejectedKeys([stale]), ["indiaAccounts|a"])
+        XCTAssertEqual(india.book.accounts.first?.isPrivate, true)
+        XCTAssertTrue(india.syncRecords().allSatisfy(\.isPrivate))
+    }
+
     func testAnotherDevicesDeletionCanBeRestoredAccountFirst() {
         let india = store()
         var changes: [RecentChange] = []

@@ -75,6 +75,32 @@ final class IndiaItemsTests: XCTestCase {
         XCTAssertTrue(lines(saved, of: "india-sample-sbi").allSatisfy(\.isPrivate))
     }
 
+    func testAnOutOfDateCopyCantShareAPrivateAccountButANewerChoiceCan() {
+        let shared = IndiaSample.make()
+        let key = "indiaAccounts|india-sample-sbi"
+        var here = items(shared)
+        var other = here
+        let stale = here.records.first { $0.key == key }!
+        let hidden = privateAccount("india-sample-sbi", in: shared)
+        here.update(from: shared, to: hidden, now: TaxYear.day(2026, 6, 1))
+        XCTAssertTrue(here.isOutdatedSharing(stale))
+        // The other device catches up, then shares it on purpose: that is taken.
+        _ = other.apply(saves: here.syncRecords(), deletes: [])
+        let old = other.book
+        other.update(from: old, to: privateAccount("india-sample-sbi", in: old, false), now: TaxYear.day(2026, 6, 2))
+        XCTAssertFalse(here.isOutdatedSharing(other.records.first { $0.key == key }!))
+    }
+
+    func testRestoringAnEarlierVersionNeverSharesAPrivateAccount() {
+        let shared = IndiaSample.make()
+        var saved = items(shared)
+        let earlier = saved.records.first { $0.key == "indiaAccounts|india-sample-sbi" }!
+        saved.update(from: shared, to: privateAccount("india-sample-sbi", in: shared))
+        saved.restore(earlier)
+        XCTAssertEqual(saved.book.account("india-sample-sbi")?.isPrivate, true)
+        XCTAssertTrue(saved.holdsPrivately(earlier.key))
+    }
+
     func testDeletingAnAccountRemovesItsLines() {
         let book = IndiaSample.make()
         var saved = items(book)

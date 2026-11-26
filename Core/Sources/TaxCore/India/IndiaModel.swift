@@ -47,6 +47,9 @@ public struct IndiaAccount: Codable, Hashable, Sendable, Identifiable {
     public var owner: MoneyOwner
     /// Hidden, with its lines, from a partner the household is shared with.
     public var isPrivate: Bool
+    /// When you last made it private or shared it, so an out-of-date copy from another device
+    /// can't undo that.
+    public var privacyChangedAt: Date?
     /// A balance typed in, for an account without statements such as a deposit.
     public var statedBalance: Decimal?
     public var statedOn: Date?

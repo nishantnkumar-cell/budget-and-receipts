@@ -120,6 +120,8 @@ private struct TaxPayEditor: View {
     @State private var deducted = ""
     @State private var pension = ""
     @State private var shared = false
+    /// Whether it was already saved when the sheet opened.
+    @State private var existed = false
 
     var body: some View {
         let values = [pay, deducted, pension].map(TaxAmountField.value)
@@ -129,11 +131,12 @@ private struct TaxPayEditor: View {
                                taxDeducted: values[1]!, reliefAtSourcePension: values[2]!, isShared: shared, enteredBy: job.enteredBy)
             tax.change { book in
                 var saved = saved
+                let current = book.pay.first { $0.id == saved.id }
+                // Removed on another device while the sheet was open: it stays removed.
+                if existed && current == nil { return }
                 // Sharing is written only when the switch was changed here, so a sheet left
                 // open never shares again what another device has since made private.
-                if shared == job.isShared, let current = book.pay.first(where: { $0.id == saved.id }) {
-                    saved.isShared = current.isShared
-                }
+                if shared == job.isShared, let current { saved.isShared = current.isShared }
                 book.pay.removeAll { $0.id == saved.id }
                 book.pay.append(saved)
             }
@@ -173,6 +176,7 @@ private struct TaxPayEditor: View {
             deducted = TaxAmountField.text(job.taxDeducted)
             pension = TaxAmountField.text(job.reliefAtSourcePension)
             shared = job.isShared
+            existed = tax.book.pay.contains { $0.id == job.id }
         }
     }
 }
@@ -289,6 +293,8 @@ private struct TaxYearFiguresEditor: View {
     @State private var advance = ""
     @State private var giftAid = ""
     @State private var shared = false
+    /// Whether it was already saved when the sheet opened.
+    @State private var existed = false
 
     var body: some View {
         let values = [losses, finance, advance, giftAid].map(TaxAmountField.value)
@@ -301,10 +307,10 @@ private struct TaxYearFiguresEditor: View {
             saved.isShared = shared
             tax.change { book in
                 var saved = saved
-                // As for pay: only a changed switch is written.
-                if shared == figures.isShared, let current = book.figures.first(where: { $0.id == saved.id }) {
-                    saved.isShared = current.isShared
-                }
+                let current = book.figures.first { $0.id == saved.id }
+                // As for pay: removed figures stay removed, and only a changed switch is written.
+                if existed && current == nil { return }
+                if shared == figures.isShared, let current { saved.isShared = current.isShared }
                 book.figures.removeAll { $0.id == saved.id }
                 if !saved.isBlank { book.figures.append(saved) }
             }
@@ -335,6 +341,7 @@ private struct TaxYearFiguresEditor: View {
             advance = TaxAmountField.text(figures.advancePaid)
             giftAid = TaxAmountField.text(figures.giftAid)
             shared = figures.isShared
+            existed = tax.book.figures.contains { $0.id == figures.id }
         }
     }
 }

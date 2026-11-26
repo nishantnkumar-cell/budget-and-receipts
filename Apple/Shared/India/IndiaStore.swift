@@ -24,7 +24,7 @@ final class IndiaStore: ObservableObject, SyncSource {
     var didReceiveChanges: (([RecentChange]) -> Void)?
 
     let collections = IndiaItems.collections
-    /// A partner's changes to items held privately here, turned down in the last arrivals.
+    /// Changes turned down in the last arrivals, so this device's version is sent back.
     private var lastRejected: Set<String> = []
 
     init(folder: URL = JSONFileStorage.defaultFolder) {
@@ -121,10 +121,12 @@ final class IndiaStore: ObservableObject, SyncSource {
         lastRejected = []
         guard !isWaitingForFiles else { return false }
         var mine = saves.filter { collections.contains($0.collection) }
-        // A partner's change to something held privately here is turned down. Only the owner
-        // can tell a partner's change from one made on their own other device.
+        // Turned down: a copy that would share an account made private here since it was
+        // written, and a partner's change to something held privately here (only the owner can
+        // tell a partner's change from one made on their own other device).
         lastRejected = Set(mine.filter { save in
-            role == .owner && save.byPartner && !save.isPrivate && items.holdsPrivately(save.key)
+            items.isOutdatedSharing(save)
+                || (role == .owner && save.byPartner && !save.isPrivate && items.holdsPrivately(save.key))
         }.map(\.key))
         mine.removeAll { lastRejected.contains($0.key) }
         if role == .member { mine = mine.map { $0.isPrivate ? $0 : IndiaItems.flipped($0) } }

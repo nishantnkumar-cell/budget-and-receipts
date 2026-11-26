@@ -51,14 +51,21 @@ public struct IndiaItems: Sendable {
 
     /// Saves what the person changed. Items they didn't touch stay exactly as stored,
     /// including anything a newer version added to them.
-    public mutating func update(from old: IndiaBook, to new: IndiaBook) {
+    public mutating func update(from old: IndiaBook, to new: IndiaBook, now: Date = Date()) {
+        var new = new
+        // Accounts whose privacy this edit changed: only that may share a private line again.
+        let wasPrivate = Dictionary(old.accounts.map { ($0.id, $0.isPrivate) }, uniquingKeysWith: { _, last in last })
+        var changed = Set<String>()
+        for index in new.accounts.indices {
+            let account = new.accounts[index]
+            guard let before = wasPrivate[account.id], before != account.isPrivate else { continue }
+            changed.insert(account.id)
+            new.accounts[index].privacyChangedAt = now
+        }
         func index(_ book: IndiaBook) -> [String: SyncRecord] {
             Dictionary(Self.records(for: book).map { ($0.key, $0) }, uniquingKeysWith: { _, last in last })
         }
         let before = index(old), after = index(new)
-        // Accounts whose privacy this edit changed: only that may share a private line again.
-        let wasPrivate = Dictionary(old.accounts.map { ($0.id, $0.isPrivate) }, uniquingKeysWith: { _, last in last })
-        let changed = Set(new.accounts.filter { account in wasPrivate[account.id].map { $0 != account.isPrivate } ?? false }.map(\.id))
 
         for key in before.keys where after[key] == nil { byKey[key] = nil }
         for (key, record) in after where before[key] != record {
@@ -95,12 +102,28 @@ public struct IndiaItems: Sendable {
         return byKey != before
     }
 
-    /// Puts an earlier version of an item back. A line takes its account's privacy, and stays
-    /// private when the account isn't here.
+    /// True for a copy of an account that would share one made private here since that copy
+    /// was written, e.g. saved by a device that hadn't caught up.
+    public func isOutdatedSharing(_ record: SyncRecord) -> Bool {
+        guard Kind(rawValue: record.collection) == .account, let held = byKey[record.key],
+              let mine = Self.decode(IndiaAccount.self, held), mine.isPrivate, let since = mine.privacyChangedAt,
+              let theirs = Self.decode(IndiaAccount.self, record), !theirs.isPrivate else { return false }
+        return theirs.privacyChangedAt.map { $0 < since } ?? true
+    }
+
+    /// Puts an earlier version of an item back. An account that's still here keeps whether it's
+    /// private. A line takes its account's privacy, and stays private when the account isn't here.
     public mutating func restore(_ record: SyncRecord) {
         var record = record
         switch Kind(rawValue: record.collection) {
-        case .account: record.isPrivate = Self.decode(IndiaAccount.self, record)?.isPrivate ?? true
+        case .account:
+            var account = Self.decode(IndiaAccount.self, record)
+            if let current = byKey[record.key].flatMap({ Self.decode(IndiaAccount.self, $0) }) {
+                account?.isPrivate = current.isPrivate
+                account?.privacyChangedAt = current.privacyChangedAt
+                if let account, let payload = try? SyncRecord.encoder().encode(account) { record.payload = payload }
+            }
+            record.isPrivate = account?.isPrivate ?? true
         case .entry:
             let owner = Self.decode(IndiaEntry.self, record).flatMap { book.account($0.accountID) }
             record.isPrivate = owner?.isPrivate ?? true

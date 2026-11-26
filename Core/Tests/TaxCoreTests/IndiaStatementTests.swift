@@ -87,6 +87,11 @@ final class IndiaStatementTests: XCTestCase {
         XCTAssertEqual(try IndiaStatement.read(text: text).lines.map(\.amount), [-10, -5, -1])
     }
 
+    func testAWrappedDescriptionNeverEndsTheStatement() throws {
+        let text = "Date,Narration,Debit,Credit\n01/04/2026,UPI,10,\n,LEGENDS CAFE,,\n02/04/2026,SALARY,,5\nLegends,,,\n12,000123,x,y\n"
+        XCTAssertEqual(try IndiaStatement.read(text: text).lines.map(\.amount), [-10, 5])
+    }
+
     func testADateThatCantBeReadIsReportedWhateverTheWording() {
         let text = "Date,Narration,Debit,Credit\n01/04/2026,A,1,\n02/04/2026 10:22,MIN BALANCE CHARGES,100,\n"
         XCTAssertThrowsError(try IndiaStatement.read(text: text)) {

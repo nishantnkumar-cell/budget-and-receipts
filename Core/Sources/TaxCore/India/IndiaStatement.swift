@@ -112,9 +112,11 @@ public struct IndiaStatement: Hashable, Sendable {
             let outText = field(found.withdrawal), inText = field(found.deposit)
             let hasMoney = (outText + inText).contains { $0.isNumber && $0 != "0" }
             guard let date = parser.parse(dateText) else {
-                // A second table after the payments, as some SBI files have for cheques. Only a
-                // line without a date can start it, so a payment's wording never does.
-                if whole.contains("cheque status") || whole.contains("legends") { break }
+                // A second table after the payments, as some SBI files have for cheques. It
+                // starts with its heading in the first or date column, on a line with no money,
+                // so a payment's wording (even wrapped onto its own line) never ends the file.
+                let headings = [field(0), dateText].map { $0.lowercased() }
+                if !hasMoney && headings.contains(where: { $0.hasPrefix("cheque status") || $0.hasPrefix("legends") }) { break }
                 // Totals and notes under the payments have no date. A line with money and a
                 // date that can't be read must never be dropped quietly.
                 let isTotal = !dateText.contains(where: \.isNumber) && (whole.contains("total") || whole.contains("balance"))
