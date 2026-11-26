@@ -304,6 +304,7 @@ actor CloudSync: CKSyncEngineDelegate {
         // Local items are queued first, so they go up even if fetching is slow or fails.
         await localDataChanged()
         await fetch()
+        await fetchHeldAgain()
         await removeLegacyZones(container.privateCloudDatabase)
     }
 
@@ -318,10 +319,48 @@ actor CloudSync: CKSyncEngineDelegate {
         knownCollections = known
         let forgotten = state.forgetUnknown(known: known, keeping: current)
         guard forgotten > 0 else { return }
-        log("Fetching everything again: \(forgotten) items of a newer kind weren't kept.")
+        log("\(forgotten) items of a newer kind weren't kept: reading them again.")
         saveState()
-        // They'd never arrive again otherwise: iCloud only sends what changed.
-        forgetEngineState()
+        FileManager.default.createFile(atPath: stateFolder.appendingPathComponent(Self.refetchFlag).path, contents: Data())
+    }
+
+    private static let refetchFlag = "sync-refetch-held"
+
+    /// The engines only pass on what changed, so items of a newer kind that weren't kept are
+    /// read straight from iCloud. The engines and anything they have queued are left alone.
+    /// Tried again at the next start until it succeeds.
+    private func fetchHeldAgain() async {
+        let flag = stateFolder.appendingPathComponent(Self.refetchFlag)
+        guard FileManager.default.fileExists(atPath: flag.path), let container else { return }
+        let shared = household.role == .member ? (container.sharedCloudDatabase, householdZoneID) : (container.privateCloudDatabase, Self.householdZone)
+        do {
+            for (database, zone) in [(container.privateCloudDatabase, Self.privateZone), shared] {
+                var token: CKServerChangeToken?
+                var more = true
+                while more {
+                    let changes = try await database.recordZoneChanges(inZoneWith: zone, since: token)
+                    for result in changes.modificationResultsByID.values {
+                        let record = try result.get().record
+                        guard record.recordType == Self.recordType,
+                              let collection = record.encryptedValues["collection"] as? String,
+                              !knownCollections.contains(collection), let item = syncRecord(from: record) else { continue }
+                        let kept = await MainActor.run {
+                            sources.compactMap { $0 as? HeldItemsStore }.allSatisfy { $0.applySync(saves: [item], deletes: []) }
+                        }
+                        guard kept else { return }
+                        names[item.key] = record.recordID.recordName
+                        systemFields[record.recordID.recordName] = encodeSystemFields(record)
+                        state.recordSaved(item)
+                    }
+                    token = changes.changeToken
+                    more = changes.moreComing
+                }
+            }
+            saveState()
+            try? FileManager.default.removeItem(at: flag)
+        } catch {
+            log("Couldn't read newer items again: \(Self.describe(error))")
+        }
     }
 
     /// Joining or leaving a partner's household turns this device's point of view round.
@@ -352,7 +391,7 @@ actor CloudSync: CKSyncEngineDelegate {
         } catch {
             print("[sync] Couldn't wipe iCloud: \(describe(error))")
         }
-        for file in ["sync-engine.json", "sync-engine-shared.json", "sync-state.json", "sync-records.json", "sync-names.json", "sync-sealed-reset", "sync-log.txt"] {
+        for file in ["sync-engine.json", "sync-engine-shared.json", "sync-state.json", "sync-records.json", "sync-names.json", "sync-sealed-reset", "sync-refetch-held", "sync-log.txt"] {
             try? FileManager.default.removeItem(at: stateFolder.appendingPathComponent(file))
         }
         print("[sync] Forgot this device's sync records")
@@ -728,11 +767,11 @@ actor CloudSync: CKSyncEngineDelegate {
                         // This version can't have edited an item it doesn't understand: theirs wins.
                         if let item = syncRecord(from: server), !knownCollections.contains(item.collection) {
                             let kept = await MainActor.run { sources.compactMap { $0 as? HeldItemsStore }.allSatisfy { $0.applySync(saves: [item], deletes: []) } }
-                            if kept {
-                                outgoing[name] = nil
-                                state.recordSaved(item)
-                                continue
-                            }
+                            // If it can't be saved just now (files locked), still don't send
+                            // the older copy over it.
+                            outgoing[name] = nil
+                            if kept { state.recordSaved(item) }
+                            continue
                         }
                     }
                     retry.append(.saveRecord(failure.record.recordID))
