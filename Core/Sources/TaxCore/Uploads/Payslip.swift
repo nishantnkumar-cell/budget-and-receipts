@@ -72,17 +72,25 @@ public enum PayslipReader {
         let taxablePay = amounts(#"Total\s+Taxable\s+Pay"#).first
         let deductions = amounts(#"Total\s+Deductions"#).first
         let netPay = amounts(#"PAYE\s+Net\s+Pay"#).first
-        // Figures to date are only read under their heading, and never an earlier job's.
+        // Figures to date are only read under their heading. There and in the check below, a
+        // label counts only at the start of a line or straight after an amount, so one with
+        // words before it ("Previous Employment Income Tax") is someone else's figure.
         let toDate = UploadText.first(#"To\s+Date\s+Figures"#, in: text).map { String(text[$0.range.upperBound...]) } ?? ""
-        let notEarlier = #"(?<!Previous\sEmployment\s)(?<!Previous\s)(?<!Prev\s)"#
-        let pays = Set(amounts(notEarlier + #"(?<!Total\s)Taxable\s+Pay"#, in: toDate))
+        let own = #"(?m)(?:^ ?|(?<=\.\d{2} ))"#
+        let pays = Set(amounts(own + #"Taxable\s+Pay"#, in: toDate))
         let payToDate = pays.count == 1 ? pays.first : nil
-        // "Income Tax" is printed for this payslip and again to date. Columns side by side
-        // put both under the heading; figures to date are never the smaller.
-        let taxes = amounts(notEarlier + #"Income\s+Tax"#)
-        let underHeading = Set(amounts(notEarlier + #"Income\s+Tax"#, in: toDate))
-        let taxToDate = taxes.count > 1 && underHeading.count <= 2 ? underHeading.max() : nil
-        let tax = taxes.count > 1 ? taxes.min() : taxes.first
+        // "Income Tax" is printed for this payslip and again to date, so there are two
+        // different figures and the one to date is the larger. Only in the year's first
+        // payslip are they the same. Anything else is left for you to type.
+        let found = amounts(own + #"Income\s+Tax"#)
+        let taxes = Set(found)
+        let underHeading = Set(amounts(own + #"Income\s+Tax"#, in: toDate))
+        var taxToDate: Decimal?
+        if let most = taxes.max(), underHeading.contains(most),
+           taxes.count == 2 || (taxes.count == 1 && found.count > 1 && payToDate != nil && payToDate == taxablePay) {
+            taxToDate = most
+        }
+        let tax = taxes.min()
 
         var warnings: [String] = []
         if payToDate == nil || taxToDate == nil { warnings.append("The figures to date couldn't all be found. Type them from the payslip.") }

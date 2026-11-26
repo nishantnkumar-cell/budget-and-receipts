@@ -145,6 +145,32 @@ final class PayslipTests: XCTestCase {
         XCTAssertFalse(unclear.isChecked)
     }
 
+    func testATaxFigureIsOnlyTakenWhenThereIsNoDoubtWhichItIs() throws {
+        // An earlier job's line, however it's labelled.
+        let earlier = try PayslipReader.read(texts: [Self.stacked + "\nP45 Income Tax £5,000.00"])
+        XCTAssertEqual(earlier.taxToDate, 2_700)
+        // A third figure that could be it.
+        let third = try PayslipReader.read(texts: [Self.stacked + "\nIncome Tax £5,000.00"])
+        XCTAssertNil(third.taxToDate)
+        XCTAssertFalse(third.isChecked)
+        // A repeated page whose figure to date is worded differently: this payslip's tax
+        // printed twice isn't the tax to date.
+        let page = Self.rows.replacingOccurrences(of: "Income Tax £2,700.00 ", with: "Tax Paid £2,700.00 ")
+            .replacingOccurrences(of: "£2,000.00   Taxable", with: "£2,000.00 Taxable")
+        let repeated = try PayslipReader.read(texts: [page.replacingOccurrences(of: "Income Tax £300.00", with: "£0.00 Income Tax £300.00")
+            + "\nIncome Tax £300.00"])
+        XCTAssertNil(repeated.taxToDate)
+        XCTAssertFalse(repeated.isChecked)
+    }
+
+    func testTheYearsFirstPayslipHasTheSameFiguresTwice() throws {
+        let first = Self.stacked.replacingOccurrences(of: "£19,800.00", with: "£2,200.00")
+            .replacingOccurrences(of: "£2,700.00", with: "£300.00")
+        let slip = try PayslipReader.read(texts: [first])
+        XCTAssertEqual(slip.taxToDate, 300)
+        XCTAssertTrue(slip.isChecked, "\(slip.warnings)")
+    }
+
     func testAFileOfSeveralPayslipsIsRefused() {
         let two = Self.stacked + "\n" + Self.stacked.replacingOccurrences(of: "06/06/2025", with: "13/06/2025")
         XCTAssertThrowsError(try PayslipReader.read(texts: [Self.stacked, two])) {
