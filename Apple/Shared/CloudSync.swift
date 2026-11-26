@@ -103,6 +103,11 @@ final class SyncStatus: ObservableObject {
 /// A store whose items sync with iCloud.
 @MainActor
 protocol SyncSource: AnyObject, Sendable {
+    /// The kinds of item this store understands. Anything else is held, untouched, by
+    /// `HeldItemsStore`. Every collection `syncRecords()` can produce must be listed.
+    var collections: Set<String> { get }
+    /// Where this device stands in a household, told before anything is applied or sent.
+    func setHouseholdRole(_ role: HouseholdLink.Role)
     func syncRecords() -> [SyncRecord]
     /// Returns false when the changes couldn't be saved to disk.
     @discardableResult
@@ -200,6 +205,8 @@ actor CloudSync: CKSyncEngineDelegate {
     }
 
     private let sources: [SyncSource]
+    /// The kinds of item the stores understand, read at start.
+    private var knownCollections: Set<String> = []
     private let status: SyncStatus?
     private let imagesFolder: URL
     private let stateFolder: URL
@@ -281,6 +288,10 @@ actor CloudSync: CKSyncEngineDelegate {
             FileManager.default.createFile(atPath: sealedFlag.path, contents: Data())
             log("Started the sync engine afresh for sealed records.")
         }
+        // Before either engine exists, so nothing arrives or goes out until every store knows
+        // its household role and has taken over what an earlier version held for it.
+        await publishHousehold()
+        await adoptHeldItems()
         let saved = Self.load(CKSyncEngine.State.Serialization.self, stateFolder.appendingPathComponent("sync-engine.json"))
         let engine = CKSyncEngine(CKSyncEngine.Configuration(database: container.privateCloudDatabase, stateSerialization: saved, delegate: self))
         privateEngine = engine
@@ -290,11 +301,71 @@ actor CloudSync: CKSyncEngineDelegate {
         if household.role != .member { zones.append(.saveZone(CKRecordZone(zoneID: Self.householdZone))) }
         engine.state.add(pendingDatabaseChanges: zones)
         if household.role == .member { startSharedEngine() }
-        await publishHousehold()
         // Local items are queued first, so they go up even if fetching is slow or fails.
         await localDataChanged()
         await fetch()
+        await fetchHeldAgain()
         await removeLegacyZones(container.privateCloudDatabase)
+    }
+
+    /// After an update, hands items an earlier version could only hold to the store that now
+    /// understands them. Anything of an unknown kind that was noted as synced but isn't held is
+    /// forgotten, never deleted.
+    private func adoptHeldItems() async {
+        let (known, current) = await MainActor.run { () -> (Set<String>, Set<String>) in
+            for case let held as HeldItemsStore in sources { held.release(to: sources) }
+            return (Set(sources.flatMap(\.collections)), Set(sources.flatMap { $0.syncRecords() }.map(\.key)))
+        }
+        knownCollections = known
+        let forgotten = state.forgetUnknown(known: known, keeping: current)
+        guard forgotten > 0 else { return }
+        log("\(forgotten) items of a newer kind weren't kept: reading them again.")
+        saveState()
+        FileManager.default.createFile(atPath: stateFolder.appendingPathComponent(Self.refetchFlag).path, contents: Data())
+    }
+
+    private static let refetchFlag = "sync-refetch-held"
+
+    /// The engines only pass on what changed, so items of a newer kind that weren't kept are
+    /// read straight from iCloud. The engines and anything they have queued are left alone.
+    /// Tried again at the next start until it succeeds.
+    private func fetchHeldAgain() async {
+        let flag = stateFolder.appendingPathComponent(Self.refetchFlag)
+        guard FileManager.default.fileExists(atPath: flag.path), let container else { return }
+        let shared = household.role == .member ? (container.sharedCloudDatabase, householdZoneID) : (container.privateCloudDatabase, Self.householdZone)
+        do {
+            for (database, zone) in [(container.privateCloudDatabase, Self.privateZone), shared] {
+                var token: CKServerChangeToken?
+                var more = true
+                while more {
+                    let changes = try await database.recordZoneChanges(inZoneWith: zone, since: token)
+                    for result in changes.modificationResultsByID.values {
+                        let record = try result.get().record
+                        guard record.recordType == Self.recordType,
+                              let collection = record.encryptedValues["collection"] as? String,
+                              !knownCollections.contains(collection), let item = syncRecord(from: record) else { continue }
+                        let kept = await MainActor.run {
+                            sources.compactMap { $0 as? HeldItemsStore }.allSatisfy { $0.applySync(saves: [item], deletes: []) }
+                        }
+                        guard kept else { return }
+                        names[item.key] = record.recordID.recordName
+                        systemFields[record.recordID.recordName] = encodeSystemFields(record)
+                        state.recordSaved(item)
+                    }
+                    token = changes.changeToken
+                    more = changes.moreComing
+                }
+            }
+            saveState()
+            try? FileManager.default.removeItem(at: flag)
+        } catch {
+            log("Couldn't read newer items again: \(Self.describe(error))")
+        }
+    }
+
+    /// Joining or leaving a partner's household turns this device's point of view round.
+    private func dropSharedHeldItems() async {
+        await MainActor.run { for case let held as HeldItemsStore in sources { held.removeSharedItems() } }
     }
 
     /// Deletes the first version's plain-field zones if they exist (directly, so a zone that
@@ -320,7 +391,7 @@ actor CloudSync: CKSyncEngineDelegate {
         } catch {
             print("[sync] Couldn't wipe iCloud: \(describe(error))")
         }
-        for file in ["sync-engine.json", "sync-engine-shared.json", "sync-state.json", "sync-records.json", "sync-names.json", "sync-sealed-reset", "sync-log.txt"] {
+        for file in ["sync-engine.json", "sync-engine-shared.json", "sync-state.json", "sync-records.json", "sync-names.json", "sync-sealed-reset", "sync-refetch-held", "sync-log.txt"] {
             try? FileManager.default.removeItem(at: stateFolder.appendingPathComponent(file))
         }
         print("[sync] Forgot this device's sync records")
@@ -373,9 +444,11 @@ actor CloudSync: CKSyncEngineDelegate {
     }
 
     private func publishHousehold() async {
-        guard let status else { return }
         let link = household
-        await MainActor.run { status.household = link }
+        await MainActor.run {
+            for source in sources { source.setHouseholdRole(link.role) }
+            status?.household = link
+        }
     }
 
     private func fetch() async {
@@ -590,9 +663,11 @@ actor CloudSync: CKSyncEngineDelegate {
             throw error
         }
         log("Accepted household invitation")
+        let wasMember = household.role == .member
         household = HouseholdLink(role: .member, zoneName: zone.zoneName, zoneOwner: zone.ownerName,
                                   sharedBy: metadata.ownerIdentity.nameComponents.map { PersonNameComponentsFormatter().string(from: $0) } ?? "your partner")
         saveHousehold()
+        if !wasMember { await dropSharedHeldItems() }
         // Everything shared is sent again, into the partner's household.
         resetLocalSyncState()
         privateEngine?.state.add(pendingDatabaseChanges: [.deleteZone(Self.householdZone)])
@@ -606,6 +681,7 @@ actor CloudSync: CKSyncEngineDelegate {
     /// other person's devices stays there: iCloud can't recall it.
     func leaveHousehold() async throws {
         guard let container else { return }
+        let wasMember = household.role == .member
         switch household.role {
         case .member:
             let shareID = CKRecord.ID(recordName: CKRecordNameZoneWideShare, zoneID: householdZoneID)
@@ -620,6 +696,7 @@ actor CloudSync: CKSyncEngineDelegate {
         }
         household = HouseholdLink()
         saveHousehold()
+        if wasMember { await dropSharedHeldItems() }
         resetLocalSyncState()
         privateEngine?.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: Self.householdZone))])
         await publishHousehold()
@@ -685,7 +762,18 @@ actor CloudSync: CKSyncEngineDelegate {
                 switch failure.error.code {
                 case .serverRecordChanged:
                     // Someone else saved it first: keep their change tag and send ours again.
-                    if let server = failure.error.serverRecord { systemFields[name] = encodeSystemFields(server) }
+                    if let server = failure.error.serverRecord {
+                        systemFields[name] = encodeSystemFields(server)
+                        // This version can't have edited an item it doesn't understand: theirs wins.
+                        if let item = syncRecord(from: server), !knownCollections.contains(item.collection) {
+                            let kept = await MainActor.run { sources.compactMap { $0 as? HeldItemsStore }.allSatisfy { $0.applySync(saves: [item], deletes: []) } }
+                            // If it can't be saved just now (files locked), still don't send
+                            // the older copy over it.
+                            outgoing[name] = nil
+                            if kept { state.recordSaved(item) }
+                            continue
+                        }
+                    }
                     retry.append(.saveRecord(failure.record.recordID))
                 case .zoneNotFound:
                     if failure.record.recordID.zoneID == Self.privateZone || failure.record.recordID.zoneID == Self.householdZone {
@@ -718,6 +806,7 @@ actor CloudSync: CKSyncEngineDelegate {
                 household = HouseholdLink()
                 saveHousehold()
                 sharedEngine = nil
+                await dropSharedHeldItems()
                 resetLocalSyncState()
                 privateEngine?.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: Self.householdZone))])
                 await publishHousehold()
@@ -758,6 +847,10 @@ actor CloudSync: CKSyncEngineDelegate {
         let keysByName = Dictionary(names.map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
         for deletion in changes.deletions {
             let name = deletion.recordID.recordName
+            let fromPrivate = deletion.recordID.zoneID.zoneName == Self.privateZone.zoneName
+            // The old copy of an item that moved between private and shared, arriving after
+            // the new one: keep the new one and its change tag.
+            if let key = keysByName[name], state.isLeftover(key, deletedFromPrivate: fromPrivate) { continue }
             systemFields[name] = nil
             let legacyKey = keysByName[name] == nil ? state.entries.keys.first { Self.legacyRecordName($0) == name } : nil
             guard let key = keysByName[name] ?? legacyKey, (names[key] ?? Self.legacyRecordName(key)) == name else { continue }
@@ -868,11 +961,18 @@ actor CloudSync: CKSyncEngineDelegate {
         record.encryptedValues["collection"] = item.collection
         record.encryptedValues["itemID"] = item.id
         record.encryptedValues["payload"] = item.payload
-        if let name = item.fileName, let image = Self.fileForUpload(imagesFolder.appendingPathComponent(name)) {
+        if let name = item.fileName, let image = upload(name, of: item.collection) {
             record.encryptedValues["fileName"] = name
             record.encryptedValues["file"] = image
         }
         return record
+    }
+
+    /// A held item's file goes up exactly as it arrived; the app's own are prepared to fit.
+    private func upload(_ name: String, of collection: String) -> Data? {
+        let url = imagesFolder.appendingPathComponent(name)
+        guard !knownCollections.contains(collection) else { return Self.fileForUpload(url) }
+        return (try? Data(contentsOf: url)).flatMap { $0.count <= Self.maxDocumentBytes ? $0 : nil }
     }
 
     private func syncRecord(from record: CKRecord) -> SyncRecord? {

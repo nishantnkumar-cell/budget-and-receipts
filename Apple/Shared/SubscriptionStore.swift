@@ -136,6 +136,11 @@ final class SubscriptionStore: ObservableObject {
 }
 
 extension SubscriptionStore: SyncSource {
+    var collections: Set<String> { ["contracts", "contractFiles"] }
+
+    /// Contracts read the same from both sides of a household.
+    func setHouseholdRole(_ role: HouseholdLink.Role) {}
+
     func syncRecords() -> [SyncRecord] {
         SyncRecord.records(contracts, collection: "contracts", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })
             + documentRecords()

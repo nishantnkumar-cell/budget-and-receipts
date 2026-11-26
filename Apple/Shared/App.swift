@@ -83,10 +83,8 @@ struct BudgetReceiptsApp: App {
                 }
                 if scenePhase == .active {
                     // Launched while the phone was locked: read the files now, then sync.
-                    if store.isWaitingForFiles || subscriptions.isWaitingForFiles {
-                        let storeReady = store.reloadIfWaiting()
-                        let contractsReady = subscriptions.reloadIfWaiting()
-                        if storeReady && contractsReady { await AppModel.startOrStopSync() }
+                    if AppModel.isWaitingForFiles && AppModel.reloadIfWaiting() {
+                        await AppModel.startOrStopSync()
                     }
                     await AppModel.cloud?.refresh()
                     // Payments synced from other devices get categories too, not only imports:
@@ -189,12 +187,22 @@ enum AppModel {
     static let store = BudgetStore()
     static let subscriptions = SubscriptionStore()
     #endif
+    /// Synced items from a newer version, kept untouched until this app understands them.
+    static let held = HeldItemsStore(folder: store.dataFolder, known: store.collections.union(subscriptions.collections))
     static let settings = AppSettings()
     /// Sets up what has to be ready before any screen (or a Siri request) uses the stores.
     static let started: Void = {
         store.didChange = { WidgetBridge.scheduleRefresh() }
         subscriptions.didReceiveChanges = { store.noteRecentChanges($0) }
     }()
+    static var isWaitingForFiles: Bool {
+        store.isWaitingForFiles || subscriptions.isWaitingForFiles || held.isWaitingForFiles
+    }
+    /// Reads any files that were locked at launch. True when all are now readable.
+    static func reloadIfWaiting() -> Bool {
+        let ready = [store.reloadIfWaiting(), subscriptions.reloadIfWaiting(), held.reloadIfWaiting()]
+        return !ready.contains(false)
+    }
     static let syncStatus = SyncStatus()
     private(set) static var cloud: CloudSync?
 
@@ -206,8 +214,10 @@ enum AppModel {
             if ProcessInfo.processInfo.arguments.contains("-AndLocalData") {
                 store.didPersist = nil
                 subscriptions.didPersist = nil
+                held.didPersist = nil
                 store.resetAllData()
                 subscriptions.resetAllData()
+                held.resetAllData()
             }
             await CloudSync.wipeICloud(stateFolder: JSONFileStorage.defaultFolder)
             exit(0)
@@ -223,10 +233,11 @@ enum AppModel {
             cloud = nil
             store.didPersist = nil
             subscriptions.didPersist = nil
+            held.didPersist = nil
             return
         }
         guard cloud == nil else { return }
-        let sync = CloudSync(sources: [store, subscriptions], imagesFolder: store.imagesFolder, stateFolder: JSONFileStorage.defaultFolder, status: syncStatus)
+        let sync = CloudSync(sources: [store, subscriptions, held], imagesFolder: store.imagesFolder, stateFolder: JSONFileStorage.defaultFolder, status: syncStatus)
         cloud = sync
         syncStatus.sync = sync
         ShareAcceptor.shared.setHandler { metadata in
@@ -241,6 +252,7 @@ enum AppModel {
         }
         store.didPersist = { Task { await sync.localDataChanged() } }
         subscriptions.didPersist = { Task { await sync.localDataChanged() } }
+        held.didPersist = { Task { await sync.localDataChanged() } }
         await sync.start()
     }
 
@@ -263,8 +275,8 @@ enum AppModel {
 
     /// A background wake-up: start sync if it isn't running, then fetch and send.
     static func syncInBackground() async {
-        if store.isWaitingForFiles || subscriptions.isWaitingForFiles {
-            guard store.reloadIfWaiting(), subscriptions.reloadIfWaiting() else { return }
+        if isWaitingForFiles {
+            guard reloadIfWaiting() else { return }
         }
         if cloud == nil { await startOrStopSync() }
         await cloud?.refresh()
