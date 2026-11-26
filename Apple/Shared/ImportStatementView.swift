@@ -1,5 +1,6 @@
 import BudgetCore
 import SwiftUI
+import TaxCore
 import UniformTypeIdentifiers
 
 /// Choose a bank statement (CSV, OFX or QIF), check what it will add, then import it.
@@ -196,6 +197,13 @@ struct ImportStatementView: View {
             if url.pathExtension.lowercased() == "pdf" {
                 guard let lines = SharedReceiptReader.pdfLines(data) else {
                     error = "This PDF has no text to read (it may be a scan). Download a CSV or OFX from your bank instead."
+                    return
+                }
+                // A payslip or an agent's statement would be read as nonsense payments.
+                if let document = TaxDocument.recognise(lines.joined(separator: "\n")) {
+                    pdfLines = nil
+                    text = ""
+                    error = document.explanation
                     return
                 }
                 pdfLines = lines

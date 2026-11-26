@@ -1,6 +1,7 @@
 import BudgetCore
 import Foundation
 import PDFKit
+import TaxCore
 
 /// Reads files shared into the app (share sheet, "Open in", or the Mac's "Open With").
 /// Receipts go to the waiting list until their payment is on a statement; bank statements
@@ -101,6 +102,11 @@ enum SharedReceiptReader {
             } catch {
                 document.outcome = .failed(reason: "its columns couldn't be worked out. Use Import Statement to choose them")
             }
+            return recorded(document, store)
+        }
+        if ext == "pdf", let lines = pdfLines(data), let found = TaxDocument.recognise(lines.joined(separator: "\n")) {
+            let what = found == .payslip ? "a payslip" : "a letting agent's statement"
+            document.outcome = .failed(reason: "it's \(what): import it under Property & Tax, Pay and Statements")
             return recorded(document, store)
         }
         if ext == "pdf", let lines = pdfLines(data), PDFStatementParser.looksLikeStatement(lines) {

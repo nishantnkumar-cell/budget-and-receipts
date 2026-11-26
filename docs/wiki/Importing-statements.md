@@ -48,3 +48,5 @@ OBP stands for online banking payment. It's a transfer to another of your own ac
 ## Apple Pay as it happens
 
 If you'd rather see Apple Pay payments straight away instead of waiting for the statement, see [Log Apple Pay payments](Widgets-Siri-and-Ask-your-budget#log-apple-pay-payments).
+
+Payslips and letting agent statements aren't bank statements: import them under [Property and tax](Property-and-tax).
