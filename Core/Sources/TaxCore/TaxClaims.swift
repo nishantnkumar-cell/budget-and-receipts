@@ -10,6 +10,8 @@ public struct TaxClaim: Hashable, Sendable, Identifiable {
         case open = "Could be claimed"
         case none = "Nothing entered"
         case notDue = "Doesn't apply"
+        case charge = "Charge due"
+        case waiting = "Not worked out yet"
         case yourself = "Not worked out: claim it yourself"
     }
 
@@ -73,7 +75,7 @@ public struct TaxClaim: Hashable, Sendable, Identifiable {
             : " Working from home counts only if your job required it."
         let kinds: [(String, String, KeyPath<JobExpenses, Decimal>, WritableKeyPath<JobExpenses, Decimal>, String, String)] = [
             ("subscriptions", "Professional fees and subscriptions", \.subscriptions, \.subscriptions, "19",
-             "Fees and subscriptions you paid to bodies on HMRC's approved list that your job needs."),
+             "Fees your job requires, and subscriptions to bodies on HMRC's approved list that relate to your work."),
             ("travel", "Business travel and subsistence", \.travel, \.travel, "17",
              "Travel for work, not ordinary commuting, that you weren't repaid for. Umbrella company workers usually can't claim it."),
             ("flatRate", "Flat rate for uniforms, work clothing and tools", \.flatRate, \.flatRate, "18",
@@ -95,7 +97,7 @@ public struct TaxClaim: Hashable, Sendable, Identifiable {
         add("reliefAtSource", giving, "Pension paid from take-home pay", atSource > 0 ? .claimed : .none,
             rule: "The scheme adds basic rate relief. Higher and additional rate relief must be claimed on the return.",
             lines: atSource > 0 ? [("Paid in, including basic rate relief", atSource)] : [],
-            worth: atSource > 0 ? saving { $0.reliefAtSourcePension = 0 } : nil,
+            worth: atSource > 0 ? saving { $0.leavesPensionReliefUnclaimed = true } : nil,
             action: "Main return, page TR 4, box 1.")
         add("sacrifice", giving, "Salary sacrifice pension", input.pensionSacrificed > 0 ? .automatic : .none,
             rule: "Given up before pay is taxed, so the relief has already happened: don't claim it again.",
@@ -104,11 +106,14 @@ public struct TaxClaim: Hashable, Sendable, Identifiable {
             let saved = TaxMoney.poundsDown(input.pensionPaidIn)
             let within = min(saved, allowance)
             let carried = min(saved - within, TaxMoney.poundsDown(input.pensionUnused))
-            add("annualAllowance", giving, "Pension annual allowance and carry forward", .automatic,
+            // What bringing forward unused allowance takes off the charge.
+            let spared = carried > 0 ? saving { $0.pensionUnused = 0 } : 0
+            add("annualAllowance", giving, "Pension annual allowance and carry forward", result.pensionExcess > 0 ? .charge : .automatic,
                 rule: "£60,000 a year, less for high incomes. Unused allowance from the three earlier years can be added, if you were in a registered scheme.",
                 lines: [("Paid in", saved), ("Within this year's allowance", within), ("Covered by allowance brought forward", carried),
                         ("Above what's allowed", result.pensionExcess), ("This year's allowance left to carry forward", allowance - within),
                         ("Charge on the excess", result.pensionCharge), ("Paid by your scheme", result.pensionSchemePaid)],
+                worth: spared > 0 ? spared : nil,
                 action: result.pensionExcess > 0 ? "Additional information, page Ai 4, boxes 10 and 11." : "")
         } else {
             add("annualAllowance", giving, "Pension annual allowance and carry forward", .none,
@@ -119,7 +124,22 @@ public struct TaxClaim: Hashable, Sendable, Identifiable {
             rule: "Gifts to charity with a Gift Aid declaration. Higher and additional rate relief must be claimed.",
             lines: input.giftAid > 0 ? [("Gifts, with the basic rate tax added back", input.giftAid)] : [],
             worth: input.giftAid > 0 ? saving { $0.giftAid = 0 } : nil,
-            action: "Main return, page TR 4, box 5.")
+            action: "Main return, page TR 4, box 5. Payroll Giving is already taken from pay: don't claim it again.")
+        add("giftCarry", giving, "Gift Aid moved between years", .yourself,
+            rule: "A gift can be treated as made in the year before. The claim goes on that year's return, sent on time and before it's amended.",
+            action: "Main return, page TR 4, box 8 for a later gift counted in this year, box 7 for one counted in the year before.")
+        add("otherPension", giving, "Other pension payments without tax relief", .yourself,
+            rule: "Retirement annuity contracts, employer schemes not paid from pay before tax, and some overseas schemes.",
+            action: "Main return, page TR 4, boxes 2 to 4.")
+
+        // Ownership of let property between spouses.
+        let joint = book.properties.filter { $0.myShare > 0 && $0.myShare < 1 }
+        if !joint.isEmpty {
+            let declared = joint.contains { $0.form17From != nil }
+            add("form17", "Property", "Unequal ownership between spouses (Form 17)", declared ? .automatic : .notDue,
+                rule: "Married couples and civil partners are taxed equally on property they own together, unless Form 17 declares their real unequal shares. It counts from the date signed and must reach HMRC within 60 days.",
+                action: declared ? "The shares are used from the date entered in Properties and Rules." : "No Form 17 date is entered.")
+        }
 
         // Property.
         if input.propertyCount > 0 {
@@ -191,7 +211,7 @@ public struct TaxClaim: Hashable, Sendable, Identifiable {
                          ("Above the treaty rate: reclaim in India", over), ("Not relieved: the UK tax on it is lower", unused)]
                 if taken.alone > 0 { lines.append(("No income entered for this tax: check India Accounts", taken.alone)) }
             }
-            add(id, abroad, title, input.isMissingRate ? .none : given > 0 ? .claimed : .notDue,
+            add(id, abroad, title, input.isMissingRate ? .waiting : given > 0 ? .claimed : .notDue,
                 rule: "Foreign Tax Credit Relief: no more than the treaty's \(percent)%, and no more than the UK tax on that income.",
                 lines: lines,
                 worth: given > 0 ? given : nil,
@@ -205,7 +225,12 @@ public struct TaxClaim: Hashable, Sendable, Identifiable {
         let hasOther = theirs.pay > 0 || theirs.interest > 0 || theirs.dividends > 0 || theirs.pages.income > 0
         func canReceive(_ estimate: TaxEstimate) -> Bool { estimate.taxableIncome > 0 && estimate.taxableIncome <= estimate.basicRateLimit }
         func canGive(_ estimate: TaxEstimate) -> Bool { estimate.adjustedNetIncome < TaxCalculator.allowance }
-        let marriageRule = "A spouse or civil partner with income under £12,570 can pass £1,260 of allowance to one who pays no more than basic rate, saving up to £252. Claims can go back to 6 April 2022."
+        // Tax years start on 6 April; claims reach back four of them.
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Europe/London") ?? .current
+        let calendarYear = calendar.component(.year, from: today)
+        let currentStart = today >= TaxYear(startYear: calendarYear).start ? calendarYear : calendarYear - 1
+        let marriageRule = "A spouse or civil partner with income under £12,570 can pass £1,260 of allowance to one who pays no more than basic rate, saving up to £252. Claims can go back to 6 April \(currentStart - 4)."
         if hasOther, canGive(theirs), canReceive(result) {
             let worth = min(TaxMoney.penceDown(marriageTransfer * TaxCalculator.basicRate), result.taxBeforeReduction - result.financeReduction)
             add("marriage", couple, "Marriage Allowance", .open, rule: marriageRule, lines: [("Allowance received", marriageTransfer)],
@@ -213,10 +238,13 @@ public struct TaxClaim: Hashable, Sendable, Identifiable {
         } else if hasOther, canGive(result), canReceive(theirs) {
             add("marriage", couple, "Marriage Allowance", .open, rule: marriageRule, lines: [("Allowance you could pass on", marriageTransfer)],
                 action: "Only if married or civil partners. It lowers your partner's tax by up to £252. Not in the estimate.")
+        } else if !hasOther && (canReceive(result) || canGive(result)) {
+            add("marriage", couple, "Marriage Allowance", .yourself, rule: marriageRule,
+                action: "No figures for a partner this year. If you're married or civil partners and one of you has income under £12,570 while the other pays no higher rate tax, it can be claimed.")
         } else {
             add("marriage", couple, "Marriage Allowance", .notDue, rule: marriageRule,
                 action: hasOther ? "On these figures one of you would need income under £12,570 and the other no higher rate tax."
-                    : "No figures for a partner this year.")
+                    : "Your income is taxed above the basic rate, so you can't receive it.")
         }
         add("blind", couple, "Blind Person's Allowance", .yourself,
             rule: "An extra allowance if registered blind or severely sight impaired.",
@@ -245,12 +273,10 @@ public struct TaxClaim: Hashable, Sendable, Identifiable {
             action: "HMRC already has them. Check them against your statement of account.")
 
         // Time limit for earlier years.
-        if let current = TaxYear.containing(today) {
-            let oldest = TaxYear(startYear: current.startYear - 4)
-            add("earlier", "Earlier years", "Claims for \(oldest) close on 5 April \(current.startYear + 1)", .yourself,
-                rule: "Most claims, such as job expenses, overpaid tax and capital losses, must be made within 4 years of the end of the tax year.",
-                action: "Check \(oldest) onwards for anything missed. Not worked out here.")
-        }
+        let oldest = TaxYear(startYear: currentStart - 4)
+        add("earlier", "Earlier years", "Claims for \(oldest) close on 5 April \(currentStart + 1)", .yourself,
+            rule: "Most claims, such as job expenses, overpaid tax and capital losses, must be made within 4 years of the end of the tax year.",
+            action: "Check \(oldest) onwards for anything missed. Not worked out here.")
         return claims
     }
 }

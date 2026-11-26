@@ -12,7 +12,7 @@ struct TaxClaimsView: View {
     var body: some View {
         let claims = TaxClaim.list(person, year: tax.year, ledger: store.propertyLedger(tax), book: tax.book, india: india.book)
         let groups = claims.reduce(into: [String]()) { if !$0.contains($1.group) { $0.append($1.group) } }
-        let open = claims.filter { $0.status == .open }
+        let open = claims.filter { $0.status == .open || $0.status == .charge }
         Form {
             Section {
                 TaxYearPicker()
@@ -38,7 +38,7 @@ struct TaxClaimsView: View {
                                 Text(claim.title)
                                 Text(claim.status.rawValue + (claim.worth.map { " · worth \(TaxMoney.format($0))" } ?? ""))
                                     .font(.caption)
-                                    .foregroundStyle(claim.status == .open ? Color.orange : Color.secondary)
+                                    .foregroundStyle(claim.status == .open || claim.status == .charge ? Color.orange : Color.secondary)
                             }
                         }
                     }

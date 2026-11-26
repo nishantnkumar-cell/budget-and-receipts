@@ -99,6 +99,31 @@ final class TaxClaimsTests: XCTestCase {
         XCTAssertEqual(amount(claim, "Covered by allowance brought forward"), 15_000)
         XCTAssertEqual(amount(claim, "Above what's allowed"), 5_000)
         XCTAssertEqual(amount(claim, "Charge on the excess"), 2_000)
+        XCTAssertEqual(claim?.status, .charge)
+        XCTAssertEqual(claim?.worth, 6_000)
+        let pack = ReturnPack.make(.me, year: year, ledger: PropertyLedger(), book: PropertyBook(pay: [job(100_000)], figures: [figures]),
+                                   today: today)
+        let answers = pack.forms.first { $0.kind == .main }!.entries
+        XCTAssertTrue(answers.contains { $0.id == "SA100.TR2.9" })
+        XCTAssertNotNil(ReturnLayout.placement(of: "SA100.TR2.9"))
+    }
+
+    func testClaimingPensionReliefIsValuedWithoutChangingTheAllowance() {
+        var figures = YearFigures(person: .me, taxYear: "2025-26")
+        figures.pension = PensionYear(paidIn: 60_000)
+        // £20,000 widens both bands: £4,000 at the higher rate and £1,000 at the additional.
+        XCTAssertEqual(claims(PropertyBook(pay: [job(250_000, atSource: 20_000)], figures: [figures]))["reliefAtSource"]?.worth, 5_000)
+    }
+
+    func testDeadlinesFollowTheDate() {
+        func list(_ date: Date) -> [String: TaxClaim] {
+            Dictionary(uniqueKeysWithValues: TaxClaim.list(.me, year: TaxYear(startYear: 2026), ledger: PropertyLedger(),
+                                                           book: PropertyBook(), today: date).map { ($0.id, $0) })
+        }
+        let later = list(TaxYear.day(2027, 5, 1))
+        XCTAssertEqual(later["earlier"]?.title, "Claims for 2023-24 close on 5 April 2028")
+        XCTAssertTrue(later["marriage"]!.rule.contains("6 April 2023"))
+        XCTAssertEqual(list(TaxYear.day(2027, 4, 5))["earlier"]?.title, "Claims for 2022-23 close on 5 April 2027")
     }
 
     func testMarriageAllowanceIsRaisedOnlyWhenTheFiguresAllowIt() {
@@ -106,7 +131,9 @@ final class TaxClaimsTests: XCTestCase {
         XCTAssertEqual(eligible?.status, .open)
         XCTAssertEqual(eligible?.worth, 252)
         XCTAssertEqual(claims(PropertyBook(pay: [job(60_000), job(8_000, person: .partner)]))["marriage"]?.status, .notDue)
-        XCTAssertEqual(claims(PropertyBook(pay: [job(30_000)]))["marriage"]?.status, .notDue)
+        // With nothing for a partner it can't be ruled out.
+        XCTAssertEqual(claims(PropertyBook(pay: [job(30_000)]))["marriage"]?.status, .yourself)
+        XCTAssertEqual(claims(PropertyBook(pay: [job(90_000)]))["marriage"]?.status, .notDue)
         let giving = claims(PropertyBook(pay: [job(8_000), job(30_000, person: .partner)]))["marriage"]
         XCTAssertEqual(giving?.status, .open)
         XCTAssertNil(giving?.worth)
@@ -115,7 +142,7 @@ final class TaxClaimsTests: XCTestCase {
     func testTheEarliestOpenYearAndWhatTheAppLeavesOutAreListed() {
         let list = claims(PropertyBook(pay: [job(30_000)]))
         XCTAssertEqual(list["earlier"]?.title, "Claims for 2022-23 close on 5 April 2027")
-        for id in ["gains", "rentARoom", "investment", "otherReliefs", "blind"] { XCTAssertEqual(list[id]?.status, .yourself, id) }
+        for id in ["gains", "rentARoom", "investment", "otherReliefs", "blind", "giftCarry", "otherPension"] { XCTAssertEqual(list[id]?.status, .yourself, id) }
         XCTAssertNil(list["expenses"])
     }
 

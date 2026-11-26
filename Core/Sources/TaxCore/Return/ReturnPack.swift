@@ -254,6 +254,9 @@ public struct ReturnPack: Hashable, Sendable {
         if forms.contains(where: { $0.kind == .foreign }) {
             answers.append(entry("SA100.TR2.5", "TR 2, question 5", "Foreign pages: Yes", .tick))
         }
+        if forms.contains(where: { $0.kind == .additional }) {
+            answers.append(entry("SA100.TR2.9", "TR 2, question 9", "Additional information pages: Yes", .tick))
+        }
         if !answers.isEmpty || !main.isEmpty {
             forms.insert(ReturnForm(kind: .main, detail: "", entries: answers + main), at: 0)
             checks.append("Main return: write your name, tax reference and National Insurance number, answer every question the app left blank, then sign and date it.")

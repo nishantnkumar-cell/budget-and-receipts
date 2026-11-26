@@ -6,6 +6,8 @@ public struct PersonInput: Hashable, Sendable {
     public var pay: Decimal = 0
     public var taxDeducted: Decimal = 0
     public var reliefAtSourcePension: Decimal = 0
+    /// Set to see the bill if the pension paid from take-home pay weren't claimed.
+    var leavesPensionReliefUnclaimed = false
     /// Job expenses, each job's limited to its own pay.
     public var jobExpenses = JobExpenses()
     /// Their share of each property category.
@@ -292,7 +294,7 @@ public enum TaxCalculator {
         let dividends = TaxMoney.poundsDown(input.dividends) + foreignDividends
         let total = earned + interest + dividends
         // Relief-at-source pensions and Gift Aid widen the lower bands and protect the allowance.
-        let widening = pension + TaxMoney.poundsUp(input.giftAid)
+        let widening = (input.leavesPensionReliefUnclaimed ? 0 : pension) + TaxMoney.poundsUp(input.giftAid)
         let adjustedNet = max(0, total - widening)
         let reduction = TaxMoney.poundsDown(max(0, adjustedNet - taperStart) / 2)
         let personalAllowance = max(0, allowance - reduction)
