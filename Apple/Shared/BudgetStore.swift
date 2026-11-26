@@ -61,6 +61,8 @@ final class BudgetStore: ObservableObject {
     private(set) var lastSaveSucceeded = true
     /// Called after every local change is saved, so iCloud sync can send it.
     var didPersist: (() -> Void)?
+    /// A payment logged on the phone met its statement line: its old id, then the new one.
+    var didReplacePayment: ((String, String) -> Void)?
 
     /// - Parameter folder: where the JSON files live. Tests pass a temporary folder;
     ///   the app uses Application Support.
@@ -247,11 +249,12 @@ final class BudgetStore: ObservableObject {
 
     /// Replaces everything with a backup's data, then reloads, so iCloud sync makes the other
     /// devices match. Contracts are reloaded too (they live in the same folder).
-    func restore(_ contents: EncryptedBackup.Contents, subscriptions: SubscriptionStore, held: HeldItemsStore) throws {
+    func restore(_ contents: EncryptedBackup.Contents, subscriptions: SubscriptionStore, tax: TaxStore, held: HeldItemsStore) throws {
         try EncryptedBackup.replace(folder: storage.folder, with: contents)
         unreadableFiles = []
         loadAll()
         subscriptions.reloadAfterRestore()
+        tax.reloadAfterRestore()
         held.reloadAfterRestore()
         persist()
     }
@@ -411,6 +414,7 @@ final class BudgetStore: ObservableObject {
             for index in notes.indices where notes[index].transactionID == logged.id { notes[index].transactionID = match.statement }
             for index in transactions.indices where transactions[index].repays == logged.id { transactions[index].repays = match.statement }
             transactions.remove(at: loggedIndex)
+            didReplacePayment?(match.logged, match.statement)
         }
         persist()
         return matches.count
@@ -1441,6 +1445,13 @@ extension BudgetStore: SyncSource {
     /// True when a payment is kept from the partner: marked private, or from a private account.
     func isPrivate(_ transaction: BankTransaction) -> Bool {
         transaction.isPrivate == true || transaction.accountID.map { id in accounts.contains { $0.id == id && $0.isPrivate == true } } == true
+    }
+
+    /// Each payment's id and whether it's kept from the partner.
+    var paymentPrivacy: [String: Bool] {
+        let privateAccounts = Set(accounts.filter { $0.isPrivate == true }.map(\.id))
+        return Dictionary(transactions.map { ($0.id, $0.isPrivate == true || $0.accountID.map(privateAccounts.contains) == true) },
+                          uniquingKeysWith: { $0 || $1 })
     }
 
     /// The items from this device's own point of view.

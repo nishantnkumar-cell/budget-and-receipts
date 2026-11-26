@@ -33,7 +33,8 @@ final class HeldItemsStoreTests: XCTestCase {
     func testEveryKindTheStoresSendIsListed() {
         let budget = SampleData.budgetStore()
         let subscriptions = SampleData.subscriptionStore()
-        for source in [budget, subscriptions] as [SyncSource] {
+        let tax = SampleData.taxStore(for: budget)
+        for source in [budget, subscriptions, tax] as [SyncSource] {
             let sent = Set(source.syncRecords().map(\.collection))
             XCTAssertFalse(sent.isEmpty)
             XCTAssertEqual(sent.subtracting(source.collections), [])
@@ -80,7 +81,7 @@ final class HeldItemsStoreTests: XCTestCase {
         held.resetAllData()
         XCTAssertTrue(held.syncRecords().isEmpty)
         let subscriptions = SubscriptionStore(folder: folder)
-        try store.restore(EncryptedBackup.open(backup, password: "long enough"), subscriptions: subscriptions, held: held)
+        try store.restore(EncryptedBackup.open(backup, password: "long enough"), subscriptions: subscriptions, tax: TaxStore(folder: folder), held: held)
         XCTAssertEqual(held.syncRecords(), [newer])
     }
 

@@ -35,6 +35,8 @@ targets:
       - Widgets/OpenScanIntent.swift
     dependencies:
       - package: BudgetCore
+      - package: BudgetCore
+        product: TaxCore
       - target: ShareExtension-iOS
       - target: Widgets-iOS
     info:
@@ -109,6 +111,8 @@ targets:
       - Widgets/OpenScanIntent.swift
     dependencies:
       - package: BudgetCore
+      - package: BudgetCore
+        product: TaxCore
       - target: ShareExtension-macOS
       - target: Widgets-macOS
     info:
@@ -285,6 +289,8 @@ targets:
     dependencies:
       - target: BudgetReceipts-iOS
       - package: BudgetCore
+      - package: BudgetCore
+        product: TaxCore
   AppTests-macOS:
     type: bundle.unit-test
     settings:
@@ -295,6 +301,8 @@ targets:
     dependencies:
       - target: BudgetReceipts-macOS
       - package: BudgetCore
+      - package: BudgetCore
+        product: TaxCore
 schemes:
   BudgetReceipts-iOS:
     build:

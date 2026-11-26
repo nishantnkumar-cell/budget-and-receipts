@@ -325,6 +325,9 @@ struct RecentChangesView: View {
         if change.collection == "contracts" {
             subscriptions.restore(change)
             store.forget(change)
+        } else if AppModel.tax.collections.contains(change.collection) {
+            AppModel.tax.restore(change)
+            store.forget(change)
         } else {
             store.restore(change)
         }
@@ -465,6 +468,7 @@ struct EraseAllDataView: View {
     private func erase() {
         store.resetAllData()
         subscriptions.resetAllData()
+        AppModel.tax.resetAllData()
         AppModel.held.resetAllData()
         if let drop = SharedReceiptDrop.folder {
             for file in (try? FileManager.default.contentsOfDirectory(at: drop, includingPropertiesForKeys: nil)) ?? [] {

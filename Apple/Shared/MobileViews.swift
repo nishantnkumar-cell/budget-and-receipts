@@ -139,6 +139,7 @@ struct TransactionEditor: View {
             TransactionOwnerSection(transaction: $transaction)
             ReimbursementSection(transaction: $transaction)
             TripAndCurrencySection(transaction: $transaction)
+            TaxPaymentSection(transactionID: transaction.id)
             Section("Receipt") {
                 NavigationLink("Scan or review receipt") { ReceiptView(transaction: transaction) }
             }

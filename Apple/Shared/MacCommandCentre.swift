@@ -69,8 +69,12 @@ struct CommandPalette: View {
     @State private var editing: BankTransaction?
     @FocusState private var focused: Bool
 
+    @AppStorage(AppSettings.taxEnabledKey) private var taxEnabled = false
+
     private var places: [AppSection] {
-        [AppSection.home, .activity, .inbox, .budgets, .reports, .plan, .netWorth, .scan, .settings].filter {
+        [AppSection.home, .activity, .inbox, .budgets, .reports, .plan, .netWorth, .tax, .scan, .settings].filter {
+            $0 != .tax || taxEnabled
+        }.filter {
             query.isEmpty || $0.macTitle.localizedCaseInsensitiveContains(query) || $0.rawValue.localizedCaseInsensitiveContains(query)
         }
     }
@@ -152,11 +156,12 @@ struct CommandPalette: View {
 struct MacSidebar: View {
     @EnvironmentObject var store: BudgetStore
     @Binding var selection: AppSection?
+    @AppStorage(AppSettings.taxEnabledKey) private var taxEnabled = false
 
     var body: some View {
         List(selection: $selection) {
             Section {
-                ForEach([AppSection.home, .activity, .inbox, .budgets, .reports, .plan, .netWorth]) { section in
+                ForEach([AppSection.home, .activity, .inbox, .budgets, .reports, .plan, .netWorth] + (taxEnabled ? [.tax] : [])) { section in
                     Label(section.macTitle, systemImage: section.macSymbol)
                         .badge(badge(for: section))
                         .tag(section)

@@ -1,6 +1,7 @@
 #if DEBUG
 import BudgetCore
 import Foundation
+import TaxCore
 
 /// Made-up data for screenshots and design checks: launch a Debug build with `-SampleData`.
 /// It lives in a temporary folder, so your own data is never touched, and sync stays off.
@@ -116,6 +117,15 @@ enum SampleData {
         store.setBudget(category: "Eating out", limit: 200)
         store.setBudget(category: "Shopping", limit: 200)
         store.setBudget(category: "Transport", limit: 140)
+        return store
+    }
+
+    /// Made-up property details, with the payments they need added to the sample budget.
+    @MainActor static func taxStore(for budget: BudgetStore) -> TaxStore {
+        let sample = TaxSample.make()
+        for payment in sample.transactions { budget.add(payment) }
+        let store = TaxStore(folder: folder)
+        store.change { $0 = sample.book }
         return store
     }
 
