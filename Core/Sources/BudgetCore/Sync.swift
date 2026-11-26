@@ -2,7 +2,7 @@ import Foundation
 
 /// One item as it travels to iCloud: a transaction, a budget, a receipt image and so on.
 /// The payload is the item's JSON, so the iPhone and Mac apps read the same thing.
-public struct SyncRecord: Hashable, Sendable {
+public struct SyncRecord: Codable, Hashable, Sendable {
     public var collection: String
     public var id: String
     public var payload: Data
@@ -99,6 +99,18 @@ public struct SyncState: Codable, Hashable, Sendable {
 
     public mutating func recordDeleted(_ key: String) {
         entries[key] = nil
+    }
+
+    /// Forgets, without deleting anything in iCloud, items of a kind this version doesn't know
+    /// and no longer has. An older version could have noted them as synced without keeping
+    /// them; sending that difference would delete them everywhere. Returns how many.
+    @discardableResult
+    public mutating func forgetUnknown(known: Set<String>, keeping current: Set<String>) -> Int {
+        let lost = entries.keys.filter { key in
+            !current.contains(key) && !known.contains(String(key.prefix { $0 != "|" }))
+        }
+        for key in lost { entries[key] = nil }
+        return lost.count
     }
 }
 

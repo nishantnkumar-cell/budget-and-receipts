@@ -191,7 +191,7 @@ struct RestoreBackupView: View {
             }
             working = true
             do {
-                try store.restore(contents, subscriptions: subscriptions)
+                try store.restore(contents, subscriptions: subscriptions, held: AppModel.held)
                 message = nil
                 self.contents = nil
                 fileData = nil

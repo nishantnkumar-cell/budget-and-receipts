@@ -103,6 +103,11 @@ final class SyncStatus: ObservableObject {
 /// A store whose items sync with iCloud.
 @MainActor
 protocol SyncSource: AnyObject, Sendable {
+    /// The kinds of item this store understands. Anything else is held, untouched, by
+    /// `HeldItemsStore`. Every collection `syncRecords()` can produce must be listed.
+    var collections: Set<String> { get }
+    /// Where this device stands in a household, told before anything is applied or sent.
+    func setHouseholdRole(_ role: HouseholdLink.Role)
     func syncRecords() -> [SyncRecord]
     /// Returns false when the changes couldn't be saved to disk.
     @discardableResult
@@ -118,6 +123,7 @@ protocol SyncSource: AnyObject, Sendable {
 extension SyncSource {
     func rejectedKeys(_ saves: [SyncRecord]) -> Set<String> { [] }
     var isWaitingForFiles: Bool { false }
+    func setHouseholdRole(_ role: HouseholdLink.Role) {}
 }
 
 /// Where this device stands in a shared household.
@@ -291,10 +297,25 @@ actor CloudSync: CKSyncEngineDelegate {
         engine.state.add(pendingDatabaseChanges: zones)
         if household.role == .member { startSharedEngine() }
         await publishHousehold()
+        await adoptHeldItems()
         // Local items are queued first, so they go up even if fetching is slow or fails.
         await localDataChanged()
         await fetch()
         await removeLegacyZones(container.privateCloudDatabase)
+    }
+
+    /// After an update, hands items an earlier version could only hold to the store that now
+    /// understands them. Anything of an unknown kind that was noted as synced but isn't held is
+    /// forgotten, never deleted.
+    private func adoptHeldItems() async {
+        let (known, current) = await MainActor.run { () -> (Set<String>, Set<String>) in
+            for case let held as HeldItemsStore in sources { held.release(to: sources) }
+            return (Set(sources.flatMap(\.collections)), Set(sources.flatMap { $0.syncRecords() }.map(\.key)))
+        }
+        let forgotten = state.forgetUnknown(known: known, keeping: current)
+        guard forgotten > 0 else { return }
+        log("Left \(forgotten) items of a newer kind in iCloud.")
+        saveState()
     }
 
     /// Deletes the first version's plain-field zones if they exist (directly, so a zone that
@@ -373,9 +394,11 @@ actor CloudSync: CKSyncEngineDelegate {
     }
 
     private func publishHousehold() async {
-        guard let status else { return }
         let link = household
-        await MainActor.run { status.household = link }
+        await MainActor.run {
+            for source in sources { source.setHouseholdRole(link.role) }
+            status?.household = link
+        }
     }
 
     private func fetch() async {

@@ -136,6 +136,8 @@ final class SubscriptionStore: ObservableObject {
 }
 
 extension SubscriptionStore: SyncSource {
+    var collections: Set<String> { ["contracts", "contractFiles"] }
+
     func syncRecords() -> [SyncRecord] {
         SyncRecord.records(contracts, collection: "contracts", id: \.id.uuidString, isPrivate: { $0.isPrivate == true })
             + documentRecords()
