@@ -6,6 +6,7 @@ import TaxCore
 struct TaxHomeView: View {
     @EnvironmentObject var store: BudgetStore
     @EnvironmentObject var tax: TaxStore
+    @EnvironmentObject var india: IndiaStore
 
     var body: some View {
         let ledger = store.propertyLedger(tax)
@@ -43,9 +44,16 @@ struct TaxHomeView: View {
             }
             if !tax.book.properties.isEmpty {
                 ForEach(store.taxPeople, id: \.person) { entry in
-                    let result = TaxCalculator.estimate(.make(entry.person, ledger: ledger, book: tax.book, year: tax.year))
+                    let input = PersonInput.make(entry.person, ledger: ledger, book: tax.book, year: tax.year, india: india.book)
+                    let result = TaxCalculator.estimate(input)
                     Section(blocking.isEmpty ? "\(entry.name): estimate" : "\(entry.name): provisional estimate") {
                         LabeledContent("Taxable property profit", value: TaxMoney.format(result.pages.taxableProfit))
+                        if result.interest > 0 { LabeledContent("Interest", value: TaxMoney.format(result.interest)) }
+                        if result.dividends > 0 { LabeledContent("Dividends", value: TaxMoney.format(result.dividends)) }
+                        if input.isMissingRate {
+                            Label("Interest from India is left out until you enter the rupees to a pound for \(tax.year.description) in India Accounts.", systemImage: "exclamationmark.circle")
+                                .foregroundStyle(.orange)
+                        }
                         LabeledContent("Tax for the year", value: TaxMoney.format(result.liability))
                         LabeledContent(result.balance < 0 ? "Refund due" : "Still to pay", value: TaxMoney.format(abs(result.balance)))
                         if let advance = result.paymentOnAccount {

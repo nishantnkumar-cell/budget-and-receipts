@@ -17,7 +17,9 @@ For UK rental property and Self Assessment. It uses the payments already in Duo 
 
 1. **Properties and Rules:** add each property and your share of it. A married couple's joint property is taxed half each unless HMRC has a Form 17.
 2. **Property Payments:** choose a payment, its property and what kind of money it is. Turn on **Always treat … this way** to make a rule. For a split payment, choose each part. You can also do this from the payment's own screen.
-3. **Pay and Statements:** enter each P60, any letting agent statements, the lender's interest paid between 6 April and 5 April, losses brought forward, payments on account already made and Gift Aid.
+3. **Pay and Statements:** enter each P60, any letting agent statements, the lender's interest paid between 6 April and 5 April, losses brought forward, payments on account already made, Gift Aid, and your UK bank interest and dividends outside ISAs.
+
+Interest in [India accounts](India-accounts) is added to the estimate at your rate for the year, with relief for Indian tax: no more than 15%, and no more than the UK tax that interest causes.
 
 ## Import agent statements and payslips
 
@@ -46,7 +48,7 @@ In **Return Figures**, choose whose return, for **2025-26**:
 
 **Deadlines:** HMRC had to receive paper returns for 2025-26 by 31 October 2026. Posting one now means a late filing penalty unless HMRC's letter to you gave a later date. Online returns are due by 31 January 2027. HMRC's online service can't take a PDF.
 
-Your name, tax reference, National Insurance number, signature and anything the app doesn't hold are for you to add. Pages are marked **Not ready to file** while something needs sorting out: for example the same job entered twice, pay that only comes from a payslip earlier than the year's end (check it against your P60 or P45 and save it by hand), or, in a shared household, your partner's return made on your device. Make each person's forms on their own device. The property income allowance isn't applied. Interest from India Accounts goes on the foreign pages (or, if untaxed, small and your only foreign income, one box of the main return), with tax relief limited to 15%. It isn't in the app's tax estimate. The files aren't encrypted.
+Your name, tax reference, National Insurance number, signature and anything the app doesn't hold are for you to add. Pages are marked **Not ready to file** while something needs sorting out: for example the same job entered twice, pay that only comes from a payslip earlier than the year's end (check it against your P60 or P45 and save it by hand), or, in a shared household, your partner's return made on your device. Make each person's forms on their own device. The property income allowance isn't applied. Interest from India Accounts goes on the foreign pages (or, if untaxed, small and your only foreign income, one box of the main return), with tax relief limited to 15%. The files aren't encrypted.
 
 ## Sharing with your partner
 
@@ -54,6 +56,6 @@ Property details are shared. Pay is private unless you turn on **Show to** your 
 
 ## What isn't covered
 
-Savings and dividend income, foreign income (see [India accounts](India-accounts) for Indian interest, which is listed but not added to the estimate), capital gains, Scottish rates, student loans, Child Benefit charge, pension annual allowance, the property income allowance, accruals accounting, limits on interest where loans exceed the property's value, stamp duty, and tax years from 2027-28.
+Dividends and other income from abroad, capital gains, Scottish rates, student loans, Child Benefit charge, pension annual allowance, the property income allowance, accruals accounting, limits on interest where loans exceed the property's value, stamp duty, and tax years from 2027-28.
 
 Figures use the cash basis: money counts when it's received or paid. Rent a letting agent holds counts when the agent receives it, so check statements dated around 5 April. If your rent is high enough for **Making Tax Digital**, the app says so; it doesn't send quarterly updates.

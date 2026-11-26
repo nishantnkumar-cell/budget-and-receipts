@@ -42,7 +42,7 @@ Duo Budget is open source under the [MIT licence](LICENSE). It is also sold on t
 
 **Rupee accounts** (off until switched on in Settings)
 - ICICI, SBI and other Indian accounts, imported from statements saved as CSV, with balances in rupees and, at a rate you enter, in pounds. Never added to your pound budget.
-- Interest and tax deducted in India by UK tax year and person, exported for an accountant. Not part of the tax estimate.
+- Interest and tax deducted in India by UK tax year and person, exported for an accountant and added to the tax estimate with relief for Indian tax.
 
 **Privacy and safety**
 - No account, no servers, no analytics. Data stays on your devices and in end-to-end encrypted iCloud.

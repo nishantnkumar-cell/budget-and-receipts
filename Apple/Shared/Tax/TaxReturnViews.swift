@@ -6,13 +6,14 @@ import TaxCore
 struct TaxReturnView: View {
     @EnvironmentObject var store: BudgetStore
     @EnvironmentObject var tax: TaxStore
+    @EnvironmentObject var india: IndiaStore
     @State private var person = Person.me
     @State private var sheet: ExportDocument?
     @State private var saveFailure: String?
 
     var body: some View {
         let ledger = store.propertyLedger(tax)
-        let result = TaxCalculator.estimate(.make(person, ledger: ledger, book: tax.book, year: tax.year))
+        let result = TaxCalculator.estimate(.make(person, ledger: ledger, book: tax.book, year: tax.year, india: india.book))
         let jobs = tax.book.pay.filter { $0.person == person && $0.taxYear == tax.year.description }
         Form {
             Section {
@@ -47,8 +48,19 @@ struct TaxReturnView: View {
             Section("Estimate") {
                 LabeledContent("Adjusted net income", value: TaxMoney.format(result.adjustedNetIncome))
                 LabeledContent("Personal allowance", value: TaxMoney.format(result.personalAllowance))
+                if result.interest > 0 {
+                    LabeledContent("Interest (from India \(TaxMoney.format(result.foreignInterest)))", value: TaxMoney.format(result.interest))
+                    LabeledContent("Tax on the interest", value: TaxMoney.format(result.savingsTax))
+                }
+                if result.dividends > 0 {
+                    LabeledContent("Dividends", value: TaxMoney.format(result.dividends))
+                    LabeledContent("Tax on the dividends", value: TaxMoney.format(result.dividendTax))
+                }
                 LabeledContent("Income tax", value: TaxMoney.format(result.taxBeforeReduction))
                 LabeledContent("Less finance cost relief", value: TaxMoney.format(result.financeReduction))
+                if result.foreignRelief > 0 {
+                    LabeledContent("Less relief for tax taken in India", value: TaxMoney.format(result.foreignRelief))
+                }
                 LabeledContent("Tax for the year", value: TaxMoney.format(result.liability))
                 LabeledContent("Already deducted from pay", value: TaxMoney.format(result.taxDeducted))
                 if result.advancePaid > 0 {
@@ -79,6 +91,7 @@ struct TaxReturnView: View {
 struct TaxCompareView: View {
     @EnvironmentObject var store: BudgetStore
     @EnvironmentObject var tax: TaxStore
+    @EnvironmentObject var india: IndiaStore
     @State private var rent = ""
     @State private var expenses = ""
     @State private var interest = ""
@@ -97,8 +110,8 @@ struct TaxCompareView: View {
             if !values.contains(nil), values[0]! > 0 {
                 let options = OwnershipComparison.compare(
                     NewProperty(yearlyRent: values[0]!, yearlyExpenses: values[1]!, yearlyInterest: values[2]!),
-                    me: .make(.me, ledger: ledger, book: tax.book, year: tax.year),
-                    partner: .make(.partner, ledger: ledger, book: tax.book, year: tax.year))
+                    me: .make(.me, ledger: ledger, book: tax.book, year: tax.year, india: india.book),
+                    partner: .make(.partner, ledger: ledger, book: tax.book, year: tax.year, india: india.book))
                 Section {
                     ForEach(options, id: \.myShare) { option in
                         LabeledContent(option.myShare == 1 ? "Your name" : option.myShare == 0 ? "\(names[1].name)'s name" : "Half each",

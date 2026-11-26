@@ -66,7 +66,7 @@ struct IndiaReportView: View {
 }
 
 enum IndiaNotes {
-    static let report = "UK residents are normally taxed on interest wherever it arises, including NRE interest that India doesn't tax; some recent arrivals can claim relief. On the foreign pages (SA106) interest goes in before Indian tax. Relief for that tax is limited to the rate in the India–UK treaty, which can be less than the bank deducted. These figures are not part of the Property & Tax estimate. Not tax advice."
+    static let report = "UK residents are normally taxed on interest wherever it arises, including NRE interest that India doesn't tax; some recent arrivals can claim relief. On the foreign pages (SA106) interest goes in before Indian tax. Relief for that tax is limited to the rate in the India–UK treaty, which can be less than the bank deducted. Property & Tax adds this interest to its estimate. Not tax advice."
 }
 
 /// One exchange rate, saved as it's typed.

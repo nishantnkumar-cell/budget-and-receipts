@@ -45,4 +45,4 @@ The interest also goes onto the [return copies](Property-and-tax) in Property & 
 
 ## What isn't covered
 
-These figures aren't part of the Property & Tax estimate. Nor are mutual funds, shares, capital gains, rent from property in India or your Indian tax return.
+The interest is also added to the Property & Tax estimate, with relief for Indian tax. Not covered: mutual funds, shares, capital gains, rent from property in India or your Indian tax return.

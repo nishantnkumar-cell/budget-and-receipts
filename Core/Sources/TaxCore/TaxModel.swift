@@ -223,6 +223,9 @@ public struct YearFigures: Codable, Hashable, Sendable, Identifiable {
     public var advancePaid: Decimal
     /// Gift Aid donations including the basic-rate tax added by the charity.
     public var giftAid: Decimal
+    /// Interest and dividends received in the UK outside ISAs, before any tax. Nil is nothing.
+    public var ukInterest: Decimal?
+    public var ukDividends: Decimal?
     public var isShared: Bool
     public var enteredBy: Person
 
@@ -240,7 +243,9 @@ public struct YearFigures: Codable, Hashable, Sendable, Identifiable {
         self.enteredBy = enteredBy
     }
 
-    public var isBlank: Bool { losses == 0 && financeCosts == 0 && advancePaid == 0 && giftAid == 0 }
+    public var isBlank: Bool {
+        losses == 0 && financeCosts == 0 && advancePaid == 0 && giftAid == 0 && (ukInterest ?? 0) == 0 && (ukDividends ?? 0) == 0
+    }
 }
 
 /// Everything entered for tax. The payments themselves are the budget's own and only read.
