@@ -25,8 +25,8 @@ struct ReturnCopiesSection: View {
     @EnvironmentObject var tax: TaxStore
     @EnvironmentObject var india: IndiaStore
     let person: Person
-    @State private var sheet: ExportDocument?
-    @State private var failure: String?
+    /// Set to ask the screen to save it: only the screen itself can open the save window.
+    @Binding var sheet: ExportDocument?
 
     var body: some View {
         let pack = store.returnPack(person, tax: tax, india: india)
@@ -39,16 +39,11 @@ struct ReturnCopiesSection: View {
                     sheet = ExportDocument(data: ReturnSheetPDF.render(pack, name: name == "You" ? "your figures" : name), type: .pdf)
                 }
                 NavigationLink { ReturnFormsView(person: person) } label: { Label("Fill HMRC Forms", systemImage: "doc.richtext") }
-                if let failure { Text(failure).foregroundStyle(.orange) }
             }
         } header: {
             Text("Copies for HMRC")
         } footer: {
             Text("Nothing is sent. Copy the figures into HMRC's online service, or print the filled forms. These files aren't encrypted.")
-        }
-        .fileExporter(isPresented: Binding(get: { sheet != nil }, set: { if !$0 { sheet = nil } }), document: sheet,
-                      contentType: .pdf, defaultFilename: "Tax return \(tax.year) \(name) sheet.pdf") { result in
-            if case .failure(let error) = result { failure = error.localizedDescription }
         }
     }
 }
