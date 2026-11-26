@@ -75,8 +75,42 @@ final class PropertyLedgerTests: XCTestCase {
         var sample = TaxSample.make()
         sample.book.properties[0].myShare = Decimal(1) / 10
         XCTAssertTrue(blocking(ledger(sample.transactions, sample.book)).contains { $0.contains("Form 17") })
-        sample.book.properties[0].form17 = true
+        sample.book.properties[0].form17From = year.start
         XCTAssertFalse(blocking(ledger(sample.transactions, sample.book)).contains { $0.contains("Form 17") })
+    }
+
+    func testFormSeventeenAppliesOnlyFromItsDate() {
+        var book = book
+        let from = TaxYear.day(2025, 10, 6)
+        book.properties[0].myShare = Decimal(9) / 10
+        book.properties[0].form17From = from
+        book.rules = [PropertyRule(merchantContains: "TENANT", propertyID: "flat", category: .rent)]
+        let payments = [TaxYear.day(2025, 5, 1), TaxYear.day(2025, 11, 1)].enumerated().map { index, date in
+            BankTransaction(date: date, merchant: "TENANT", amount: 12_000, fingerprint: "r\(index)")
+        }
+        let result = ledger(payments, book)
+        XCTAssertEqual(PersonInput.make(.me, ledger: result, book: book, year: year).property[.rent], 16_800)
+        XCTAssertEqual(PersonInput.make(.partner, ledger: result, book: book, year: year).property[.rent], 7_200)
+        // A yearly figure is shared by days: 183 at half, 182 at nine tenths.
+        let yearly = book.properties[0].share(of: .me, on: nil, in: year)
+        XCTAssertEqual(TaxMoney.round(yearly, scale: 4, .plain), Decimal(string: "0.6995"))
+        book.properties[0].form17From = nil
+        XCTAssertEqual(book.properties[0].share(of: .me, on: from, in: year), Decimal(1) / 2)
+    }
+
+    func testRentOverTheMakingTaxDigitalAndCashBasisLimitsIsPointedOut() {
+        var book = book
+        book.rules = [PropertyRule(merchantContains: "TENANT", propertyID: "flat", category: .rent)]
+        let big = BankTransaction(date: day, merchant: "TENANT", amount: 62_000, fingerprint: "r")
+        XCTAssertTrue(ledger([big], book).issues.contains { $0.message.contains("Making Tax Digital") && $0.message.contains("April 2027") })
+        let huge = BankTransaction(date: day, merchant: "TENANT", amount: 302_000, fingerprint: "h")
+        XCTAssertTrue(blocking(ledger([huge], book)).contains { $0.contains("cash basis") })
+    }
+
+    func testOtherFiguresEnteredTwiceBlock() {
+        var book = book
+        book.figures = [YearFigures(person: .me, taxYear: "2025-26", losses: 1), YearFigures(person: .me, taxYear: "2025-26", losses: 1)]
+        XCTAssertTrue(blocking(ledger([], book)).contains { $0.contains("more than once") })
     }
 
     func testTaxYearRunsSixthToFifthApril() {
@@ -171,6 +205,10 @@ final class PropertyLedgerTests: XCTestCase {
         book.addRule(from: paid, to: "flat", as: .repairs)
         book.addRule(from: paid, to: "flat", as: .repairs)
         XCTAssertEqual(book.rules.count, 2)
+        // A private rule for the same shop is a separate one.
+        book.addRule(from: paid, to: "flat", as: .repairs, isPrivate: true)
+        XCTAssertEqual(book.rules.count, 3)
+        XCTAssertEqual(Set(book.rules.map(\.id)).count, 3)
         XCTAssertTrue(book.assignments.isEmpty)
         XCTAssertEqual(PaymentClassifier.classify(paid, book: book), .assigned(propertyID: "flat", category: .repairs, source: .byRule))
     }

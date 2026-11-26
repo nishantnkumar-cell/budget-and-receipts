@@ -207,6 +207,7 @@ enum AppModel {
         subscriptions.didReceiveChanges = { store.noteRecentChanges($0) }
         tax.didReceiveChanges = { store.noteRecentChanges($0) }
         tax.paymentPrivacy = { store.paymentPrivacy }
+        store.didChangePrivacy = { tax.privacyChanged($0) }
         store.didReplacePayment = { old, new in tax.change { $0.replacePayment(old, with: new) } }
     }()
     static var isWaitingForFiles: Bool {

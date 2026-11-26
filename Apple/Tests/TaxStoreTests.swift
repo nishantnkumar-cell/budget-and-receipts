@@ -15,7 +15,7 @@ final class TaxStoreTests: XCTestCase {
         try? FileManager.default.removeItem(at: folder)
     }
 
-    private let flat = RentalProperty(id: "flat", name: "Flat", myShare: Decimal(string: "0.7")!, form17: true)
+    private let flat = RentalProperty(id: "flat", name: "Flat", myShare: Decimal(string: "0.7")!, form17From: TaxYear.day(2025, 4, 6))
 
     private func record(_ store: TaxStore, _ key: String) -> SyncRecord? { store.syncRecords().first { $0.key == key } }
 
@@ -62,6 +62,42 @@ final class TaxStoreTests: XCTestCase {
         XCTAssertEqual(record(store, "taxPayments|p")?.isPrivate, false)
         privacy["p"] = true
         XCTAssertEqual(record(store, "taxPayments|p")?.isPrivate, true)
+    }
+
+    func testMakingAPaymentPrivateAndSharedAgainMovesItsChoice() {
+        let budget = BudgetStore(folder: folder)
+        let tax = TaxStore(folder: folder)
+        tax.paymentPrivacy = { budget.paymentPrivacy }
+        budget.didChangePrivacy = { tax.privacyChanged($0) }
+        var payment = BankTransaction(date: Date(), merchant: "Plumber", amount: -10, fingerprint: "p")
+        budget.add(payment)
+        tax.change { book in
+            book.properties.append(flat)
+            book.assign(payment, to: "flat", as: .repairs)
+        }
+        for hidden in [true, false] {
+            payment.isPrivate = hidden ? true : nil
+            budget.update(payment)
+            XCTAssertEqual(record(tax, "taxPayments|p")?.isPrivate, hidden)
+        }
+    }
+
+    func testAPartnerCantChangePayTypedInHere() throws {
+        let store = TaxStore(folder: folder)
+        let mine = TaxPay(id: "job", person: .me, taxYear: "2025-26", employer: "E", taxablePay: 100, taxDeducted: 0, isShared: true)
+        store.change { $0.pay.append(mine) }
+        var theirs = store.syncRecords()[0]
+        var altered = mine
+        altered.taxablePay = 1
+        theirs.payload = try SyncRecord.encoder().encode(altered)
+        theirs.byPartner = true
+        XCTAssertTrue(store.applySync(saves: [theirs], deletes: []))
+        XCTAssertEqual(store.rejectedKeys([theirs]), ["taxPay|job"])
+        XCTAssertEqual(store.book.pay, [mine])
+        // The same change from your own other device is taken.
+        theirs.byPartner = false
+        store.applySync(saves: [theirs], deletes: [])
+        XCTAssertEqual(store.book.pay.first?.taxablePay, 1)
     }
 
     func testAPrivatePayIsNeverTurnedRoundForAPartner() {

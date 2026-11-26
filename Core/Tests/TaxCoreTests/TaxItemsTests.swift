@@ -33,18 +33,42 @@ final class TaxItemsTests: XCTestCase {
         XCTAssertEqual(record("taxPayments", "tax-sample-plumber")?.isPrivate, true)
         XCTAssertEqual(record("taxPayments", "tax-sample-kitchen")?.isPrivate, false)
         XCTAssertEqual(record("taxStatements", "statement-0")?.isPrivate, true)
-        XCTAssertEqual(record("taxRules", "sample bank mortgage")?.isPrivate, true)
+        XCTAssertEqual(record("taxRules", "private|sample bank mortgage")?.isPrivate, true)
         XCTAssertEqual(record("taxProperties", "flat")?.isPrivate, false)
     }
 
-    func testPrivacyFollowsThePaymentNowAndStaysWhenThePaymentIsElsewhere() {
-        let saved = items(TaxSample.make().book, private: ["tax-sample-plumber"])
-        func plumber(_ privacy: Bool?) -> Bool? {
-            saved.syncRecords { $0 == "tax-sample-plumber" ? privacy : nil }
-                .first { $0.key == "taxPayments|tax-sample-plumber" }?.isPrivate
-        }
-        XCTAssertEqual(plumber(false), false)
-        XCTAssertEqual(plumber(nil), true)
+    func testAnItemBecomesPrivateAtOnceButSharedOnlyWhenYouChangeThePayment() {
+        var saved = items(TaxSample.make().book, private: ["tax-sample-plumber"])
+        let key = "taxPayments|tax-sample-plumber"
+        func sent(_ privacy: Bool?) -> Bool? { saved.syncRecords { _ in privacy }.first { $0.key == key }?.isPrivate }
+        XCTAssertEqual(sent(false), true)
+        XCTAssertEqual(sent(nil), true)
+        saved.followPrivacy(of: ["tax-sample-plumber"]) { _ in false }
+        XCTAssertEqual(sent(false), false)
+        XCTAssertEqual(sent(true), true)
+    }
+
+    func testAnItemWhosePaymentIsntHereIsNeverSharedByGuessing() {
+        let book = TaxSample.make().book
+        var saved = TaxItems()
+        saved.update(from: PropertyBook(), to: book, isPrivatePayment: { _ in nil })
+        XCTAssertTrue(saved.records.filter { $0.collection == "taxPayments" || $0.collection == "taxStatements" }.allSatisfy(\.isPrivate))
+        // An edit to a shared item keeps it shared.
+        var shared = items(book)
+        let old = shared.book
+        var new = old
+        new.statements[0].fees += 1
+        shared.update(from: old, to: new, isPrivatePayment: { _ in nil })
+        XCTAssertEqual(shared.records.first { $0.key == "taxStatements|\(new.statements[0].id)" }?.isPrivate, false)
+    }
+
+    func testOnlyMyOwnEntriesAreGuarded() {
+        var book = TaxSample.make().book
+        book.pay[0].enteredBy = .partner
+        let saved = items(book)
+        XCTAssertFalse(saved.isMyOwnEntry("taxPay|\(book.pay[0].id)"))
+        XCTAssertTrue(saved.isMyOwnEntry("taxPay|\(book.pay[1].id)"))
+        XCTAssertFalse(saved.isMyOwnEntry("taxProperties|flat"))
     }
 
     func testAnUntouchedItemKeepsWhatANewerVersionAdded() {
@@ -106,7 +130,7 @@ final class TaxItemsTests: XCTestCase {
     func testTurningAnItemTwiceGivesItBack() {
         var book = TaxSample.make().book
         book.properties[0].myShare = Decimal(string: "0.9")!
-        book.carried = [CarriedForward(id: "c", person: .me, taxYear: "2025-26", losses: 10, isShared: true)]
+        book.figures = [YearFigures(id: "c", person: .me, taxYear: "2025-26", losses: 10, isShared: true)]
         let records = items(book).records
         for record in records {
             XCTAssertEqual(TaxItems.flipped(TaxItems.flipped(record)), record, record.key)
@@ -114,6 +138,6 @@ final class TaxItemsTests: XCTestCase {
         let turned = TaxItems(records.map(TaxItems.flipped)).book
         XCTAssertEqual(turned.properties[0].myShare, Decimal(string: "0.1"))
         XCTAssertEqual(turned.pay.first { $0.id == "job-me" }?.person, .partner)
-        XCTAssertEqual(turned.carried[0].person, .partner)
+        XCTAssertEqual(turned.figures[0].person, .partner)
     }
 }

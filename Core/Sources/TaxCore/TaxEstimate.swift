@@ -12,6 +12,8 @@ public struct PersonInput: Hashable, Sendable {
     public var hasJointProperty = false
     public var lossesBroughtForward: Decimal = 0
     public var financeBroughtForward: Decimal = 0
+    public var advancePaid: Decimal = 0
+    public var giftAid: Decimal = 0
 
     public init() {}
 
@@ -23,16 +25,21 @@ public struct PersonInput: Hashable, Sendable {
             input.reliefAtSourcePension += job.reliefAtSourcePension
         }
         for property in book.properties {
-            let share = property.share(of: person)
-            let counted = ledger.lines.filter { $0.propertyID == property.id && $0.category.isCounted }
-            guard share > 0, !counted.isEmpty else { continue }
-            input.propertyCount += 1
-            if share < 1 { input.hasJointProperty = true }
-            for line in counted { input.property[line.category, default: 0] += line.amount * share }
+            var counts = false
+            for line in ledger.lines where line.propertyID == property.id && line.category.isCounted {
+                let share = property.share(of: person, on: line.date, in: year)
+                guard share > 0 else { continue }
+                counts = true
+                if share < 1 { input.hasJointProperty = true }
+                input.property[line.category, default: 0] += line.amount * share
+            }
+            if counts { input.propertyCount += 1 }
         }
-        for carried in book.carried where carried.person == person && carried.taxYear == year.description {
-            input.lossesBroughtForward += carried.losses
-            input.financeBroughtForward += carried.financeCosts
+        for entry in book.figures where entry.person == person && entry.taxYear == year.description {
+            input.lossesBroughtForward += entry.losses
+            input.financeBroughtForward += entry.financeCosts
+            input.advancePaid += entry.advancePaid
+            input.giftAid += entry.giftAid
         }
         return input
     }
@@ -90,7 +97,8 @@ public struct TaxEstimate: Hashable, Sendable {
     public var financeCarriedForward: Decimal
     public var liability: Decimal
     public var taxDeducted: Decimal
-    /// Still to pay through Self Assessment; negative means HMRC owes a refund.
+    public var advancePaid: Decimal
+    /// Still to pay for this year; negative means HMRC owes a refund.
     public var balance: Decimal
     /// Each of the two advance payments for next year, when they apply.
     public var paymentOnAccount: Decimal?
@@ -108,8 +116,9 @@ public enum TaxCalculator {
 
     public static func pages(_ input: PersonInput) -> PropertyPages {
         func value(_ category: PropertyCategory) -> Decimal { input.property[category] ?? 0 }
-        let income = TaxMoney.poundsDown(value(.rent) + value(.otherIncome))
-        // A refund bigger than the year's costs can't make a box negative.
+        // Refunds bigger than the year's costs of that kind are money received.
+        let refunds = PropertyCategory.allCases.filter { $0.isCounted && !$0.isIncome }.reduce(Decimal(0)) { $0 + max(0, -value($1)) }
+        let income = TaxMoney.poundsDown(value(.rent) + value(.otherIncome) + refunds)
         func cost(_ category: PropertyCategory) -> Decimal { max(0, TaxMoney.poundsUp(value(category))) }
         let rates = cost(.ratesAndInsurance), repairs = cost(.repairs), fees = cost(.professionalFees)
         let services = cost(.services), other = cost(.otherExpense), items = cost(.replacementItems)
@@ -131,13 +140,15 @@ public enum TaxCalculator {
         let pay = TaxMoney.poundsDown(input.pay)
         let pension = TaxMoney.poundsUp(input.reliefAtSourcePension)
         let total = pay + pages.taxableProfit
-        let adjustedNet = max(0, total - pension)
+        // Relief-at-source pensions and Gift Aid widen the lower bands and protect the allowance.
+        let widening = pension + TaxMoney.poundsUp(input.giftAid)
+        let adjustedNet = max(0, total - widening)
         let reduction = TaxMoney.poundsDown(max(0, adjustedNet - taperStart) / 2)
         let personalAllowance = max(0, allowance - reduction)
 
         let taxable = max(0, total - personalAllowance)
-        let basicLimit = basicBand + pension
-        let higherLimit = additionalThreshold + pension
+        let basicLimit = basicBand + widening
+        let higherLimit = additionalThreshold + widening
         let tax = TaxMoney.penceDown(
             min(taxable, basicLimit) * basicRate
             + max(0, min(taxable, higherLimit) - basicLimit) * higherRate
@@ -151,12 +162,16 @@ public enum TaxCalculator {
         let liability = tax - financeReduction
 
         let deducted = TaxMoney.poundsUp(input.taxDeducted)
-        let balance = liability - deducted
-        let needsAdvance = balance >= 1_000 && deducted <= liability * Decimal(80) / 100
+        // Advance payments for next year depend on the bill before any made for this one.
+        let bill = liability - deducted
+        let advancePaid = TaxMoney.penceDown(input.advancePaid)
+        let balance = bill - advancePaid
+        let needsAdvance = bill >= 1_000 && deducted <= liability * Decimal(80) / 100
         return TaxEstimate(
             pay: pay, pages: pages, adjustedNetIncome: adjustedNet, personalAllowance: personalAllowance,
             taxBeforeReduction: tax, financeReduction: financeReduction,
             financeCarriedForward: finance - relievable, liability: liability, taxDeducted: deducted,
-            balance: balance, paymentOnAccount: needsAdvance ? TaxMoney.penceDown(balance / 2) : nil)
+            advancePaid: advancePaid, balance: balance,
+            paymentOnAccount: needsAdvance ? TaxMoney.penceDown(bill / 2) : nil)
     }
 }

@@ -5,14 +5,14 @@ import TaxCore
 /// The figures bank payments can't supply.
 struct TaxFiguresView: View {
     private enum Sheet: Identifiable {
-        case pay(TaxPay), statement(AgentStatement), interest(MortgageInterest), carried(CarriedForward)
+        case pay(TaxPay), statement(AgentStatement), interest(MortgageInterest), figures(YearFigures)
 
         var id: String {
             switch self {
             case .pay(let item): item.id
             case .statement(let item): item.id
             case .interest(let item): item.id
-            case .carried(let item): item.id
+            case .figures(let item): item.id
             }
         }
     }
@@ -28,7 +28,7 @@ struct TaxFiguresView: View {
             Section { TaxYearPicker() }
             Section {
                 ForEach(book.pay.filter { $0.taxYear == year }) { job in
-                    row("\(name(job.person)): \(job.employer)", job.taxablePay) { sheet = .pay(job) }
+                    row("\(name(job.person)): \(job.employer)", job.taxablePay, enteredBy: job.enteredBy) { sheet = .pay(job) }
                 }
                 Button("Add Pay", systemImage: "plus") {
                     sheet = .pay(TaxPay(person: .me, taxYear: year, employer: "", taxablePay: 0, taxDeducted: 0))
@@ -61,13 +61,21 @@ struct TaxFiguresView: View {
             } else {
                 Section { Text("Add a property to enter agent statements and mortgage interest.").foregroundStyle(.secondary) }
             }
-            Section("Brought forward from last year's return") {
-                ForEach(store.taxPeople, id: \.person) { entry in
-                    let entered = book.carried.filter { $0.person == entry.person && $0.taxYear == year }
-                    row(entry.name, entered.isEmpty ? nil : entered.reduce(0) { $0 + $1.losses + $1.financeCosts }) {
-                        sheet = .carried(entered.first ?? CarriedForward(person: entry.person, taxYear: year))
+            Section {
+                ForEach(book.figures.filter { $0.taxYear == year }) { entry in
+                    row(name(entry.person), entry.losses + entry.financeCosts + entry.advancePaid + entry.giftAid, enteredBy: entry.enteredBy) {
+                        sheet = .figures(entry)
                     }
                 }
+                ForEach(store.taxPeople, id: \.person) { entry in
+                    if !book.figures.contains(where: { $0.person == entry.person && $0.taxYear == year }) {
+                        Button("Add for \(entry.name)", systemImage: "plus") {
+                            sheet = .figures(YearFigures(person: entry.person, taxYear: year))
+                        }
+                    }
+                }
+            } header: {
+                Text("Brought forward, advance payments and Gift Aid")
             }
         }
         .formStyle(.grouped)
@@ -77,16 +85,25 @@ struct TaxFiguresView: View {
             case .pay(let item): TaxPayEditor(job: item)
             case .statement(let item): TaxStatementEditor(statement: item)
             case .interest(let item): TaxInterestEditor(figure: item)
-            case .carried(let item): TaxCarriedEditor(carried: item)
+            case .figures(let item): TaxYearFiguresEditor(figures: item)
             }
         }
     }
 
-    private func row(_ title: String, _ amount: Decimal?, open: @escaping () -> Void) -> some View {
-        Button(action: open) {
-            LabeledContent(title, value: amount.map(TaxMoney.format) ?? "Not entered").contentShape(Rectangle())
+    /// An entry your partner typed in can be read here but only changed by them.
+    private func row(_ title: String, _ amount: Decimal?, enteredBy: Person = .me, open: @escaping () -> Void) -> some View {
+        let theirs = enteredBy == .partner
+        return Button(action: open) {
+            LabeledContent {
+                Text(amount.map(TaxMoney.format) ?? "Not entered")
+            } label: {
+                Text(title)
+                if theirs { Text("Entered by \(name(.partner)). Only they can change it.").font(.caption) }
+            }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(theirs)
     }
 
     private func name(_ person: Person) -> String { store.taxPeople.first { $0.person == person }?.name ?? "" }
@@ -109,7 +126,7 @@ private struct TaxPayEditor: View {
         let exists = tax.book.pay.contains { $0.id == job.id }
         TaxSheet(title: "Pay", canSave: !employer.isEmpty && !values.contains(nil)) {
             let saved = TaxPay(id: job.id, person: person, taxYear: job.taxYear, employer: employer, taxablePay: values[0]!,
-                               taxDeducted: values[1]!, reliefAtSourcePension: values[2]!, isShared: shared)
+                               taxDeducted: values[1]!, reliefAtSourcePension: values[2]!, isShared: shared, enteredBy: job.enteredBy)
             tax.change { book in
                 book.pay.removeAll { $0.id == saved.id }
                 book.pay.append(saved)
@@ -120,11 +137,12 @@ private struct TaxPayEditor: View {
                     ForEach(store.taxPeople, id: \.person) { Text($0.name).tag($0.person) }
                 }
                 TextField("Employer", text: $employer, prompt: Text("Employer or umbrella company"))
+                    .autocorrectionDisabled()
                     .accessibilityIdentifier("Employer")
                 TaxAmountField(title: "Taxable pay", text: $pay)
                 TaxAmountField(title: "Tax deducted", text: $deducted)
             } footer: {
-                Text("From the P60, or the year's last payslip.")
+                Text("From the P60, or the year's last payslip. Add taxable benefits that weren't taxed through payroll. Tax deducted can include tax for earlier years: check your tax code.")
             }
             Section {
                 TaxAmountField(title: "Pension paid yourself", text: $pension)
@@ -256,38 +274,56 @@ private struct TaxInterestEditor: View {
     }
 }
 
-private struct TaxCarriedEditor: View {
+private struct TaxYearFiguresEditor: View {
     @EnvironmentObject var store: BudgetStore
     @EnvironmentObject var tax: TaxStore
-    let carried: CarriedForward
+    let figures: YearFigures
     @State private var losses = ""
     @State private var finance = ""
+    @State private var advance = ""
+    @State private var giftAid = ""
     @State private var shared = false
 
     var body: some View {
-        let values = [losses, finance].map(TaxAmountField.value)
-        TaxSheet(title: "Brought forward", canSave: !values.contains(nil)) {
-            let saved = CarriedForward(id: carried.id, person: carried.person, taxYear: carried.taxYear,
-                                       losses: values[0]!, financeCosts: values[1]!, isShared: shared)
+        let values = [losses, finance, advance, giftAid].map(TaxAmountField.value)
+        TaxSheet(title: "Other figures, \(figures.taxYear)", canSave: !values.contains(nil)) {
+            var saved = figures
+            saved.losses = values[0]!
+            saved.financeCosts = values[1]!
+            saved.advancePaid = values[2]!
+            saved.giftAid = values[3]!
+            saved.isShared = shared
             tax.change { book in
-                book.carried.removeAll { $0.person == saved.person && $0.taxYear == saved.taxYear }
-                if saved.losses > 0 || saved.financeCosts > 0 { book.carried.append(saved) }
+                book.figures.removeAll { $0.id == saved.id }
+                if !saved.isBlank { book.figures.append(saved) }
             }
         } content: {
             Section {
                 TaxAmountField(title: "Property losses", text: $losses)
                 TaxAmountField(title: "Unused finance costs", text: $finance)
+            } header: {
+                Text("From last year's return")
             } footer: {
                 Text("This person's own amounts from last year's UK property pages.")
+            }
+            Section {
+                TaxAmountField(title: "Advance payments made", text: $advance)
+                TaxAmountField(title: "Gift Aid, with tax added", text: $giftAid)
+            } header: {
+                Text("This year")
+            } footer: {
+                Text("Advance payments are the payments on account already paid towards this year's bill. For Gift Aid, enter what you gave multiplied by 1.25.")
             }
             if store.hasPartner {
                 Section { Toggle("Show to \(store.taxPeople[1].name)", isOn: $shared) }
             }
         }
         .onAppear {
-            losses = TaxAmountField.text(carried.losses)
-            finance = TaxAmountField.text(carried.financeCosts)
-            shared = carried.isShared
+            losses = TaxAmountField.text(figures.losses)
+            finance = TaxAmountField.text(figures.financeCosts)
+            advance = TaxAmountField.text(figures.advancePaid)
+            giftAid = TaxAmountField.text(figures.giftAid)
+            shared = figures.isShared
         }
     }
 }

@@ -49,6 +49,7 @@ private struct TaxPropertyEditor: View {
     @State private var name = ""
     @State private var share = "50"
     @State private var form17 = false
+    @State private var declared = Date()
 
     private var percent: Decimal? {
         guard let value = TaxMoney.parse(share), value <= 100 else { return nil }
@@ -65,7 +66,10 @@ private struct TaxPropertyEditor: View {
         let exists = tax.book.properties.contains { $0.id == property.id }
         TaxSheet(title: exists ? "Property" : "New property", canSave: !trimmed.isEmpty && !nameTaken && percent != nil) {
             guard let percent else { return }
-            let saved = RentalProperty(id: property.id, name: trimmed, myShare: percent / 100, form17: form17)
+            // Noon in London, so the date is the same day everywhere.
+            let day = TaxYear.calendar.date(bySettingHour: 12, minute: 0, second: 0, of: declared) ?? declared
+            var saved = RentalProperty(id: property.id, name: trimmed, myShare: percent / 100)
+            if form17 && saved.isUnequalJoint { saved.form17From = TaxYear.calendar.startOfDay(for: day) }
             tax.change { book in
                 if let index = book.properties.firstIndex(where: { $0.id == saved.id }) {
                     book.properties[index] = saved
@@ -84,9 +88,12 @@ private struct TaxPropertyEditor: View {
                     TextField("Your share", text: $share).labelsHidden().multilineTextAlignment(.trailing)
                 }
                 if let percent { LabeledContent("Spouse's share", value: "\(100 - percent)%") }
-                Toggle("Form 17 sent to HMRC", isOn: $form17)
+                if let percent, percent > 0, percent < 100, percent != 50 {
+                    Toggle("Form 17 sent to HMRC", isOn: $form17)
+                    if form17 { DatePicker("Date signed", selection: $declared, displayedComponents: .date) }
+                }
             } footer: {
-                Text("A married couple's joint property is taxed half each unless HMRC has a Form 17 showing the real unequal shares. Enter 100 or 0 if only one of you owns it.")
+                Text("A married couple's joint property is taxed half each unless HMRC has a Form 17 showing the real unequal shares. It must reach HMRC within 60 days of signing, and applies from the signing date. Enter 100 or 0 only if the property is in one name.")
             }
             if exists {
                 TaxRemoveButton(title: "Remove Property",
@@ -98,7 +105,8 @@ private struct TaxPropertyEditor: View {
         .onAppear {
             name = property.name
             share = "\(property.myShare * 100)"
-            form17 = property.form17
+            form17 = property.form17From != nil
+            declared = property.form17From ?? Date()
         }
     }
 }
