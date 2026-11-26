@@ -2,6 +2,12 @@
 
 For UK rental property and Self Assessment. It uses the payments already in Duo Budget, so rent and costs aren't typed twice. It prepares figures for you to check; you send the return yourself. Estimates only, not tax advice.
 
+## Reliefs and claims
+
+**Reliefs and Claims** lists the reliefs and allowances for each person and year: the rule and its limit, the amounts, how much more tax there would be without it, and what to do. It covers the Personal Allowance, savings and dividend allowances, job expenses, pensions and Gift Aid, letting expenses, mortgage interest relief, losses and the £1,000 property allowance, relief for tax taken in India (with anything to reclaim there), Marriage and Blind Person's Allowance, and tax already paid. Items the app doesn't work out are listed as yours to claim, with the date the oldest year closes. The same list is at the end of the box-by-box sheet.
+
+Job expenses are entered under each job in **Pay and Statements** and fill boxes 17 to 20 of the employment page.
+
 ## Before you start
 
 - **Update every iPhone and Mac that shares your budget first.** An older version can delete tax details it doesn't understand.

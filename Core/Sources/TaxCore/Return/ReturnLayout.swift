@@ -44,6 +44,10 @@ public enum ReturnLayout {
             // Its first cell is a printed minus sign.
             "SA102.2": .init(1, 97.5, 292, 204, 308, cells: 7),
             "SA102.5": .init(1, 70, 406, 280, 422),
+            "SA102.17": .init(1, 82, 748.5, 204, 764.5, cells: 8),
+            "SA102.18": .init(1, 82, 790.5, 204, 806.5, cells: 8),
+            "SA102.19": .init(1, 340.5, 748.5, 463, 764.5, cells: 8),
+            "SA102.20": .init(1, 340.5, 790.5, 463, 806.5, cells: 8),
             // SA101, additional information.
             "SA101.10": .init(4, 82, 120, 204, 136, cells: 8),
             "SA101.11": .init(4, 82, 174.5, 204, 190.5, cells: 8),

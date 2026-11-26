@@ -88,6 +88,26 @@ enum ReturnSheetPDF {
             paragraph("Before you send it", size: 13, bold: true, gap: 6)
             for check in pack.checks { paragraph("• \(check)") }
         }
+        var group = ""
+        if !pack.claims.isEmpty {
+            top -= 10
+            paragraph("Reliefs and claims", size: 13, bold: true, gap: 6)
+        }
+        for claim in pack.claims {
+            if claim.group != group {
+                group = claim.group
+                top -= 4
+                paragraph(group, size: 11, bold: true, gap: 4)
+            }
+            let worth = claim.worth.map { ", worth \(TaxMoney.format($0))" } ?? ""
+            paragraph("\(claim.title): \(claim.status.rawValue)\(worth)", bold: true, gap: 2)
+            paragraph(claim.rule, size: 9, gap: 2)
+            for line in claim.lines {
+                row([(PageText.attributed(line.label, size: 9), margin + 12, 330),
+                     (PageText.attributed(TaxMoney.format(line.amount), size: 9), margin + 402, full - 402)], gap: 2)
+            }
+            if !claim.action.isEmpty { paragraph(claim.action, size: 9, gap: 6) }
+        }
         context.endPDFPage()
         context.closePDF()
         return data as Data

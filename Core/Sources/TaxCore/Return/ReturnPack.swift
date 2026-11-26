@@ -74,6 +74,8 @@ public struct ReturnPack: Hashable, Sendable {
     public var problems: [String]
     /// Things the app can't know, to deal with before sending.
     public var checks: [String]
+    /// Every relief and allowance, with what's claimed and what isn't.
+    public var claims: [TaxClaim] = []
 
     public var isReady: Bool { problems.isEmpty && !forms.isEmpty }
 
@@ -139,10 +141,22 @@ public struct ReturnPack: Hashable, Sendable {
             var entries = [entry("SA102.1", "1", "Pay from this employment", .pounds(down(job.taxablePay))),
                            entry("SA102.2", "2", "UK tax taken off pay", .pounds(up(job.taxDeducted)))]
             if !job.employer.isEmpty { entries.append(entry("SA102.5", "5", "Your employer's name", .text(job.employer))) }
+            if let expenses = job.expenses {
+                let boxes = [("17", "Business travel and subsistence expenses", expenses.travel),
+                             ("18", "Fixed deductions for expenses", expenses.flatRate),
+                             ("19", "Professional fees and subscriptions", expenses.subscriptions),
+                             ("20", "Other expenses and capital allowances", expenses.other)]
+                for (box, label, value) in boxes where value > 0 {
+                    entries.append(entry("SA102.\(box)", box, label, .pounds(up(value))))
+                }
+                if expenses.total > job.taxablePay {
+                    problems.append("Expenses for \(job.employer) are more than its pay. Check them in Pay and Statements.")
+                }
+            }
             forms.append(ReturnForm(kind: .employment, detail: job.employer, entries: entries))
         }
         if !jobs.isEmpty {
-            checks.append("Employment pages: compare boxes 1 and 2 with each P60 or P45, add your employer's PAYE reference (box 4) and answer boxes 6 to 8. Add any benefits and expenses.")
+            checks.append("Employment pages: compare boxes 1 and 2 with each P60 or P45, add your employer's PAYE reference (box 4) and answer boxes 6 to 8. Add any benefits, and keep receipts for any expenses.")
             if jobs.count > 1 { checks.append("There's more than one employment page: make sure each is a different job.") }
         }
 
@@ -251,7 +265,10 @@ public struct ReturnPack: Hashable, Sendable {
         }
         checks += ledger.issues.filter { !$0.blocksFiling }.map(\.message)
         if forms.isEmpty && problems.isEmpty { problems.append("There's nothing to put on a return for this person yet.") }
-        return ReturnPack(year: year, person: person, forms: forms, problems: problems, checks: checks)
+        let claims = TaxClaim.list(person, year: year, ledger: ledger, book: book, india: india, today: today)
+        var pack = ReturnPack(year: year, person: person, forms: forms, problems: problems, checks: checks)
+        pack.claims = claims
+        return pack
     }
 
     /// An employer's name without capitals, punctuation or "Limited".

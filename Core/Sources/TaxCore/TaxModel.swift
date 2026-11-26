@@ -193,6 +193,8 @@ public struct TaxPay: Codable, Hashable, Sendable, Identifiable {
     public var enteredBy: Person
     /// The pay date of the latest payslip imported into it.
     public var payslipDate: Date?
+    /// Costs of this job you paid yourself and weren't repaid. Nil when none.
+    public var expenses: JobExpenses?
 
     public init(id: String = UUID().uuidString, person: Person, taxYear: String, employer: String,
                 taxablePay: Decimal, taxDeducted: Decimal, reliefAtSourcePension: Decimal = 0, isShared: Bool = false,
@@ -207,6 +209,23 @@ public struct TaxPay: Codable, Hashable, Sendable, Identifiable {
         self.reliefAtSourcePension = reliefAtSourcePension
         self.isShared = isShared
     }
+}
+
+/// What can be claimed against one job's pay, as the employment page lists it.
+public struct JobExpenses: Codable, Hashable, Sendable {
+    public var travel: Decimal          // box 17
+    public var flatRate: Decimal        // box 18
+    public var subscriptions: Decimal   // box 19
+    public var other: Decimal           // box 20
+
+    public init(travel: Decimal = 0, flatRate: Decimal = 0, subscriptions: Decimal = 0, other: Decimal = 0) {
+        self.travel = travel
+        self.flatRate = flatRate
+        self.subscriptions = subscriptions
+        self.other = other
+    }
+
+    public var total: Decimal { travel + flatRate + subscriptions + other }
 }
 
 /// One person's other figures for a year: amounts from last year's return, advance payments

@@ -20,6 +20,7 @@ struct TaxHomeView: View {
                 NavigationLink { TaxPropertiesView() } label: { Label("Properties and Rules", systemImage: "house") }
                 NavigationLink { TaxFiguresView() } label: { Label("Pay and Statements", systemImage: "square.and.pencil") }
                 NavigationLink { TaxReturnView() } label: { Label("Return Figures", systemImage: "doc.text") }
+                NavigationLink { TaxClaimsView() } label: { Label("Reliefs and Claims", systemImage: "checklist") }
                 NavigationLink { TaxCompareView() } label: { Label("Whose Name to Buy In?", systemImage: "person.2") }
             }
             if tax.book.properties.isEmpty {

@@ -123,19 +123,25 @@ private struct TaxPayEditor: View {
     @State private var pay = ""
     @State private var deducted = ""
     @State private var pension = ""
+    @State private var travel = ""
+    @State private var flatRate = ""
+    @State private var subscriptions = ""
+    @State private var otherExpense = ""
     @State private var shared = false
     /// Whether it was already saved when the sheet opened.
     @State private var existed = false
 
     var body: some View {
-        let values = [pay, deducted, pension].map(TaxAmountField.value)
+        let values = [pay, deducted, pension, travel, flatRate, subscriptions, otherExpense].map(TaxAmountField.value)
         let exists = tax.book.pay.contains { $0.id == job.id }
         TaxSheet(title: "Pay", canSave: !employer.isEmpty && !values.contains(nil)) {
             // Saved by hand, the figures count as typed in (no payslip date): you've checked them.
-            let saved = TaxPay(id: job.id, person: person, taxYear: job.taxYear, employer: employer, taxablePay: values[0]!,
-                               taxDeducted: values[1]!, reliefAtSourcePension: values[2]!, isShared: shared, enteredBy: job.enteredBy)
+            var entered = TaxPay(id: job.id, person: person, taxYear: job.taxYear, employer: employer, taxablePay: values[0]!,
+                                 taxDeducted: values[1]!, reliefAtSourcePension: values[2]!, isShared: shared, enteredBy: job.enteredBy)
+            let expenses = JobExpenses(travel: values[3]!, flatRate: values[4]!, subscriptions: values[5]!, other: values[6]!)
+            entered.expenses = expenses == JobExpenses() ? nil : expenses
             tax.change { book in
-                var saved = saved
+                var saved = entered
                 let current = book.pay.first { $0.id == saved.id }
                 // Removed on another device while the sheet was open: it stays removed.
                 if existed && current == nil { return }
@@ -163,6 +169,16 @@ private struct TaxPayEditor: View {
             } footer: {
                 Text("Only a pension paid from take-home pay (“relief at source”), including the basic-rate relief added. Salary sacrifice and net pay pensions are already taken out of taxable pay.")
             }
+            Section {
+                TaxAmountField(title: "Professional fees and subscriptions", text: $subscriptions)
+                TaxAmountField(title: "Business travel", text: $travel)
+                TaxAmountField(title: "Flat rate expenses", text: $flatRate)
+                TaxAmountField(title: "Other job expenses", text: $otherExpense)
+            } header: {
+                Text("Expenses you can claim")
+            } footer: {
+                Text("Only what you paid for this job and weren't repaid. Property & Tax, Reliefs and Claims explains each one. Keep receipts.")
+            }
             if store.hasPartner {
                 Section {
                     Toggle("Show to \(store.taxPeople[1].name)", isOn: $shared)
@@ -180,6 +196,10 @@ private struct TaxPayEditor: View {
             pay = TaxAmountField.text(job.taxablePay)
             deducted = TaxAmountField.text(job.taxDeducted)
             pension = TaxAmountField.text(job.reliefAtSourcePension)
+            travel = TaxAmountField.text(job.expenses?.travel ?? 0)
+            flatRate = TaxAmountField.text(job.expenses?.flatRate ?? 0)
+            subscriptions = TaxAmountField.text(job.expenses?.subscriptions ?? 0)
+            otherExpense = TaxAmountField.text(job.expenses?.other ?? 0)
             shared = job.isShared
             existed = tax.book.pay.contains { $0.id == job.id }
         }

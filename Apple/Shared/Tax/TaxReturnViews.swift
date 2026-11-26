@@ -46,6 +46,7 @@ struct TaxReturnView: View {
                 }
             }
             Section("Estimate") {
+                if result.jobExpenses > 0 { LabeledContent("Job expenses taken off pay", value: TaxMoney.format(result.jobExpenses)) }
                 LabeledContent("Adjusted net income", value: TaxMoney.format(result.adjustedNetIncome))
                 LabeledContent("Personal allowance", value: TaxMoney.format(result.personalAllowance))
                 if result.interest > 0 {
