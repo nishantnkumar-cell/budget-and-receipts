@@ -116,13 +116,25 @@ final class ReturnPackTests: XCTestCase {
     }
 
     func testAJobEnteredTwiceBlocks() {
-        let twice = pack(PropertyBook(pay: [job("a", "40000", "5486"), job("b", "40000", "5486")]))
+        func named(_ id: String, _ name: String) -> TaxPay {
+            var entry = job(id, "40000", "5486")
+            entry.employer = name
+            return entry
+        }
+        let twice = pack(PropertyBook(pay: [named("a", "Acme Limited"), named("b", "ACME LTD.")]))
         XCTAssertFalse(twice.isReady)
         XCTAssertTrue(twice.problems.contains { $0.contains("same pay and tax") })
+        // Two jobs that happen to pay the same are only pointed out.
+        let two = pack(PropertyBook(pay: [named("a", "Cafe North"), named("b", "Shop South")]))
+        XCTAssertTrue(two.isReady)
+        XCTAssertTrue(two.checks.contains { $0.contains("different jobs") })
+        var slip = named("b", "Shop South")
+        slip.payslipDate = TaxYear.day(2026, 3, 31)
+        XCTAssertFalse(pack(PropertyBook(pay: [named("a", "Cafe North"), slip])).isReady)
         var other = job("b", "100", "1")
         other.employer = " employer A"
-        let named = pack(PropertyBook(pay: [job("a", "40000", "5486"), other]))
-        XCTAssertFalse(named.isReady)
+        let alike = pack(PropertyBook(pay: [job("a", "40000", "5486"), other]))
+        XCTAssertFalse(alike.isReady)
         XCTAssertTrue(pack(PropertyBook(pay: [job("a", "1", "0"), job("b", "2", "0")])).isReady)
     }
 

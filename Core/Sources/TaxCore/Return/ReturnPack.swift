@@ -116,7 +116,16 @@ public struct ReturnPack: Hashable, Sendable {
         }
         let figures = Dictionary(grouping: jobs.filter { $0.taxablePay != 0 }) { "\($0.taxablePay)|\($0.taxDeducted)" }
         for same in figures.values.filter({ $0.count > 1 }).sorted(by: { $0[0].employer < $1[0].employer }) {
-            problems.append("\(same.map(\.employer).joined(separator: " and ")) show the same pay and tax, so they look like one job entered twice. Keep one in Pay and Statements.")
+            let names = same.map(\.employer).joined(separator: " and ")
+            // Two jobs can pay the same. It's taken for one job entered twice only when the
+            // names are alike, or one came from a payslip and another was typed in.
+            if Set(same.map { shortName($0.employer) }).count < same.count {
+                problems.append("\(names) show the same pay and tax under much the same name, so they look like one job entered twice. Keep one in Pay and Statements.")
+            } else if same.contains(where: { $0.payslipDate != nil }) && same.contains(where: { $0.payslipDate == nil }) {
+                problems.append("\(names) show the same pay and tax, one from a payslip and one typed in, so they look like one job entered twice. Keep one in Pay and Statements, or if they are two jobs, open the payslip's entry and save it.")
+            } else {
+                checks.append("\(names) show the same pay and tax. Make sure they are different jobs.")
+            }
         }
         // The form wants the year's total, from the P60 or P45. A payslip's figures to date
         // only stand for that when it's from the end of the year.
@@ -220,6 +229,12 @@ public struct ReturnPack: Hashable, Sendable {
         checks += ledger.issues.filter { !$0.blocksFiling }.map(\.message)
         if forms.isEmpty && problems.isEmpty { problems.append("There's nothing to put on a return for this person yet.") }
         return ReturnPack(year: year, person: person, forms: forms, problems: problems, checks: checks)
+    }
+
+    /// An employer's name without capitals, punctuation or "Limited".
+    private static func shortName(_ name: String) -> String {
+        name.lowercased().split { !($0.isLetter || $0.isNumber) }
+            .filter { !["ltd", "limited", "plc", "llp"].contains(String($0)) }.joined(separator: " ")
     }
 
     /// Interest goes on the foreign pages, or in one box of the main return when none of it
