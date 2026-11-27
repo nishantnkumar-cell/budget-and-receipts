@@ -108,6 +108,30 @@ final class TaxClaimsTests: XCTestCase {
         XCTAssertNotNil(ReturnLayout.placement(of: "SA100.TR2.9"))
     }
 
+    func testCarryForwardIsValuedEvenWhenTheSchemePaysTheCharge() {
+        var figures = YearFigures(person: .me, taxYear: "2025-26")
+        figures.pension = PensionYear(paidIn: 90_000, sacrificed: 90_000, unused: 20_000, schemePays: 100_000)
+        let claim = claims(PropertyBook(pay: [job(100_000)], figures: [figures]))["annualAllowance"]
+        XCTAssertEqual(claim?.worth, 8_000)
+        XCTAssertEqual(claim?.worthText, "carry forward saves \(TaxMoney.format(8_000))")
+    }
+
+    func testEachUnequalPropertyShowsItsOwnForm17State() {
+        let book = PropertyBook(properties: [
+            RentalProperty(id: "a", name: "Made Up One", myShare: Decimal(3) / 4),
+            RentalProperty(id: "b", name: "Made Up Two", myShare: Decimal(3) / 4, form17From: TaxYear.day(2025, 5, 1)),
+            RentalProperty(id: "c", name: "Made Up Three", form17From: TaxYear.day(2025, 5, 1))
+        ])
+        let list = claims(book)
+        XCTAssertEqual(list["form17|a"]?.status, .open)
+        XCTAssertEqual(list["form17|b"]?.status, .automatic)
+        XCTAssertNil(list["form17|c"])
+    }
+
+    func testPayOfExactlyTheAllowanceIsNotCalledHigherRate() {
+        XCTAssertEqual(claims(PropertyBook(pay: [job(12_570)]))["marriage"]?.status, .yourself)
+    }
+
     func testClaimingPensionReliefIsValuedWithoutChangingTheAllowance() {
         var figures = YearFigures(person: .me, taxYear: "2025-26")
         figures.pension = PensionYear(paidIn: 60_000)

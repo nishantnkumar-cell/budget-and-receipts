@@ -99,8 +99,8 @@ enum ReturnSheetPDF {
                 top -= 4
                 paragraph(group, size: 11, bold: true, gap: 4)
             }
-            let worth = claim.worth.map { ", worth \(TaxMoney.format($0))" } ?? ""
-            paragraph("\(claim.title): \(claim.status.rawValue)\(worth)", bold: true, gap: 2)
+            let summary = [claim.status.rawValue, claim.worthText].compactMap { $0 }.joined(separator: ", ")
+            paragraph("\(claim.title): \(summary)", bold: true, gap: 2)
             paragraph(claim.rule, size: 9, gap: 2)
             for line in claim.lines {
                 row([(PageText.attributed(line.label, size: 9), margin + 12, 330),

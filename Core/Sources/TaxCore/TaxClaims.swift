@@ -32,6 +32,11 @@ public struct TaxClaim: Hashable, Sendable, Identifiable {
     /// Where it goes on the return, or what to do.
     public var action: String
 
+    /// The worth in words. For carried forward pension allowance it's charge avoided.
+    public var worthText: String? {
+        worth.map { (id == "annualAllowance" ? "carry forward saves " : "worth ") + TaxMoney.format($0) }
+    }
+
     static let marriageTransfer: Decimal = 1_260
 
     public static func list(_ person: Person, year: TaxYear, ledger: PropertyLedger, book: PropertyBook,
@@ -106,8 +111,10 @@ public struct TaxClaim: Hashable, Sendable, Identifiable {
             let saved = TaxMoney.poundsDown(input.pensionPaidIn)
             let within = min(saved, allowance)
             let carried = min(saved - within, TaxMoney.poundsDown(input.pensionUnused))
-            // What bringing forward unused allowance takes off the charge.
-            let spared = carried > 0 ? saving { $0.pensionUnused = 0 } : 0
+            // What bringing forward unused allowance takes off the charge, whoever pays it.
+            var unbroughtInput = input
+            unbroughtInput.pensionUnused = 0
+            let spared = carried > 0 ? TaxCalculator.estimate(unbroughtInput).pensionCharge - result.pensionCharge : 0
             add("annualAllowance", giving, "Pension annual allowance and carry forward", result.pensionExcess > 0 ? .charge : .automatic,
                 rule: "£60,000 a year, less for high incomes. Unused allowance from the three earlier years can be added, if you were in a registered scheme.",
                 lines: [("Paid in", saved), ("Within this year's allowance", within), ("Covered by allowance brought forward", carried),
@@ -128,17 +135,17 @@ public struct TaxClaim: Hashable, Sendable, Identifiable {
         add("giftCarry", giving, "Gift Aid moved between years", .yourself,
             rule: "A gift can be treated as made in the year before. The claim goes on that year's return, sent on time and before it's amended.",
             action: "Main return, page TR 4, box 8 for a later gift counted in this year, box 7 for one counted in the year before.")
-        add("otherPension", giving, "Other pension payments without tax relief", .yourself,
+        add("otherPension", giving, "Pension payments that get relief through the return", .yourself,
             rule: "Retirement annuity contracts, employer schemes not paid from pay before tax, and some overseas schemes.",
             action: "Main return, page TR 4, boxes 2 to 4.")
 
-        // Ownership of let property between spouses.
-        let joint = book.properties.filter { $0.myShare > 0 && $0.myShare < 1 }
-        if !joint.isEmpty {
-            let declared = joint.contains { $0.form17From != nil }
-            add("form17", "Property", "Unequal ownership between spouses (Form 17)", declared ? .automatic : .notDue,
+        // Ownership of let property between spouses: one entry for each unequal share.
+        for property in book.properties.filter(\.isUnequalJoint).sorted(by: { ($0.name, $0.id) < ($1.name, $1.id) }) {
+            let declared = property.form17From != nil
+            add("form17|\(property.id)", "Property", "Form 17: \(property.name)", declared ? .automatic : .open,
                 rule: "Married couples and civil partners are taxed equally on property they own together, unless Form 17 declares their real unequal shares. It counts from the date signed and must reach HMRC within 60 days.",
-                action: declared ? "The shares are used from the date entered in Properties and Rules." : "No Form 17 date is entered.")
+                action: declared ? "Your shares are used from the date entered in Properties and Rules."
+                    : "No Form 17 date is entered, so it's taxed half each and the return isn't ready. Send Form 17 and enter its date, or change the shares.")
         }
 
         // Property.
@@ -238,7 +245,7 @@ public struct TaxClaim: Hashable, Sendable, Identifiable {
         } else if hasOther, canGive(result), canReceive(theirs) {
             add("marriage", couple, "Marriage Allowance", .open, rule: marriageRule, lines: [("Allowance you could pass on", marriageTransfer)],
                 action: "Only if married or civil partners. It lowers your partner's tax by up to £252. Not in the estimate.")
-        } else if !hasOther && (canReceive(result) || canGive(result)) {
+        } else if !hasOther && result.taxableIncome <= result.basicRateLimit {
             add("marriage", couple, "Marriage Allowance", .yourself, rule: marriageRule,
                 action: "No figures for a partner this year. If you're married or civil partners and one of you has income under £12,570 while the other pays no higher rate tax, it can be claimed.")
         } else {

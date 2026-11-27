@@ -36,7 +36,7 @@ struct TaxClaimsView: View {
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(claim.title)
-                                Text(claim.status.rawValue + (claim.worth.map { " · worth \(TaxMoney.format($0))" } ?? ""))
+                                Text([claim.status.rawValue, claim.worthText].compactMap { $0 }.joined(separator: " · "))
                                     .font(.caption)
                                     .foregroundStyle(claim.status == .open || claim.status == .charge ? Color.orange : Color.secondary)
                             }
@@ -45,7 +45,7 @@ struct TaxClaimsView: View {
                 }
             }
             Section {
-                Text("Amounts come only from what's entered in the app. “Worth” is how much more tax there would be without it. \(TaxNotes.notCovered)")
+                Text("Amounts come only from what's entered in the app. “Worth” is how much more tax there would be without it; carry forward shows the pension charge it avoids. \(TaxNotes.notCovered)")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
