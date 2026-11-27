@@ -1,0 +1,38 @@
+name: App tests
+
+# The apps need Xcode, so this runs on a Mac: the app tests on an iPhone simulator, then an
+# unsigned build of the Mac app. Nothing is signed and no secrets are used.
+on:
+  pull_request:
+    paths: ["Apple/**", "Core/**", ".github/workflows/apple-tests.yml"]
+  push:
+    branches: [main]
+    paths: ["Apple/**", "Core/**", ".github/workflows/apple-tests.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apps:
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate the Xcode project
+        run: |
+          xcodebuild -version
+          command -v xcodegen || brew install xcodegen
+          cd Apple && xcodegen generate
+      - name: Test the iPhone app on a simulator
+        run: |
+          id=$(xcrun simctl create CI com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro)
+          xcodebuild -project Apple/BudgetReceipts.xcodeproj -scheme BudgetReceipts-iOS \
+            -destination "id=$id" -derivedDataPath .build/ios CODE_SIGN_IDENTITY=- test
+      - name: Build the Mac app
+        run: |
+          xcodebuild -project Apple/BudgetReceipts.xcodeproj -scheme BudgetReceipts-macOS \
+            -destination 'platform=macOS' -derivedDataPath .build/mac CODE_SIGNING_ALLOWED=NO build
