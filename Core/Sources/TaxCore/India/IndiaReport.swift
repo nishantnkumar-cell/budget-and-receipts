@@ -93,12 +93,24 @@ public struct IndiaReport: Hashable, Sendable {
             if inYear.contains(where: { !$0.isManual && $0.kind == .dividend }) {
                 warnings.append("\(account.title): a dividend marked on a statement is usually the amount after tax. Replace it with the amount before tax, and add the tax, from Form 26AS or the company's statement.")
             }
+            // The UK year ends five days into India's next one, which an Indian year's papers miss.
+            let all = book.entries.filter { $0.accountID == account.id }
+            let april = TaxYear.day(year.startYear + 1, 4, 1)
+            if today >= year.end, !inYear.isEmpty, !all.contains(where: { $0.date >= april }) {
+                warnings.append("\(account.title): nothing from 1 April \(year.startYear + 1) on. Add any interest, dividend or tax dated 1 to 5 April \(year.startYear + 1), from India's FY \(TaxYear(startYear: year.startYear + 1)).")
+            }
+            if inYear.contains(where: { $0.isManual && $0.date >= april - 86_400 && $0.date < april }) {
+                warnings.append("\(account.title): a figure typed in for 31 March may be a whole Indian year's. India's FY \(year) includes 1 to 5 April \(year.startYear), which belongs to the UK year before: take that part off.")
+            }
             if dividends == 0, dividendTax != 0 {
                 warnings.append("\(account.title): tax on dividends is entered but no dividend.")
             }
             if account.kind == .nro, interest > 0, tax == 0 {
                 warnings.append("\(account.title): no tax deducted found. If the bank paid interest after tax, change the figures to the amounts on its certificate.")
             }
+        }
+        if rows.contains(where: { $0.taxDeducted > 0 || $0.dividendTax > 0 }) {
+            warnings.append("Relief is only for tax India finally kept. If your Indian return gave any of it back, enter the tax after the refund.")
         }
         let rate = book.rate(year.description)
         if rate == nil, !rows.isEmpty { warnings.insert("Enter the rupees to a pound for \(year) to see pounds.", at: 0) }
@@ -109,7 +121,7 @@ public struct IndiaReport: Hashable, Sendable {
     /// A spreadsheet of the totals and every interest and tax line behind them.
     public func csv(_ book: IndiaBook) -> String {
         var table = [["Tax year", "Account", "Date", "What", "Share", "Interest INR", "Tax deducted INR", "Interest GBP", "Tax deducted GBP",
-                      "Dividends INR", "Dividend tax INR", "Dividends GBP", "Dividend tax GBP", "Rupees per pound", "Details"]]
+                      "Dividends INR", "Dividend tax INR", "Dividends GBP", "Dividend tax GBP", "Rupees per pound", "Details", "Indian year"]]
         let rate = rupeesPerPound.map { "\($0)" } ?? ""
         func pounds(_ value: Decimal) -> String { IndiaMoney.pounds(value, rupeesPerPound: rupeesPerPound).map { "\($0)" } ?? "" }
         func money(_ value: Decimal) -> String { "\(TaxMoney.round(value, scale: 2, .plain))" }
@@ -122,11 +134,12 @@ public struct IndiaReport: Hashable, Sendable {
                 let dividendTax = entry.kind == .dividendTax ? -entry.amount * share : 0
                 table.append([year.description, row.account.title, PropertyLedger.day(entry.date), entry.kind.title, "\(share)",
                               money(interest), money(tax), pounds(interest), pounds(tax),
-                              money(dividend), money(dividendTax), pounds(dividend), pounds(dividendTax), rate, entry.narration])
+                              money(dividend), money(dividendTax), pounds(dividend), pounds(dividendTax), rate, entry.narration,
+                              TaxYear.indianYear(of: entry.date)])
             }
         }
         table.append([year.description, "Total", "", "", "", money(interest), money(taxDeducted), pounds(interest), pounds(taxDeducted),
-                      money(dividends), money(dividendTax), pounds(dividends), pounds(dividendTax), rate, ""])
+                      money(dividends), money(dividendTax), pounds(dividends), pounds(dividendTax), rate, "", ""])
         return table.map { $0.map(CSVExporter.escape).joined(separator: ",") }.joined(separator: "\r\n") + "\r\n"
     }
 }

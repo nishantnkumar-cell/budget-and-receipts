@@ -22,6 +22,8 @@ struct IndiaReportView: View {
                     ForEach(store.taxPeople, id: \.person) { Text($0.name).tag($0.person) }
                 }
                 IndiaRateField(title: "Rupees to £1", rateID: india.year.description)
+            } footer: {
+                Text(india.year.indianYearsNote)
             }
             if !report.warnings.isEmpty {
                 Section("Check first") {

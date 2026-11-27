@@ -44,6 +44,12 @@ Import rupee statements here, not under Activity, or they would be counted as po
 
 The interest and dividends also go onto the [return copies](Property-and-tax) in Property & Tax.
 
+## Indian and UK tax years
+
+India's financial year runs 1 April to 31 March. The UK tax year runs 6 April to 5 April. The app places each amount by the date it was paid or credited, so one UK year takes most of one Indian year plus 1 to 5 April of the next. For UK 2025-26 that's FY 2025-26 from 6 April 2025, plus 1 to 5 April 2026 from FY 2026-27. Amounts dated 1 to 5 April 2025 belong to UK 2024-25. The export shows each line's Indian year, to check against Indian reports.
+
+A yearly certificate or report covers the Indian year, so adjust it for those five days. Relief is only for tax India finally kept: if your Indian return refunded some, enter the amount after the refund.
+
 ## What isn't covered
 
 Both are added to the Property & Tax estimate, with relief for Indian tax. Not covered: capital gains on shares or mutual funds, rent from property in India or your Indian tax return.

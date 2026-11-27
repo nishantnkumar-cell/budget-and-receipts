@@ -232,7 +232,8 @@ private struct TaxStatementEditor: View {
         let net: Decimal? = values.contains(nil) ? nil : values[0]! - values[1]! - values[2]! - values[3]!
         TaxSheet(title: "Agent statement", canSave: net != nil && values[0]! > 0) {
             // Noon in London, so the date is the same day everywhere.
-            let day = TaxYear.calendar.date(bySettingHour: 12, minute: 0, second: 0, of: date) ?? date
+            let chosen = exists && date == statement.date ? date : TaxYear.picked(date)
+            let day = TaxYear.calendar.date(bySettingHour: 12, minute: 0, second: 0, of: chosen) ?? chosen
             let saved = AgentStatement(id: statement.id, propertyID: propertyID, date: day, grossRent: values[0]!,
                                        fees: values[1]!, repairs: values[2]!, otherExpense: values[3]!,
                                        bankFingerprint: fingerprint.isEmpty ? nil : fingerprint)

@@ -310,13 +310,14 @@ private struct IndiaManualEditor: View {
                 DatePicker("Date", selection: $date, displayedComponents: .date)
                 TextField("Note (optional)", text: $note)
             } footer: {
-                Text("For amounts no statement shows, such as deposit interest from the bank's certificate, or dividends before tax and their tax from Form 26AS. Don't type in what a statement already has.")
+                Text("For amounts no statement shows, such as deposit interest from the bank's certificate, or dividends before tax and their tax from Form 26AS. Use the date paid or credited: the UK year runs 6 April to 5 April, India's 1 April to 31 March. If your Indian return refunded tax, enter what India kept. Don't type in what a statement already has.")
             }
         }
     }
 
     private func save() {
         guard let rupees = IndiaMoney.parse(amount) else { return }
-        india.change { $0.save(.manual(accountID: accountID, date: date, kind: kind, rupees: rupees, note: note.trimmingCharacters(in: .whitespacesAndNewlines))) }
+        let day = TaxYear.picked(date)
+        india.change { $0.save(.manual(accountID: accountID, date: day, kind: kind, rupees: rupees, note: note.trimmingCharacters(in: .whitespacesAndNewlines))) }
     }
 }

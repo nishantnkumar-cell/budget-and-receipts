@@ -66,7 +66,8 @@ final class IndiaBookTests: XCTestCase {
         XCTAssertEqual(report.taxDeducted, 180)
         XCTAssertEqual(report.interestPounds, Decimal(string: "36.96"))
         XCTAssertEqual(report.taxPounds, Decimal(string: "1.57"))
-        XCTAssertEqual(report.warnings, [])
+        // Only the standing reminders: refunds, and the first days of April.
+        XCTAssertEqual(report.warnings.filter { !$0.contains("tax India finally kept") && !$0.contains("nothing from 1 April") }, [])
         let partner = IndiaReport.make(IndiaSample.make(), year: year, person: .partner, today: after)
         XCTAssertEqual(partner.interest, 600 + 5_250)
     }
@@ -97,6 +98,48 @@ final class IndiaBookTests: XCTestCase {
         line.chosenKind = .other
         book.save(line)
         XCTAssertEqual(IndiaReport.make(book, year: year, person: .me, today: after).interest, 600)
+    }
+
+    func testEachDayAroundTheTwoYearEndsGoesToTheRightYears() {
+        let days = [(2025, 3, 31), (2025, 4, 1), (2025, 4, 5), (2025, 4, 6), (2026, 3, 31), (2026, 4, 1), (2026, 4, 5), (2026, 4, 6)]
+            .map { TaxYear.day($0.0, $0.1, $0.2) }
+        XCTAssertEqual(days.map(TaxYear.indianYear(of:)),
+                       ["FY 2024-25", "FY 2025-26", "FY 2025-26", "FY 2025-26", "FY 2025-26", "FY 2026-27", "FY 2026-27", "FY 2026-27"])
+        XCTAssertEqual(days.map { TaxYear(startYear: 2025).contains($0) }, [false, false, false, true, true, true, true, false])
+        let note = TaxYear(startYear: 2025).indianYearsNote
+        XCTAssertTrue(note.contains("1 to 5 April 2026 from FY 2026-27"))
+        XCTAssertTrue(note.contains("in the UK year 2024-25"))
+    }
+
+    func testADatePickedAbroadStaysOnThatDay() {
+        var india = Calendar(identifier: .gregorian)
+        india.timeZone = TimeZone(identifier: "Asia/Kolkata")!
+        // 2 a.m. on 6 April in India is still 5 April in London.
+        let early = india.date(from: DateComponents(year: 2025, month: 4, day: 6, hour: 2))!
+        XCTAssertFalse(TaxYear(startYear: 2025).contains(early))
+        XCTAssertEqual(TaxYear.picked(early, in: india.timeZone), TaxYear.day(2025, 4, 6))
+        var west = Calendar(identifier: .gregorian)
+        west.timeZone = TimeZone(identifier: "America/New_York")!
+        let late = west.date(from: DateComponents(year: 2025, month: 4, day: 5, hour: 23))!
+        XCTAssertEqual(TaxYear.picked(late, in: west.timeZone), TaxYear.day(2025, 4, 5))
+    }
+
+    func testPapersThatStopAtTheIndianYearEndAreFlagged() {
+        var book = IndiaBook()
+        book.save(IndiaAccount(id: "a", bank: .sbi, kind: .nro))
+        book.save(.manual(accountID: "a", date: TaxYear.day(2026, 3, 31), kind: .interest, rupees: 100))
+        book.save(.manual(accountID: "a", date: TaxYear.day(2026, 3, 31), kind: .taxDeducted, rupees: 15))
+        func warnings(_ today: Date) -> [String] {
+            IndiaReport.make(book, year: TaxYear(startYear: 2025), person: .me, today: today).warnings
+        }
+        let later = warnings(TaxYear.day(2026, 11, 27))
+        XCTAssertTrue(later.contains { $0.contains("nothing from 1 April 2026") })
+        XCTAssertTrue(later.contains { $0.contains("31 March may be a whole Indian year") })
+        XCTAssertTrue(later.contains { $0.contains("tax India finally kept") })
+        // Not asked while the year is still running.
+        XCTAssertFalse(warnings(TaxYear.day(2026, 4, 2)).contains { $0.contains("nothing from 1 April") })
+        book.save(.manual(accountID: "a", date: TaxYear.day(2026, 6, 30), kind: .interest, rupees: 10))
+        XCTAssertFalse(warnings(TaxYear.day(2026, 11, 27)).contains { $0.contains("nothing from 1 April") })
     }
 
     func testCSVHasTheLinesAndTotalsAndNoFormulas() {
