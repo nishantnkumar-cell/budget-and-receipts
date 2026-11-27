@@ -46,6 +46,7 @@ struct TaxReturnView: View {
                 }
             }
             Section("Estimate") {
+                if result.jobExpenses > 0 { LabeledContent("Job expenses taken off pay", value: TaxMoney.format(result.jobExpenses)) }
                 LabeledContent("Adjusted net income", value: TaxMoney.format(result.adjustedNetIncome))
                 LabeledContent("Personal allowance", value: TaxMoney.format(result.personalAllowance))
                 if result.interest > 0 {
@@ -53,13 +54,23 @@ struct TaxReturnView: View {
                     LabeledContent("Tax on the interest", value: TaxMoney.format(result.savingsTax))
                 }
                 if result.dividends > 0 {
-                    LabeledContent("Dividends", value: TaxMoney.format(result.dividends))
+                    LabeledContent("Dividends (from India \(TaxMoney.format(result.foreignDividends)))", value: TaxMoney.format(result.dividends))
                     LabeledContent("Tax on the dividends", value: TaxMoney.format(result.dividendTax))
                 }
                 LabeledContent("Income tax", value: TaxMoney.format(result.taxBeforeReduction))
                 LabeledContent("Less finance cost relief", value: TaxMoney.format(result.financeReduction))
                 if result.foreignRelief > 0 {
                     LabeledContent("Less relief for tax taken in India", value: TaxMoney.format(result.foreignRelief))
+                }
+                if let allowance = result.pensionAllowance {
+                    LabeledContent("Pension annual allowance this year", value: TaxMoney.format(allowance))
+                    LabeledContent("Pension saving above what's allowed", value: TaxMoney.format(result.pensionExcess))
+                }
+                if result.pensionCharge > 0 {
+                    LabeledContent("Plus pension annual allowance charge", value: TaxMoney.format(result.pensionCharge))
+                    if result.pensionSchemePaid > 0 {
+                        LabeledContent("Less paid by your pension scheme", value: TaxMoney.format(result.pensionSchemePaid))
+                    }
                 }
                 LabeledContent("Tax for the year", value: TaxMoney.format(result.liability))
                 LabeledContent("Already deducted from pay", value: TaxMoney.format(result.taxDeducted))

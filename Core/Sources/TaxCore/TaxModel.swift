@@ -193,6 +193,8 @@ public struct TaxPay: Codable, Hashable, Sendable, Identifiable {
     public var enteredBy: Person
     /// The pay date of the latest payslip imported into it.
     public var payslipDate: Date?
+    /// Costs of this job you paid yourself and weren't repaid. Nil when none.
+    public var expenses: JobExpenses?
 
     public init(id: String = UUID().uuidString, person: Person, taxYear: String, employer: String,
                 taxablePay: Decimal, taxDeducted: Decimal, reliefAtSourcePension: Decimal = 0, isShared: Bool = false,
@@ -207,6 +209,23 @@ public struct TaxPay: Codable, Hashable, Sendable, Identifiable {
         self.reliefAtSourcePension = reliefAtSourcePension
         self.isShared = isShared
     }
+}
+
+/// What can be claimed against one job's pay, as the employment page lists it.
+public struct JobExpenses: Codable, Hashable, Sendable {
+    public var travel: Decimal          // box 17
+    public var flatRate: Decimal        // box 18
+    public var subscriptions: Decimal   // box 19
+    public var other: Decimal           // box 20
+
+    public init(travel: Decimal = 0, flatRate: Decimal = 0, subscriptions: Decimal = 0, other: Decimal = 0) {
+        self.travel = travel
+        self.flatRate = flatRate
+        self.subscriptions = subscriptions
+        self.other = other
+    }
+
+    public var total: Decimal { travel + flatRate + subscriptions + other }
 }
 
 /// One person's other figures for a year: amounts from last year's return, advance payments
@@ -226,6 +245,8 @@ public struct YearFigures: Codable, Hashable, Sendable, Identifiable {
     /// Interest and dividends received in the UK outside ISAs, before any tax. Nil is nothing.
     public var ukInterest: Decimal?
     public var ukDividends: Decimal?
+    /// Pension saving, for the annual allowance. Nil when not entered.
+    public var pension: PensionYear?
     public var isShared: Bool
     public var enteredBy: Person
 
@@ -245,6 +266,27 @@ public struct YearFigures: Codable, Hashable, Sendable, Identifiable {
 
     public var isBlank: Bool {
         losses == 0 && financeCosts == 0 && advancePaid == 0 && giftAid == 0 && (ukInterest ?? 0) == 0 && (ukDividends ?? 0) == 0
+            && pension == nil
+    }
+}
+
+/// One year's pension saving.
+public struct PensionYear: Codable, Hashable, Sendable {
+    /// Everything paid in for the year by you and your employers, including tax relief. For a
+    /// defined benefit pension, the figure on the scheme's savings statement.
+    public var paidIn: Decimal
+    /// The part of it given up from pay by salary sacrifice.
+    public var sacrificed: Decimal
+    /// Annual allowance not used in the three earlier years.
+    public var unused: Decimal
+    /// The part of any charge the pension scheme pays.
+    public var schemePays: Decimal
+
+    public init(paidIn: Decimal, sacrificed: Decimal = 0, unused: Decimal = 0, schemePays: Decimal = 0) {
+        self.paidIn = paidIn
+        self.sacrificed = sacrificed
+        self.unused = unused
+        self.schemePays = schemePays
     }
 }
 

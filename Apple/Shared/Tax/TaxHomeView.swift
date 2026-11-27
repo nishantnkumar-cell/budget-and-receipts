@@ -20,6 +20,7 @@ struct TaxHomeView: View {
                 NavigationLink { TaxPropertiesView() } label: { Label("Properties and Rules", systemImage: "house") }
                 NavigationLink { TaxFiguresView() } label: { Label("Pay and Statements", systemImage: "square.and.pencil") }
                 NavigationLink { TaxReturnView() } label: { Label("Return Figures", systemImage: "doc.text") }
+                NavigationLink { TaxClaimsView() } label: { Label("Reliefs and Claims", systemImage: "checklist") }
                 NavigationLink { TaxCompareView() } label: { Label("Whose Name to Buy In?", systemImage: "person.2") }
             }
             if tax.book.properties.isEmpty {
@@ -46,13 +47,17 @@ struct TaxHomeView: View {
                 let input = PersonInput.make(entry.person, ledger: ledger, book: tax.book, year: tax.year, india: india.book)
                 let result = TaxCalculator.estimate(input)
                 // Pay or savings alone is enough to estimate: no property needed.
-                if !tax.book.properties.isEmpty || result.pay > 0 || result.interest > 0 || result.dividends > 0 || input.isMissingRate {
+                if !tax.book.properties.isEmpty || result.pay > 0 || result.interest > 0 || result.dividends > 0 || result.pensionAllowance != nil
+                    || input.isMissingRate {
                     Section(blocking.isEmpty ? "\(entry.name): estimate" : "\(entry.name): provisional estimate") {
                         LabeledContent("Taxable property profit", value: TaxMoney.format(result.pages.taxableProfit))
                         if result.interest > 0 { LabeledContent("Interest", value: TaxMoney.format(result.interest)) }
                         if result.dividends > 0 { LabeledContent("Dividends", value: TaxMoney.format(result.dividends)) }
+                        if result.pensionCharge > 0 {
+                            LabeledContent("Pension charge, included below", value: TaxMoney.format(result.pensionCharge - result.pensionSchemePaid))
+                        }
                         if input.isMissingRate {
-                            Label("Interest from India is left out until you enter the rupees to a pound for \(tax.year.description) in India Accounts.", systemImage: "exclamationmark.circle")
+                            Label("Income from India is left out until you enter the rupees to a pound for \(tax.year.description) in India Accounts.", systemImage: "exclamationmark.circle")
                                 .foregroundStyle(.orange)
                         }
                         LabeledContent("Tax for the year", value: TaxMoney.format(result.liability))

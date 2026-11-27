@@ -2,6 +2,12 @@
 
 For UK rental property and Self Assessment. It uses the payments already in Duo Budget, so rent and costs aren't typed twice. It prepares figures for you to check; you send the return yourself. Estimates only, not tax advice.
 
+## Reliefs and claims
+
+**Reliefs and Claims** lists the reliefs and allowances for each person and year: the rule and its limit, the amounts, how much more tax there would be without it, and what to do. It covers the Personal Allowance, savings and dividend allowances, job expenses, pensions and Gift Aid, letting expenses, mortgage interest relief, losses and the £1,000 property allowance, relief for tax taken in India (with anything to reclaim there), Marriage and Blind Person's Allowance, Gift Aid moved between years, pension payments claimed through the return, Form 17 for unequal ownership, and tax already paid. Items the app doesn't work out are listed as yours to claim, with the date the oldest year closes. The same list is at the end of the box-by-box sheet.
+
+Job expenses are entered under each job in **Pay and Statements** and fill boxes 17 to 20 of the employment page.
+
 ## Before you start
 
 - **Update every iPhone and Mac that shares your budget first.** An older version can delete tax details it doesn't understand.
@@ -17,9 +23,11 @@ For UK rental property and Self Assessment. It uses the payments already in Duo 
 
 1. **Properties and Rules:** add each property and your share of it. A married couple's joint property is taxed half each unless HMRC has a Form 17.
 2. **Property Payments:** choose a payment, its property and what kind of money it is. Turn on **Always treat … this way** to make a rule. For a split payment, choose each part. You can also do this from the payment's own screen.
-3. **Pay and Statements:** enter each P60, any letting agent statements, the lender's interest paid between 6 April and 5 April, losses brought forward, payments on account already made, Gift Aid, and your UK bank interest and dividends outside ISAs.
+3. **Pay and Statements:** enter each P60, any letting agent statements, the lender's interest paid between 6 April and 5 April, losses brought forward, payments on account already made, Gift Aid, your UK bank interest and dividends outside ISAs, and your pension saving.
 
-Interest in [India accounts](India-accounts) is added to the estimate at your rate for the year, with relief for Indian tax: no more than 15%, and no more than the UK tax that interest causes.
+**Pension annual allowance:** enter everything paid in for the year, the part given up by salary sacrifice, and unused allowance from the three earlier years. The estimate reduces the £60,000 allowance for high incomes, adds any charge to your bill, and takes off what your scheme pays. Check the result against your scheme's savings statement. The lower allowance after flexibly taking benefits isn't covered.
+
+Interest and dividends in [India accounts](India-accounts) are added to the estimate at your rate for the year, with relief for Indian tax: no more than 15% on interest and 10% on dividends, and no more than the UK tax that income causes.
 
 ## Import agent statements and payslips
 
@@ -44,7 +52,7 @@ Both are in **Pay and Statements**. Files are read on your device, and you see w
 In **Return Figures**, choose whose return, for **2025-26**:
 
 - **Box-by-Box Sheet (PDF):** every form and box with its figure, in whole pounds, with what to check. Use it to type the return into HMRC's online service, or give it to an accountant.
-- **Fill HMRC Forms:** download the blank forms it lists from GOV.UK, choose them, and save one PDF with your figures on HMRC's own pages (SA100, SA102 for each job, SA105 and SA106). Print at actual size.
+- **Fill HMRC Forms:** download the blank forms it lists from GOV.UK, choose them, and save one PDF with your figures on HMRC's own pages (SA100, SA101 if there's a pension charge, SA102 for each job, SA105 and SA106). Print at actual size.
 
 **Deadlines:** HMRC had to receive paper returns for 2025-26 by 31 October 2026. Posting one now means a late filing penalty unless HMRC's letter to you gave a later date. Online returns are due by 31 January 2027. HMRC's online service can't take a PDF.
 
@@ -56,6 +64,6 @@ Property details are shared. Pay is private unless you turn on **Show to** your 
 
 ## What isn't covered
 
-Dividends and other income from abroad, capital gains, Scottish rates, student loans, Child Benefit charge, pension annual allowance, the property income allowance, accruals accounting, limits on interest where loans exceed the property's value, stamp duty, and tax years from 2027-28.
+Capital gains, other income from abroad, Scottish rates, student loans, Child Benefit charge, the property income allowance, accruals accounting, limits on interest where loans exceed the property's value, stamp duty, and tax years from 2027-28.
 
 Figures use the cash basis: money counts when it's received or paid. Rent a letting agent holds counts when the agent receives it, so check statements dated around 5 April. If your rent is high enough for **Making Tax Digital**, the app says so; it doesn't send quarterly updates.
